@@ -1,11 +1,11 @@
 # Audio Transcriber App
+A desktop application for transcribing audio files (MP3) to text using speech recognition, with additional live speech-to-text functionality.
+
 
 <div style="display: flex; justify-content: space-between;">
   <img src="screenshot_1.png" alt="App Screenshot 1" width="48%">
   <img src="screenshot_2.png" alt="App Screenshot 2" width="48%">
 </div>
-
-A cross-platform desktop application for transcribing audio files (MP3) to text using speech recognition, with additional live speech-to-text functionality.
 
 ## Features
 
