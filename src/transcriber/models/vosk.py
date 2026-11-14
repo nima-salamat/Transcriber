@@ -233,7 +233,7 @@ def _download_vosk_archive(
             if exc.code != 416 or not downloaded:
                 raise
             content_range = str(exc.headers.get("Content-Range", "") if exc.headers else "")
-            match = re.fullmatch(r"bytes\\s+\\*/(\\d+)", content_range.strip(), re.IGNORECASE)
+            match = re.fullmatch(r"bytes\s+\*/(\d+)", content_range.strip(), re.IGNORECASE)
             remote_size = int(match.group(1)) if match else None
             exc.close()
 
@@ -262,7 +262,7 @@ def _download_vosk_archive(
 
             if status == 206:
                 match = re.fullmatch(
-                    r"bytes\\s+(\\d+)-(\\d+)/(\\d+|\\*)",
+                    r"bytes\s+(\d+)-(\d+)/(\d+|\*)",
                     content_range.strip(),
                     re.IGNORECASE,
                 )
