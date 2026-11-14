@@ -244,7 +244,7 @@ class ModelLibraryPage(QWidget):
         self.release_active_model = release_active_model
         self.cards: dict[str, ModelCard] = {}
         self._installed_by_id: dict[str, dict] = {}
-        self._installed_card_rows: list[tuple[QWidget, str]] = []
+        self._installed_card_rows: list[tuple[QWidget, str, str, str]] = []
         self._downloads: dict[str, threading.Event] = {}
         self._download_task_ids: dict[str, str] = {}
         self._download_workers: dict[str, FunctionWorker] = {}
@@ -357,12 +357,25 @@ class ModelLibraryPage(QWidget):
         self.installed_summary = QLabel("Installed models")
         self.installed_summary.setStyleSheet("font-size: 15px; font-weight: 650;")
         self.installed_search = QLineEdit()
-        self.installed_search.setPlaceholderText("Filter installed models…")
+        self.installed_search.setPlaceholderText("Search installed models…")
         self.installed_search.textChanged.connect(self._filter_installed_cards)
+        self.installed_runtime_filter = QComboBox()
+        self.installed_runtime_filter.addItem("All runtimes", "")
+        self.installed_runtime_filter.addItem("Faster-Whisper", "faster-whisper")
+        self.installed_runtime_filter.addItem("Vosk / Kaldi", "vosk")
+        self.installed_runtime_filter.currentIndexChanged.connect(self._filter_installed_cards)
+        self.installed_state_filter = QComboBox()
+        self.installed_state_filter.addItem("All states", "")
+        self.installed_state_filter.addItem("Ready", "ready")
+        self.installed_state_filter.addItem("Active", "active")
+        self.installed_state_filter.addItem("Needs repair", "repair")
+        self.installed_state_filter.currentIndexChanged.connect(self._filter_installed_cards)
         refresh = QPushButton("Refresh")
         refresh.clicked.connect(self.refresh_installed)
-        installed_toolbar.addWidget(self.installed_summary, 1)
+        installed_toolbar.addWidget(self.installed_summary)
         installed_toolbar.addWidget(self.installed_search, 1)
+        installed_toolbar.addWidget(self.installed_runtime_filter)
+        installed_toolbar.addWidget(self.installed_state_filter)
         installed_toolbar.addWidget(refresh)
         installed_layout.addLayout(installed_toolbar)
         self.installed_scroll = QScrollArea()
@@ -384,14 +397,30 @@ class ModelLibraryPage(QWidget):
         import_layout.setSpacing(12)
         self.import_repo_id = QLineEdit("local/imported-model")
         self.import_repo_id.setPlaceholderText("local/model-name (owner/model-name format)")
+        self.manual_runtime_combo = QComboBox()
+        self.manual_runtime_combo.addItem("Faster-Whisper · CTranslate2", "faster-whisper")
+        self.manual_runtime_combo.addItem("Vosk · Kaldi", "vosk")
+        self.manual_runtime_combo.currentIndexChanged.connect(self._manual_runtime_changed)
+        self.manual_language_combo = QComboBox()
+        self.manual_language_combo.addItem("Language not specified", "")
+        for code, name in (
+            ("fa", "Persian / Farsi"), ("en", "English"), ("de", "German"),
+            ("fr", "French"), ("es", "Spanish"), ("ar", "Arabic"),
+            ("ru", "Russian"), ("zh", "Chinese"), ("ja", "Japanese"),
+            ("tr", "Turkish"), ("it", "Italian"),
+        ):
+            self.manual_language_combo.addItem(name, code)
+        self.manual_language_combo.setVisible(False)
         form = QFormLayout()
+        form.addRow("Model runtime", self.manual_runtime_combo)
+        form.addRow("Model language", self.manual_language_combo)
         form.addRow("Local model ID", self.import_repo_id)
         import_layout.addLayout(form)
-        requirements = QLabel(
-            "Import accepts a local directory or ZIP containing root-level CTranslate2 Faster-Whisper "
-            "artifacts: model.bin, config.json, tokenizer.json and a vocabulary file. "
+        self.import_requirements = QLabel(
+            "Faster-Whisper import validates the CTranslate2 model, tokenizer, configuration and vocabulary files. "
             "PyTorch/Transformers checkpoints are not Faster-Whisper models."
         )
+        requirements = self.import_requirements
         requirements.setObjectName("Muted")
         requirements.setWordWrap(True)
         import_layout.addWidget(requirements)
@@ -422,17 +451,38 @@ class ModelLibraryPage(QWidget):
         self.refresh_installed()
         self.refresh_downloads()
 
+    def _manual_runtime_changed(self, *_args):
+        is_vosk = self.manual_runtime_combo.currentData() == "vosk"
+        self.manual_language_combo.setVisible(is_vosk)
+        self.import_requirements.setText(
+            "Vosk import checks the acoustic model, feature configuration and decoding graph. "
+            "The selected language is stored as metadata; it does not alter the model files."
+            if is_vosk else
+            "Faster-Whisper import validates the CTranslate2 model, tokenizer, configuration and vocabulary files. "
+            "PyTorch/Transformers checkpoints are not Faster-Whisper models."
+        )
+        if is_vosk and self.import_repo_id.text() == "local/imported-model":
+            self.import_repo_id.setText("local/vosk-model")
+        elif not is_vosk and self.import_repo_id.text() == "local/vosk-model":
+            self.import_repo_id.setText("local/imported-model")
+
     def _choose_import_directory(self):
+        is_vosk = self.manual_runtime_combo.currentData() == "vosk"
         source = QFileDialog.getExistingDirectory(
-            self, "Import Faster-Whisper model directory", str(self.model_manager.registry.root)
+            self,
+            "Import Vosk model directory" if is_vosk else "Import Faster-Whisper model directory",
+            str(self.model_manager.registry.root),
         )
         if source:
             self._start_local_import(source, archive=False)
 
     def _choose_import_zip(self):
+        is_vosk = self.manual_runtime_combo.currentData() == "vosk"
         source, _selected = QFileDialog.getOpenFileName(
-            self, "Import model ZIP archive", str(self.model_manager.registry.root),
-            "ZIP archives (*.zip)",
+            self,
+            "Import Vosk model ZIP archive" if is_vosk else "Import Faster-Whisper model ZIP archive",
+            str(self.model_manager.registry.root),
+            "Vosk model ZIP (*.zip)" if is_vosk else "Faster-Whisper model ZIP (*.zip)",
         )
         if source:
             self._start_local_import(source, archive=True)
@@ -451,11 +501,22 @@ class ModelLibraryPage(QWidget):
         self.import_directory_button.setEnabled(False)
         self.import_zip_button.setEnabled(False)
         self.import_progress.setVisible(True)
+        is_vosk = self.manual_runtime_combo.currentData() == "vosk"
+        language_code = self.manual_language_combo.currentData() if is_vosk else None
+        runtime_label = "Vosk / Kaldi" if is_vosk else "Faster-Whisper / CTranslate2"
         self.import_status.setText(
-            f"Validating and importing {source} as {repo_id}…"
+            f"Validating and importing {source} as {repo_id} · {runtime_label}…"
         )
 
         def import_model(_emit):
+            if is_vosk:
+                if archive:
+                    return self.model_manager.import_vosk_zip(
+                        source, repo_id, language_code=language_code or None,
+                    )
+                return self.model_manager.import_vosk_directory(
+                    source, repo_id, language_code=language_code or None,
+                )
             if archive:
                 return self.model_manager.import_zip(source, repo_id)
             return self.model_manager.import_directory(source, repo_id)
@@ -986,10 +1047,15 @@ class ModelLibraryPage(QWidget):
         for repo_id, card in self.cards.items():
             card.set_installed(self._installed_by_id.get(repo_id))
 
-    def _filter_installed_cards(self, query):
-        needle = str(query or "").strip().casefold()
-        for card, searchable in self._installed_card_rows:
-            card.setVisible(not needle or needle in searchable)
+    def _filter_installed_cards(self, *_args):
+        needle = self.installed_search.text().strip().casefold()
+        runtime_filter = str(self.installed_runtime_filter.currentData() or "")
+        state_filter = str(self.installed_state_filter.currentData() or "")
+        for card, searchable, runtime, state in self._installed_card_rows:
+            matches_query = not needle or needle in searchable
+            matches_runtime = not runtime_filter or runtime == runtime_filter
+            matches_state = not state_filter or state == state_filter
+            card.setVisible(matches_query and matches_runtime and matches_state)
 
     def _show_installed_models(self, installed):
         self._clear_installed_cards()
@@ -1024,11 +1090,12 @@ class ModelLibraryPage(QWidget):
             title.setWordWrap(True)
             top.addWidget(title, 1)
 
-            state = "ACTIVE" if model["active"] else "INSTALLED"
+            state = "active" if model["active"] else "ready" if model["compatible"] else "repair"
+            state_label_text = {
+                "active": "ACTIVE", "ready": "INSTALLED", "repair": "REPAIR NEEDED",
+            }[state]
             state_color = "#36a47e" if model["compatible"] else "#d49a42"
-            if not model["compatible"]:
-                state = "REPAIR NEEDED"
-            state_label = QLabel(state)
+            state_label = QLabel(state_label_text)
             state_label.setStyleSheet(
                 f"font-size: 9px; font-weight: 750; color: {state_color}; "
                 "padding: 4px 7px; border: 1px solid "
@@ -1127,7 +1194,7 @@ class ModelLibraryPage(QWidget):
                 str(model.get("language_name") or model.get("language_code") or ""),
                 str(model.get("revision") or ""), str(model.get("path") or ""),
             )).casefold()
-            self._installed_card_rows.append((card, searchable))
+            self._installed_card_rows.append((card, searchable, runtime, state))
 
         self.installed_cards.setRowStretch((count + 1) // 2, 1)
         self._filter_installed_cards(self.installed_search.text())
