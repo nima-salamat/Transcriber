@@ -258,6 +258,7 @@ class ModelLibraryPage(QWidget):
         self._installed_by_id: dict[str, dict] = {}
         self._installed_card_rows: list[tuple[QWidget, str, str, str]] = []
         self._download_card_rows: list[tuple[QWidget, str, str, str]] = []
+        self._download_jobs: list[dict] = []
         self._downloads: dict[str, threading.Event] = {}
         self._download_task_ids: dict[str, str] = {}
         self._download_workers: dict[str, FunctionWorker] = {}
@@ -779,7 +780,15 @@ class ModelLibraryPage(QWidget):
     def _show_download_jobs_error(self, message):
         self.downloads_hint.setText(f"Could not load persistent download history: {message}")
 
+    def refresh_visual_theme(self):
+        """Rebuild token-colored model cards after the application theme changes."""
+        if self._download_jobs:
+            self._show_download_jobs(self._download_jobs)
+        if self._installed_by_id:
+            self._show_installed_models(list(self._installed_by_id.values()))
+
     def _show_download_jobs(self, jobs):
+        self._download_jobs = list(jobs)
         self.download_list.clear()
         self._download_card_rows.clear()
         active_states = {
