@@ -81,7 +81,7 @@ class ModelManager:
     def stop_download(self, model_id: str) -> bool:
         return (
             self.vosk_downloader.stop(model_id)
-            if self._is_vosk_id(model_id)
+            if self.is_vosk_model_id(model_id)
             else self.downloader.stop(model_id)
         )
 
@@ -133,7 +133,7 @@ class ModelManager:
         return self.vosk_catalog.inspect(model_id)
 
     def inspect(self, repo_id: str):
-        if self._is_vosk_id(repo_id):
+        if self.is_vosk_model_id(repo_id):
             return self.inspect_vosk(repo_id)
         model = self.hub.inspect(validate_repo_id(repo_id))
         report = validate_faster_whisper_files(item.name for item in model.files)
@@ -165,7 +165,7 @@ class ModelManager:
         task_id: str | None = None, metadata: dict | None = None,
     ) -> Path:
         model_id = str(model_id)
-        if not self._is_vosk_id(model_id):
+        if not self.is_vosk_model_id(model_id):
             model_id = "vosk/" + model_id
         with self._lock:
             if model_id == self._active_model_id:
@@ -193,7 +193,7 @@ class ModelManager:
         if job is None:
             raise KeyError(task_id)
         metadata = job.get("metadata") or {}
-        if metadata.get("runtime") == "vosk" or self._is_vosk_id(job["repo_id"]):
+        if metadata.get("runtime") == "vosk" or self.is_vosk_model_id(job["repo_id"]):
             return self.install_vosk(
                 job["repo_id"],
                 cancel_event=cancel_event,
