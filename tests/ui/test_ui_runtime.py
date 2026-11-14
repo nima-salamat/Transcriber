@@ -37,7 +37,7 @@ def make_window(tmp_path, monkeypatch):
     return MainWindow(paths, settings, history, database, manager), settings
 
 
-def test_native_shell_navigation_theme_and_geometry(qtbot, tmp_path):
+def test_native_shell_navigation_theme_and_geometry(qtbot, tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     window, settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
