@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import pytest
 from types import SimpleNamespace
 
+import pytest
+
+from transcriber.models.manager import ModelManager
 from transcriber.storage.database import Database
 from transcriber.storage.downloads import DownloadRepository
 
@@ -42,10 +44,7 @@ def test_removing_missing_download_task_is_idempotent(tmp_path):
     assert repository.delete("missing-task") is False
 
 
-
 def test_model_manager_reads_shared_download_ledger_once(tmp_path):
-    from transcriber.models.manager import ModelManager
-
     repository = _repository(tmp_path)
     repository.enqueue("hub-task", "publisher/model", "rev-a", "/models/hub")
     repository.enqueue(
@@ -61,7 +60,6 @@ def test_model_manager_reads_shared_download_ledger_once(tmp_path):
     jobs = manager.list_download_jobs()
 
     assert [job["task_id"] for job in jobs] == ["vosk-task", "hub-task"]
-
 
 def test_model_manager_removes_history_entry_without_deleting_model_files(tmp_path):
     from transcriber.models.manager import ModelManager
