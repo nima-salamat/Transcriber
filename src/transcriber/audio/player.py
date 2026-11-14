@@ -5,6 +5,8 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 
+from transcriber.audio.devices import audio_device_id
+
 
 class AudioPlayer(QObject):
     position_changed = Signal(int)
@@ -46,12 +48,6 @@ class AudioPlayer(QObject):
     def _enum_name(value) -> str:
         return str(getattr(value, "name", None) or value).split(".")[-1]
 
-    @staticmethod
-    def _device_id(device) -> str:
-        try:
-            return bytes(device.id()).decode("utf-8", "replace")
-        except (AttributeError, TypeError, ValueError):
-            return str(device.id())
 
     def set_output_device(self, device_id: str | None) -> bool:
         """Apply a saved output device preference; an empty ID means system default."""
@@ -66,7 +62,7 @@ class AudioPlayer(QObject):
                 device = next(
                     (
                         item for item in QMediaDevices.audioOutputs()
-                        if self._device_id(item) == self._preferred_output_device_id
+                        if audio_device_id(item) == self._preferred_output_device_id
                     ),
                     None,
                 )
