@@ -64,13 +64,6 @@ def test_huggingface_cleanup_removes_only_its_partial_and_revision(tmp_path, mon
         return cache_info
 
     monkeypatch.setattr(huggingface_hub, "scan_cache_dir", scan_cache_dir)
-    monkeypatch.setattr(
-        type(cache_info),
-        "delete_revisions",
-        lambda *_args, **_kwargs: FakeStrategy(),
-        raising=False,
-    )
-
     # scan_cache_dir returns its cache info object; attach the cache API method.
     cache_info.delete_revisions = lambda *revisions: (
         strategy_calls.append(("revisions", revisions)) or FakeStrategy()
