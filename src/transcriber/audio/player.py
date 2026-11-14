@@ -111,6 +111,7 @@ class AudioPlayer(QObject):
         self.status_changed.emit("No audio loaded")
 
     def stop(self) -> None:
+        """Stop playback without clearing the currently loaded source."""
         self.player.stop()
 
     def play_pause(self) -> None:
