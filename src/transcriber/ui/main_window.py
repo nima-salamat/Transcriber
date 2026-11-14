@@ -1087,6 +1087,7 @@ class MainWindow(QMainWindow):
             else:
                 self.recording_page.cancel_recording()
         self.audio_cleanup_page.shutdown()
+        self.audio_page.shutdown()
         self.batch_page.shutdown()
         self.settings_store.update(
             geometry=bytes(self.saveGeometry().toBase64()).decode("ascii"),
