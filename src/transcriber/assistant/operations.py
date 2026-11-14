@@ -15,7 +15,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, Callable
@@ -38,8 +38,8 @@ _TERMINAL_STATES = {
     OperationState.TIMED_OUT,
 }
 _SECRET_PATTERNS = (
-    (re.compile(r"(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]+"), r"\\1[redacted]"),
-    (re.compile(r"(?i)(access[_-]?token|refresh[_-]?token|api[_-]?key)(\\s*[:=]\\s*)[^\\s,;]+"), r"\\1\\2[redacted]"),
+    (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+"), r"\1[redacted]"),
+    (re.compile(r"(?i)(access[_-]?token|refresh[_-]?token|api[_-]?key)(\s*[:=]\s*)[^\s,;]+"), r"\1\2[redacted]"),
 )
 
 
@@ -294,6 +294,10 @@ class OperationManager:
         with self._lock:
             item = self._operations.get(operation_id)
             if item is None or item.state in _TERMINAL_STATES:
+                return
+            # Avoid a false timeout when the handler has finished but its
+            # completion callback is waiting to acquire this lock.
+            if item.future is not None and item.future.done():
                 return
             item.deadline_expired = True
             item.cancellation_requested = True
