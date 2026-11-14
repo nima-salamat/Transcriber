@@ -75,10 +75,40 @@ class ModelManager:
         return repository.list(limit=max(1, min(int(limit), 2000)))
 
     def remove_download_job(self, task_id: str) -> bool:
-        """Remove a failed/completed/cancelled task from history, never its model files."""
+        """Remove a terminal task and discard only its own incomplete download data."""
         repository = self.job_repository
         if repository is None:
             raise RuntimeError("Persistent download history is unavailable.")
+        job = repository.get(task_id)
+        if job is None:
+            return False
+
+        state = str(job.get("state") or "").casefold()
+        repo_id = str(job.get("repo_id") or "")
+        active_states = {
+            "queued", "inspecting", "downloading", "validating", "installing",
+            "pausing", "stopping", "cancelling",
+        }
+        if state in active_states:
+            raise RuntimeError(
+                f"Cannot delete files while {repo_id} is {state}. Cancel the active task first."
+            )
+        with self._lock:
+            if repo_id in self._installing:
+                raise RuntimeError(
+                    f"Cannot delete files while the model operation for {repo_id} is still finishing."
+                )
+
+        # A completed installation is not a partial download: removing its history
+        # entry must never remove its installed model directory.
+        if state not in {"installed", "completed"}:
+            metadata = job.get("metadata") or {}
+            is_vosk = metadata.get("runtime") == "vosk" or self.is_vosk_model_id(repo_id)
+            if is_vosk:
+                self.vosk_downloader.remove_download_artifacts(job)
+            else:
+                self.downloader.remove_download_artifacts(job)
+
         return repository.delete(task_id)
 
     def pause_download(self, model_id: str) -> bool:
