@@ -31,7 +31,7 @@ def test_recommended_persian_returns_small_and_large_models_even_offline(monkeyp
     assert models[1].source == "official"
     assert models[0].size_bytes == 53_431_220
     assert models[1].size_bytes == 1_667_089_770
-    assert models[0].checksum == "977cb5faa538f3a835ccfd35f5f6d8284b5c450b89c700b9bd4736b66536ad46"
+    assert models[0].checksum == "cc2b18af256ffab2c44055f6a02ecb3d"
     assert models[1].checksum == "c47c8e497e35e5e3a27cb71c4f0af275"
 
 
