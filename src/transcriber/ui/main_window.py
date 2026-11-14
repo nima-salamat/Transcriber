@@ -336,6 +336,7 @@ class MainWindow(QMainWindow):
         self.home_page.open_transcript.connect(self.open_transcript)
         self.history_page.open_transcript.connect(self.open_transcript)
         self.recording_page.audio_ready.connect(self.open_recording_in_transcriber)
+        self.recording_page.open_library.connect(self._show_recordings_library)
         self.audio_page.open_audio.connect(self.open_audio_library_file)
         self.audio_cleanup_page.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
         self.transcription_page.audio_changed.connect(self._load_waveform)
@@ -977,6 +978,10 @@ class MainWindow(QMainWindow):
         self.navigate("transcription")
         if self.recording_page.auto_transcribe.isChecked():
             QTimer.singleShot(0, self.transcription_page.start_transcription)
+
+    def _show_recordings_library(self):
+        self.audio_page.refresh()
+        self.navigate("audio")
 
     def open_audio_library_file(self, path: str):
         self.transcription_page.set_audio(path)
