@@ -5,6 +5,7 @@ import io
 import zipfile
 
 from transcriber.models import vosk
+from transcriber.models.manager import ModelManager
 from transcriber.models.registry import ModelRegistry
 
 
@@ -117,3 +118,34 @@ def test_vosk_download_installs_model_from_deeply_nested_archive(tmp_path, monke
     assert (installed / "am" / "final.mdl").read_bytes() == b"model"
     assert (installed / "conf" / "fbank.conf").is_file()
     assert vosk.validate_vosk_model_directory(installed).compatible
+
+
+
+def test_manual_vosk_zip_import_uses_the_inner_model_root(tmp_path):
+    archive_path = tmp_path / "nested-vosk-model.zip"
+    model_name = "vosk-model-small-fa-0.42"
+    prefix = f"mirror/package/{model_name}/"
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(prefix + "am/final.mdl", b"model")
+        archive.writestr(prefix + "conf/model.conf", "--beam=13")
+        archive.writestr(prefix + "conf/mfcc.conf", "--sample-frequency=16000")
+        archive.writestr(prefix + "graph/HCLG.fst", b"graph")
+        archive.writestr(prefix + "graph/words.txt", "<eps> 0\\n")
+
+    registry = ModelRegistry(tmp_path / "models", tmp_path / "registry.json")
+    manager = object.__new__(ModelManager)
+    import threading
+
+    manager.registry = registry
+    manager._lock = threading.RLock()
+    manager._installing = set()
+    manager._active_model_id = None
+
+    imported = manager.import_vosk_zip(
+        archive_path, "local/vosk-test", language_code="fa"
+    )
+
+    assert registry.get_path("local/vosk-test") == imported
+    assert (imported / "am" / "final.mdl").read_bytes() == b"model"
+    assert not (imported / "mirror").exists()
+    assert vosk.validate_vosk_model_directory(imported).compatible
