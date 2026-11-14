@@ -16,6 +16,7 @@ from transcriber.models.manager import ModelManager
 from transcriber.models.registry import ModelRegistry
 from transcriber.storage.database import Database
 from transcriber.storage.history import HistoryRepository
+from transcriber.storage.downloads import DownloadRepository
 from transcriber.storage.recordings import RecordingRepository
 
 
@@ -32,17 +33,21 @@ def build_services():
     database = Database(paths.database)
     history = HistoryRepository(database)
     recording_history = RecordingRepository(database)
+    download_history = DownloadRepository(database)
+    download_history.mark_interrupted()
     hub_token = os.environ.get("HF_TOKEN")
     hub = HuggingFaceHubClient(token=hub_token)
     registry = ModelRegistry(paths.models, paths.registry)
     downloader = ModelDownloader(
         hub, registry, paths.cache / "huggingface",
         max_concurrent=config.download_concurrency,
+        job_repository=download_history,
     )
     model_manager = ModelManager(registry, hub, downloader)
     logger.info("Transcriber %s initialized; data directory: %s", __version__, paths.data)
     return {
         "paths": paths, "settings": settings, "database": database,
         "history": history, "recording_history": recording_history,
+        "download_history": download_history,
         "model_manager": model_manager, "logger": logger,
     }

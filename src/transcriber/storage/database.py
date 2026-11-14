@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class Database:
@@ -84,6 +84,21 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_recordings_recorded_at
                     ON recordings(recorded_at DESC);
+                CREATE TABLE IF NOT EXISTS model_download_jobs (
+                    task_id TEXT PRIMARY KEY,
+                    repo_id TEXT NOT NULL,
+                    revision TEXT,
+                    target_path TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    downloaded_bytes INTEGER NOT NULL DEFAULT 0,
+                    total_bytes INTEGER,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_model_download_jobs_updated
+                    ON model_download_jobs(updated_at DESC);
                 """
             )
             segment_columns = {
