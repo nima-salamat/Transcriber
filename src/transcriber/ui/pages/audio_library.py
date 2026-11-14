@@ -186,7 +186,13 @@ class AudioLibraryPage(QWidget):
         self.play_button.setIcon(self.icons.icon("play", "#ffffff", 20))
         self.play_button.setIconSize(QSize(20, 20))
         self.play_button.setMinimumSize(56, 48)
-        self.play_button.setObjectName("Primary")
+        self.play_button.setObjectName("AudioPlayPrimary")
+        self.play_button.setStyleSheet(
+            "QPushButton#AudioPlayPrimary { background: #315fae; color: white; "
+            "border: 1px solid #315fae; border-radius: 11px; padding: 8px 18px; }"
+            "QPushButton#AudioPlayPrimary:hover { background: #244d91; border-color: #244d91; }"
+            "QPushButton#AudioPlayPrimary:disabled { background: #8794a8; border-color: #8794a8; }"
+        )
         self.play_button.setToolTip("Play recording")
         self.play_button.clicked.connect(self.player.play_pause)
         transport.addWidget(self.play_button)
@@ -545,7 +551,8 @@ class AudioLibraryPage(QWidget):
         if answer != QMessageBox.Yes:
             return
         try:
-            self.player.stop()
+            if self._selected_recording_id == recording_id:
+                self.player.stop()
             self.recording_history.delete(recording_id, delete_file=True)
         except Exception as exc:
             QMessageBox.warning(self, "Could not delete recording", str(exc))
