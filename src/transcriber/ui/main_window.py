@@ -359,7 +359,9 @@ class MainWindow(QMainWindow):
             lambda permission, enabled: self.action_registry.set_permission(AgentPermission(permission), enabled)
         )
         self.settings_page.agent_settings_saved.connect(self.assistant_panel.sync_settings)
-        self.model_page.default_model_changed.connect(lambda _repo_id: self.transcription_page.refresh_models())
+        self.model_page.default_model_changed.connect(
+            lambda _repo_id: self.transcription_page.refresh_models(select_default=True)
+        )
 
 
     def _register_command(self, title, category, callback, shortcut=None):
@@ -906,7 +908,9 @@ class MainWindow(QMainWindow):
         for key, button in self.nav_buttons.items():
             button.setChecked(key == page_id)
         self.settings_store.update(last_page=page_id)
-        if page_id == "home":
+        if page_id == "transcription":
+            self.transcription_page.refresh_models()
+        elif page_id == "home":
             self.home_page.refresh()
         elif page_id == "models":
             self.model_page.refresh_installed()
