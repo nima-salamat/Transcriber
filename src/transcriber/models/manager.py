@@ -15,6 +15,7 @@ from transcriber.models.registry import ModelRegistry
 from transcriber.models.vosk import (
     VoskModelCatalog,
     VoskModelDownloader,
+    _find_vosk_model_directory,
     validate_vosk_model_directory,
 )
 
@@ -295,11 +296,14 @@ class ModelManager:
         if source.is_symlink() or not source.is_dir():
             raise ValueError("Choose a real Vosk model directory, not a symbolic link.")
         source = source.resolve(strict=True)
-        report = validate_vosk_model_directory(source)
-        if not report.compatible:
+        model_root, report = _find_vosk_model_directory(source)
+        if model_root is None or not report.compatible:
             raise ValueError(
                 report.reason + " Missing: " + ", ".join(report.missing_files)
             )
+        # Import the model folder itself, not any wrapper folders inside the ZIP
+        # that may have been added by a mirror or a third-party packaging tool.
+        source = model_root
         target = self.registry.root / self.registry.directory_name(repo_id)
         if target.exists() or target.is_symlink():
             raise FileExistsError(
@@ -462,22 +466,15 @@ class ModelManager:
                     if written != entry.file_size:
                         raise ValueError(f"Vosk ZIP entry size mismatch: {raw_name}")
 
-            directories = [extraction]
-            directories.extend(
-                item for item in extraction.rglob("*")
-                if item.is_dir() and not item.is_symlink()
-            )
-            model_roots = [
-                item for item in directories
-                if validate_vosk_model_directory(item).compatible
-            ]
-            if len(model_roots) != 1:
+            model_root, report = _find_vosk_model_directory(extraction)
+            if model_root is None or not report.compatible:
                 raise ValueError(
-                    "The ZIP must contain exactly one valid Vosk model directory; "
-                    f"found {len(model_roots)}."
+                    "The ZIP does not contain a compatible Vosk model directory. "
+                    + report.reason
+                    + " Missing: " + ", ".join(report.missing_files)
                 )
             return self._publish_imported_vosk_directory(
-                model_roots[0], repo_id, language_code=language_code,
+                model_root, repo_id, language_code=language_code,
             )
         finally:
             shutil.rmtree(extraction, ignore_errors=True)
