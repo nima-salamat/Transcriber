@@ -226,3 +226,19 @@ def test_model_library_uses_pixel_scrolling_and_fixed_card_heights():
     assert "row.setFixedHeight(236)" in source
     assert "card.setFixedHeight(360)" in source
     assert "self.installed_cards.setRowStretch(row_index, 0)" in source
+
+
+
+def test_download_cards_reserve_their_full_fixed_height_in_the_list_model():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "src" / "transcriber" / "ui" / "pages" / "models.py"
+    ).read_text(encoding="utf-8")
+
+    assert "row.setFixedHeight(252)" in source
+    assert "item.setSizeHint(QSize(0, row.height()))" in source
+    assert source.index("self.download_list.setItemWidget(item, row)") < source.index(
+        "item.setSizeHint(QSize(0, row.height()))"
+    )
