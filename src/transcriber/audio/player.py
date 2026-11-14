@@ -20,6 +20,7 @@ class AudioPlayer(QObject):
         self._devices = QMediaDevices(self)
         self._source_path: Path | None = None
         self._output_available = False
+        self._preferred_output_device_id = ""
 
         self.player.setAudioOutput(self.output)
         self.output.setVolume(0.75)
@@ -45,19 +46,46 @@ class AudioPlayer(QObject):
     def _enum_name(value) -> str:
         return str(getattr(value, "name", None) or value).split(".")[-1]
 
-    def _select_output_device(self, *_args) -> bool:
-        """Select the current Windows/default Qt output device and expose failure."""
+    @staticmethod
+    def _device_id(device) -> str:
         try:
-            device = QMediaDevices.defaultAudioOutput()
-            if device.isNull():
+            return bytes(device.id()).decode("utf-8", "replace")
+        except (AttributeError, TypeError, ValueError):
+            return str(device.id())
+
+    def set_output_device(self, device_id: str | None) -> bool:
+        """Apply a saved output device preference; an empty ID means system default."""
+        self._preferred_output_device_id = str(device_id or "")
+        return self._select_output_device()
+
+    def _select_output_device(self, *_args) -> bool:
+        """Apply the preferred output device, falling back to the current system default."""
+        try:
+            device = None
+            if self._preferred_output_device_id:
+                device = next(
+                    (
+                        item for item in QMediaDevices.audioOutputs()
+                        if self._device_id(item) == self._preferred_output_device_id
+                    ),
+                    None,
+                )
+            preferred_missing = bool(self._preferred_output_device_id and device is None)
+            if device is None:
+                device = QMediaDevices.defaultAudioOutput()
+            if device is None or device.isNull():
                 self._output_available = False
                 self.status_changed.emit("No audio output device is available")
                 return False
             if self.output.device() != device:
                 self.output.setDevice(device)
             self._output_available = True
+            if preferred_missing:
+                self.status_changed.emit(
+                    "Saved playback device is unavailable; using the system default output"
+                )
             return True
-        except (RuntimeError, TypeError) as exc:
+        except (RuntimeError, TypeError, ValueError) as exc:
             self._output_available = False
             self.status_changed.emit(f"Audio output unavailable: {exc}")
             return False
