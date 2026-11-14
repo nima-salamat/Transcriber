@@ -4,7 +4,7 @@
 
 The import boundary validates that a file exists, is non-empty, and has a supported extension: WAV, MP3, M4A, AAC, FLAC, OGG, OPUS, or WMA. Faster-Whisper decodes the selected file through its PyAV/FFmpeg runtime. The exact codec/container combination still depends on the installed PyAV build; an extension alone cannot guarantee that every variant is decodable. Decode errors are reported by the engine instead of falling back to a network service.
 
-The optional Google adapter reads formats supported by SpeechRecognition directly and can use pydub/FFmpeg for conversion. It uses SpeechRecognition's `recognize_google` method; this is an online Google recognition endpoint, not the authenticated Google Cloud Speech-to-Text API. It is only constructed after local-only mode has been disabled and cloud consent has been explicitly checked.
+The optional Google adapter uses the official Google Cloud Speech-to-Text V2 Python client with Application Default Credentials. It requires a project ID, a selected V2 region/model, API enablement, billing and sufficient IAM permissions. Local audio is normalized with FFmpeg into PCM WAV chunks of at most 50 seconds and sent inline to the synchronous V2 Recognize method; no Cloud Storage bucket is used. Each request remains below the documented 60-second / 10 MB synchronous limits. Cloud use is gated by both Local-only mode being disabled and explicit cloud consent.
 
 ## Microphone capture
 

@@ -19,5 +19,10 @@ class EngineRegistry:
                 cpu_threads=getattr(settings, "cpu_threads", 0),
             )
         if engine_id == "google-cloud":
-            return GoogleCloudEngine(consent_granted=cloud_consent)
+            return GoogleCloudEngine(
+                consent_granted=cloud_consent,
+                project_id=getattr(settings, "google_cloud_project", None),
+                location=getattr(settings, "google_cloud_location", "eu"),
+                model=getattr(settings, "google_cloud_model", "chirp_3"),
+            )
         raise EngineUnavailableError(f"Unsupported transcription engine: {engine_id}")

@@ -26,6 +26,9 @@ class AppSettings:
     word_timestamps: bool = False
     local_only: bool = True
     cloud_consent: bool = False
+    google_cloud_project: str = ""
+    google_cloud_location: str = "eu"
+    google_cloud_model: str = "chirp_3"
     model_directory: str | None = None
     recording_directory: str | None = None
     retain_source_audio: bool = True
@@ -116,6 +119,13 @@ class AppSettings:
         self.wake_model_directory = str(self.wake_model_directory) if self.wake_model_directory else None
         self.local_only = as_bool(self.local_only, True)
         self.cloud_consent = as_bool(self.cloud_consent, False)
+        self.google_cloud_project = str(self.google_cloud_project or "").strip()[:128]
+        self.google_cloud_location = str(self.google_cloud_location or "eu").strip().casefold()[:64]
+        self.google_cloud_model = str(self.google_cloud_model or "chirp_3").strip()
+        if not self.google_cloud_location or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789-" for ch in self.google_cloud_location):
+            self.google_cloud_location = "eu"
+        if self.google_cloud_model not in {"chirp_3", "long", "short"}:
+            self.google_cloud_model = "chirp_3"
         self.retain_source_audio = as_bool(self.retain_source_audio, True)
         self.word_timestamps = as_bool(self.word_timestamps, False)
         if self.theme not in {"dark", "light", "system"}:
