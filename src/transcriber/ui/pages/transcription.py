@@ -95,7 +95,15 @@ class TranscriptionPage(QWidget):
 
         recognition_options = QHBoxLayout()
         self.model_combo = QComboBox()
+        self.model_combo.setMinimumContentsLength(28)
+        self.model_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.refresh_models()
+        self.default_model_button = QPushButton("Set as default")
+        self.default_model_button.setToolTip(
+            "Make the selected installed Faster-Whisper model the default for new transcriptions."
+        )
+        self.default_model_button.clicked.connect(self.set_selected_model_as_default)
+        self.model_combo.currentIndexChanged.connect(self._update_default_model_control)
         self.language_combo = QComboBox()
         self.language_combo.addItem("Auto detect (local engines)", "auto")
         for code, name in [("en", "English"), ("fa", "Persian"), ("de", "German"),
@@ -109,6 +117,7 @@ class TranscriptionPage(QWidget):
         self.vad_check.setChecked(self.settings_store.settings.vad_filter)
         recognition_options.addWidget(QLabel("Model"))
         recognition_options.addWidget(self.model_combo, 2)
+        recognition_options.addWidget(self.default_model_button)
         recognition_options.addWidget(QLabel("Language"))
         recognition_options.addWidget(self.language_combo)
         recognition_options.addWidget(QLabel("Beam"))
@@ -244,6 +253,8 @@ class TranscriptionPage(QWidget):
     def _update_engine_controls(self, *_args):
         cloud_selected = self.engine_combo.currentData() == "google-cloud"
         self.model_combo.setEnabled(not cloud_selected)
+        if hasattr(self, "default_model_button"):
+            self._update_default_model_control()
         self.beam_spin.setEnabled(not cloud_selected)
         self.vad_check.setEnabled(not cloud_selected)
         self.task_combo.setEnabled(not cloud_selected)
@@ -267,18 +278,63 @@ class TranscriptionPage(QWidget):
     def segments(self, values):
         self.document.replace_all(list(values or []))
 
-    def refresh_models(self):
+    def refresh_models(self, *, select_default: bool = False):
         selected = self.model_combo.currentData() if hasattr(self, "model_combo") else None
+        self.model_combo.blockSignals(True)
         self.model_combo.clear()
         installed = self.model_manager.installed(include_sizes=False)
-        for model in installed:
-            if model.get("compatible"):
-                self.model_combo.addItem(model["repo_id"], model["repo_id"])
+        models = sorted(
+            (item for item in installed if item.get("compatible")),
+            key=lambda item: str(item["repo_id"]).casefold(),
+        )
         preferred = self.settings_store.settings.default_model
-        for index in range(self.model_combo.count()):
-            if self.model_combo.itemData(index) in {selected, preferred}:
-                self.model_combo.setCurrentIndex(index)
-                break
+        preferred_is_installed = any(item["repo_id"] == preferred for item in models)
+        if preferred_is_installed:
+            models.sort(key=lambda item: (item["repo_id"] != preferred, str(item["repo_id"]).casefold()))
+
+        for model in models:
+            repo_id = model["repo_id"]
+            label = f"★  {repo_id}  ·  DEFAULT" if repo_id == preferred else repo_id
+            self.model_combo.addItem(label, repo_id)
+            self.model_combo.setItemData(
+                self.model_combo.count() - 1,
+                f"{repo_id} — {'Default model' if repo_id == preferred else 'Installed Faster-Whisper model'}",
+                Qt.ToolTipRole,
+            )
+
+        if not models:
+            self.model_combo.addItem("No compatible models installed", None)
+            self.model_combo.setItemData(
+                0, "Install or import a Faster-Whisper model from Model Library.", Qt.ToolTipRole
+            )
+        else:
+            target = preferred if select_default or selected not in {item["repo_id"] for item in models} else selected
+            index = self.model_combo.findData(target)
+            self.model_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.model_combo.blockSignals(False)
+        self._update_default_model_control()
+
+    def _update_default_model_control(self, *_args):
+        if not hasattr(self, "default_model_button"):
+            return
+        selected = self.model_combo.currentData()
+        configured_default = self.settings_store.settings.default_model
+        is_default = bool(selected and selected == configured_default)
+        cloud_selected = self.engine_combo.currentData() == "google-cloud"
+        self.default_model_button.setText("★  Default model" if is_default else "Set as default")
+        self.default_model_button.setEnabled(bool(selected) and not is_default and not cloud_selected)
+        self.default_model_button.setToolTip(
+            f"{selected} is the default model." if is_default
+            else "Set the selected installed Faster-Whisper model as the default for future jobs."
+        )
+
+    def set_selected_model_as_default(self):
+        repo_id = self.model_combo.currentData()
+        if not repo_id:
+            return
+        self.settings_store.update(default_model=repo_id)
+        self.refresh_models(select_default=True)
+        self.status_message.emit(f"Default Faster-Whisper model set to {repo_id}")
 
     def choose_audio(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -356,7 +412,9 @@ class TranscriptionPage(QWidget):
         )
         changes = {"word_timestamps": self.word_timestamps.isChecked()}
         if not cloud_selected:
-            changes.update(beam_size=self.beam_spin.value(), vad_filter=self.vad_check.isChecked(), default_model=repo_id)
+            # Picking a model for this one job must not silently change the
+            # separately configured default model.
+            changes.update(beam_size=self.beam_spin.value(), vad_filter=self.vad_check.isChecked())
         self.settings_store.update(**changes)
         audio_path = self.audio_path
         cancel_event = threading.Event()
