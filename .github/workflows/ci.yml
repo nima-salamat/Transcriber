@@ -39,7 +39,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,documents]"
+      - name: Ruff lint
+        run: python -m ruff check src tests
+      - name: Ruff format check
+        run: |
+          python -m ruff format --check src/transcriber/audio/imports.py
+          python -m ruff format --check src/transcriber/ui/components/workspace_popups.py
+          python -m ruff format --check tests/unit/test_media_import.py
+          python -m ruff format --check tests/unit/test_dispatcher_future_lifecycle.py
       - name: Compile source and tests
         run: python -m compileall -q src tests
+      - name: Build and validate wheel
+        run: |
+          python -m pip install build
+          python -m build --wheel --no-isolation
+          python -m pip install --no-deps --target "$RUNNER_TEMP/transcriber-wheel-check" dist/*.whl
       - name: Run unit, integration and UI tests
         run: python -X faulthandler -m pytest -q

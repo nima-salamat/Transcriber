@@ -61,3 +61,18 @@ def test_directory_import_expands_supported_media_only(tmp_path):
     report = collect_media_paths([folder])
     assert set(report.accepted) == {first.resolve(), second.resolve()}
     assert report.rejected == ()
+
+
+
+def test_empty_drop_returns_empty_report():
+    report = collect_media_paths([])
+    assert report.accepted == ()
+    assert report.rejected == ()
+    assert report.duplicates == ()
+
+
+def test_invalid_path_syntax_is_reported_not_raised():
+    report = collect_media_paths(["bad\\0path.wav"])
+    assert report.accepted == ()
+    assert len(report.rejected) == 1
+    assert report.rejected[0][0] == "bad\\0path.wav"
