@@ -26,9 +26,9 @@ class TranscriptEditorPage(QWidget):
     document_changed = Signal(object)
     seek_requested = Signal(float)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, document=None):
         super().__init__(parent)
-        self.document = TranscriptDocument()
+        self.document = document or TranscriptDocument()
         self.history = CommandHistory(self.document)
         self._busy_refresh = False
         root = QVBoxLayout(self)
@@ -129,10 +129,11 @@ class TranscriptEditorPage(QWidget):
 
     def load_segments(self, segments, *, source_path=None, language=None, duration=0.0, original_text=None):
         cloned = deepcopy(list(segments or []))
-        self.document = TranscriptDocument(
-            segments=cloned, source_path=str(source_path) if source_path else None,
-            language=language, duration=duration, original_text=original_text or "",
-        )
+        self.document.replace_all(cloned)
+        self.document.source_path = str(source_path) if source_path else None
+        self.document.language = language
+        self.document.duration = max(0.0, float(duration or 0.0))
+        self.document.original_text = original_text or self.document.text
         self.history = CommandHistory(self.document)
         self.refresh()
 

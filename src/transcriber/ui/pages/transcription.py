@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from transcriber.audio.decoder import decoder_help, validate_audio_file
 from transcriber.audio.player import AudioPlayer
+from transcriber.editor.document import TranscriptDocument
 from transcriber.engines.faster_whisper import FasterWhisperEngine
 from transcriber.transcription.exporters import export_transcript
 from transcriber.transcription.segments import (
@@ -28,16 +29,18 @@ class TranscriptionPage(QWidget):
     status_message = Signal(str)
     audio_changed = Signal(str)
     transcript_changed = Signal(object, str, str, float, str)
+    segments_edited = Signal(object)
 
-    def __init__(self, paths, settings_store, history, model_manager, thread_pool, parent=None):
+    def __init__(self, paths, settings_store, history, model_manager, thread_pool, parent=None, *, document=None):
         super().__init__(parent)
         self.paths = paths
         self.settings_store = settings_store
         self.history = history
         self.model_manager = model_manager
         self.thread_pool = thread_pool
+        self.document = document or TranscriptDocument()
         self.audio_path: Path | None = None
-        self.segments: list[TranscriptSegment] = []
+        self.segments = []
         self.transcript_id: str | None = None
         self.engine: FasterWhisperEngine | None = None
         self.cancel_event: threading.Event | None = None
@@ -201,6 +204,14 @@ class TranscriptionPage(QWidget):
         self.editor.textChanged.connect(self._update_word_count)
         self.player.position_changed.connect(self._sync_transcript_to_audio)
         self.player.error_occurred.connect(lambda message: self.status_message.emit(f"Audio player: {message}"))
+
+    @property
+    def segments(self) -> list[TranscriptSegment]:
+        return self.document.segments
+
+    @segments.setter
+    def segments(self, values):
+        self.document.replace_all(list(values or []))
 
     def refresh_models(self):
         selected = self.model_combo.currentData() if hasattr(self, "model_combo") else None
@@ -389,6 +400,7 @@ class TranscriptionPage(QWidget):
             self.segments = reconcile_segments(self._editor_base_text, current, self.segments)
             self._editor_base_text = current
             self._rebuild_segment_ranges()
+            self.segments_edited.emit(list(self.segments))
         self._update_word_count()
         self.autosave_timer.start()
 

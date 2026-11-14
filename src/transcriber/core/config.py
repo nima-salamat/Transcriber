@@ -33,6 +33,7 @@ class AppSettings:
     geometry: str | None = None
     window_state: str | None = None
     sidebar_collapsed: bool = False
+    sidebar_visible: bool = True
     inspector_visible: bool = True
     timeline_visible: bool = True
     opencode_path: str | None = None
@@ -82,6 +83,7 @@ class AppSettings:
             return default
 
         self.sidebar_collapsed = as_bool(self.sidebar_collapsed, False)
+        self.sidebar_visible = as_bool(self.sidebar_visible, True)
         self.inspector_visible = as_bool(self.inspector_visible, True)
         self.timeline_visible = as_bool(self.timeline_visible, True)
         self.wake_enabled = as_bool(self.wake_enabled, False)

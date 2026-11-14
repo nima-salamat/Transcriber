@@ -27,7 +27,7 @@ The dependency direction is UI → application services/repositories/engine inte
 
 ## Threading and process model
 
-The GUI uses a bounded `QThreadPool`. Hub queries, model inspection/installation/loading, transcription inference, batch jobs, waveform generation, audio cleanup, storage accounting and OpenCode ACP requests run outside the Qt main thread. Worker signals return results/errors to the GUI thread. Agent/MCP actions use a Qt queued dispatcher; they never mutate a `QWidget` from a foreign thread.
+The GUI uses a bounded `QThreadPool`. Hub queries, model inspection/installation/loading, transcription inference, batch jobs, waveform generation, audio cleanup, storage accounting and OpenCode ACP requests run outside the Qt main thread. Worker signal QObjects are retained independently from auto-deleted QRunnables until queued completion callbacks drain on the GUI thread. Agent/MCP actions use a Qt queued dispatcher; they never mutate a `QWidget` from a foreign thread.
 
 The OpenCode ACP client starts `[opencode, acp]` in the selected absolute working directory and speaks newline-delimited JSON-RPC over stdin/stdout. Session IDs are persisted per user and reused when the working directory matches. MCP server definitions are passed when the ACP session is created or loaded. A prompt, notification stream and session cancellation are supported. Automatic process restart/reconnection is not yet implemented.
 
@@ -43,7 +43,7 @@ The production Faster-Whisper application service still uses its existing single
 
 ## Persistence
 
-SQLite is the source of truth for transcript history and ordered timed segments. Schema versions are explicit; migrations add editor metadata, including stable IDs, speaker, comments, review flags and word timings. Transcript autosaves capture immutable snapshots and are coalesced per project. The metadata backup archive excludes large audio and model directories.
+SQLite is the source of truth for persisted transcript history and ordered timed segments. Within a running workspace, one `TranscriptDocument` instance is shared by New Transcription and Transcript Editor; subtitle and timeline widgets are projections rather than competing domain documents. Schema versions are explicit; migrations add editor metadata, including stable IDs, speaker, comments, review flags and word timings. Transcript autosaves capture immutable snapshots and are coalesced per project. The metadata backup archive excludes large audio and model directories.
 
 The Batch UI currently keeps its queue in memory and processes one file at a time. Restart recovery and a unified persistent application job database remain future work.
 
