@@ -448,6 +448,48 @@ class VoskModelCatalog:
         return [item for item in models if not item.obsolete]
 
     @staticmethod
+    def _pinned_persian_official_models() -> tuple[VoskModelInfo, ...]:
+        """Known-good official Farsi 0.42 entries used when the live catalogue is offline."""
+        return (
+            VoskModelInfo(
+                repo_id="vosk/vosk-model-small-fa-0.42",
+                name="vosk-model-small-fa-0.42",
+                language="fa",
+                language_name="Farsi",
+                model_type="small",
+                size_bytes=53_431_220,
+                size_text="51.0 MiB",
+                md5="cc2b18af256ffab2c44055f6a02ecb3d",
+                url=MODEL_PAGE_URL,
+                download_url="https://alphacephei.com/vosk/models/vosk-model-small-fa-0.42.zip",
+                version="0.42",
+                license_name="Apache-2.0",
+                description=(
+                    "Persian / Farsi · lightweight Vosk / Kaldi model · 51.0 MiB · "
+                    "official AlphaCephei release for desktop and mobile use."
+                ),
+            ),
+            VoskModelInfo(
+                repo_id="vosk/vosk-model-fa-0.42",
+                name="vosk-model-fa-0.42",
+                language="fa",
+                language_name="Farsi",
+                model_type="big",
+                size_bytes=1_667_089_770,
+                size_text="1.6 GiB",
+                md5="c47c8e497e35e5e3a27cb71c4f0af275",
+                url=MODEL_PAGE_URL,
+                download_url="https://alphacephei.com/vosk/models/vosk-model-fa-0.42.zip",
+                version="0.42",
+                license_name="Apache-2.0",
+                description=(
+                    "Persian / Farsi · large-vocabulary Vosk / Kaldi model · 1.6 GiB · "
+                    "official AlphaCephei release with a larger decoding vocabulary."
+                ),
+            ),
+        )
+
+    @staticmethod
     def _huggingface_curated_models() -> tuple[VoskModelInfo, ...]:
         """Pinned Vosk ZIP mirrors whose files are validated after extraction."""
         return (
@@ -457,9 +499,11 @@ class VoskModelCatalog:
                 language="fa",
                 language_name="Farsi / Persian",
                 model_type="small",
-                size_bytes=0,
-                size_text="53.4 MB",
-                md5="",
+                # Exact LFS blob size from the pinned Hugging Face file; do not
+                # leave this unknown or let a redirect redefine the model's size.
+                size_bytes=53_431_220,
+                size_text="51.0 MiB · 53.4 MB",
+                md5="cc2b18af256ffab2c44055f6a02ecb3d",
                 url=(
                     "https://huggingface.co/localstack/vosk-models/blob/134b459/"
                     "vosk-model-small-fa-0.42.zip"
@@ -477,9 +521,9 @@ class VoskModelCatalog:
                 license_name="Apache-2.0 (upstream Vosk model)",
                 author="LocalStack",
                 description=(
-                    "Persian / Farsi · lightweight Vosk / Kaldi model · 53.4 MB · "
-                    "Hugging Face ZIP mirror. The archive is SHA-256 checked and its "
-                    "internal model layout is validated before installation."
+                    "Persian / Farsi · lightweight Vosk / Kaldi model · 51.0 MiB (53.4 MB). "
+                    "Pinned Hugging Face ZIP mirror with a fixed 53,431,220-byte archive size, "
+                    "SHA-256 verification and Vosk directory-layout validation."
                 ),
             ),
         )
@@ -493,15 +537,18 @@ class VoskModelCatalog:
                 include_obsolete=include_obsolete, refresh=refresh,
             )
         except RuntimeError:
-            # Keep pinned Hugging Face mirrors discoverable when the AlphaCephei
-            # catalogue is temporarily unavailable.
-            if not include_huggingface:
-                raise
+            # Keep the two known-good current Persian models discoverable even when
+            # AlphaCephei's live catalogue cannot be reached. The Hugging Face mirror
+            # is added below as a separately identifiable download source.
             with self._lock:
                 models = [
                     item for item in self._models
                     if include_obsolete or not item.obsolete
                 ]
+            if not models and not include_obsolete:
+                models.extend(self._pinned_persian_official_models())
+            elif not models and include_obsolete:
+                models.extend(self._pinned_persian_official_models())
         if include_huggingface:
             with self._lock:
                 if self._hub_models is None:
@@ -564,8 +611,34 @@ class VoskModelCatalog:
         return models[:max(1, min(int(limit), 200))]
 
     def curated(self, language: str = "fa") -> list[VoskModelInfo]:
-        """Small, language-filtered shortlist for the Model Library."""
-        models = self.search(language=language, limit=100)
+        """Return the two actively recommended Persian models, not obsolete variants."""
+        selected = str(language or "").strip().casefold()
+        if selected in {"fa", "farsi", "persian", "فارسی", "ایرانی"}:
+            try:
+                official = {
+                    item.name: item
+                    for item in self.list_models(include_obsolete=False)
+                    if item.language.casefold() == "fa"
+                }
+            except RuntimeError:
+                official = {
+                    item.name: item
+                    for item in self._pinned_persian_official_models()
+                }
+            mirror = self._huggingface_curated_models()
+            small_mirror = next(
+                item for item in mirror
+                if item.name == "vosk-model-small-fa-0.42"
+            )
+            large_official = official.get("vosk-model-fa-0.42")
+            if large_official is None:
+                large_official = next(
+                    item for item in self._pinned_persian_official_models()
+                    if item.name == "vosk-model-fa-0.42"
+                )
+            # Exactly two choices: lightweight HF mirror and the full-size official model.
+            return [small_mirror, large_official]
+        models = self.search(language=selected, limit=100)
         models.sort(key=lambda item: (
             item.model_type != "small",
             item.size_bytes if item.size_bytes else 10**18,
