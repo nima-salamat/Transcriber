@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QProgressBar, QPushButton, QVBoxLayout, QWidget,
 )
 
+from transcriber.audio.imports import collect_media_paths
 from transcriber.transcription.exporters import export_transcript
 from transcriber.transcription.segments import TranscriptionOptions
 from transcriber.transcription.service import TranscriptionService
@@ -37,6 +38,7 @@ class BatchProcessingPage(QWidget):
         self.model_manager = model_manager
         self.thread_pool = thread_pool
         self.queue: list[dict] = []
+        self._import_feedback = ""
         self._active_index: int | None = None
         self._cancel_event: threading.Event | None = None
         self._paused = False
@@ -111,13 +113,33 @@ class BatchProcessingPage(QWidget):
         self._add_paths(paths)
 
     def _add_paths(self, paths):
-        existing = {item["path"] for item in self.queue}
-        for raw in paths:
-            path = Path(raw).expanduser().resolve()
-            if path.is_file() and str(path) not in existing:
-                self.queue.append({"path": str(path), "status": "Queued", "progress": 0, "result": None, "error": None})
-                existing.add(str(path))
+        return self.add_paths(paths)
+
+    def add_paths(self, paths):
+        existing = [item["path"] for item in self.queue if item["status"] != "Rejected"]
+        report = collect_media_paths(paths, existing_paths=existing)
+        for path in report.accepted:
+            self.queue.append({
+                "path": str(path), "status": "Queued", "progress": 0,
+                "result": None, "error": None,
+            })
+        for raw, reason in report.rejected:
+            self.queue.append({
+                "path": str(raw), "status": "Rejected", "progress": 0,
+                "result": None, "error": reason,
+            })
+        self._import_feedback = (
+            f"Last import: {len(report.accepted)} accepted · {len(report.rejected)} rejected · "
+            f"{len(report.duplicates)} duplicate(s) ignored"
+        )
         self.refresh()
+        if paths:
+            details = [f"{Path(raw).name}: {reason}" for raw, reason in report.rejected[:4]]
+            message = self._import_feedback
+            if details:
+                message += " · " + " | ".join(details)
+            self.status_message.emit(message)
+        return report
 
     def refresh(self):
         self.list.clear()
@@ -130,7 +152,12 @@ class BatchProcessingPage(QWidget):
             self.list.addItem(row)
         complete = sum(item["status"] == "Completed" for item in self.queue)
         failed = sum(item["status"] == "Failed" for item in self.queue)
-        self.summary.setText(f"{len(self.queue)} files · {complete} completed · {failed} failed · {len(self.queue)-complete-failed} pending")
+        rejected = sum(item["status"] == "Rejected" for item in self.queue)
+        pending = sum(item["status"] in {"Queued", "Transcribing", "Cancelled"} for item in self.queue)
+        summary = f"{len(self.queue)} entries · {complete} completed · {failed} failed · {pending} pending · {rejected} rejected"
+        if self._import_feedback:
+            summary += f" · {self._import_feedback}"
+        self.summary.setText(summary)
         self.start_button.setEnabled(not self._running and any(item["status"] == "Queued" for item in self.queue) and bool(self.model_combo.currentData()))
         self.retry_button.setEnabled(not self._running and failed > 0)
 

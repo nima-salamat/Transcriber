@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
 from transcriber.editor.document import TranscriptDocument
+from transcriber.audio.decoder import validate_audio_file
 from transcriber.audio.waveform import build_waveform
 from transcriber.ipc.server import LocalIPCServer
 from transcriber.ui.components.assistant_panel import AssistantPanel
@@ -931,10 +932,28 @@ class MainWindow(QMainWindow):
             event.ignore()
 
     def dropEvent(self, event: QDropEvent):
-        files = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
-        if files:
-            self.open_recording_in_transcriber(files[0])
-            event.acceptProposedAction()
+        raw_paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
+        if not raw_paths:
+            event.ignore()
+            return
+        # A single valid media file is the fast path. Multiple files or a
+        # directory are sent to Batch so every dropped item is accounted for.
+        if len(raw_paths) == 1:
+            candidate = Path(raw_paths[0]).expanduser()
+            if candidate.is_file():
+                try:
+                    valid_path = validate_audio_file(candidate)
+                except (OSError, ValueError) as exc:
+                    self.batch_page.add_paths(raw_paths)
+                    self.navigate("batch")
+                    self.status_bar.showMessage(f"Import rejected: {exc}", 8000)
+                else:
+                    self.open_audio_library_file(str(valid_path))
+                event.acceptProposedAction()
+                return
+        self.batch_page.add_paths(raw_paths)
+        self.navigate("batch")
+        event.acceptProposedAction()
 
     def closeEvent(self, event):
         if self.recording_page.recorder._state in {"recording", "paused"}:
