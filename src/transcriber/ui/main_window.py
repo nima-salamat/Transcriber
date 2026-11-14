@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from concurrent.futures import Future
+from concurrent.futures import CancelledError, Future
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, Qt, QThread, QThreadPool, QTimer, Signal
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
+from transcriber.assistant.operations import OperationManager
 from transcriber.audio.decoder import validate_audio_file
 from transcriber.audio.waveform import build_waveform
 from transcriber.editor.commands import CommandHistory
@@ -60,24 +61,34 @@ class MainThreadDispatcher(QObject):
         super().__init__(parent)
         self.invoke.connect(self._execute, Qt.QueuedConnection)
 
-    def __call__(self, handler, arguments):
+    def __call__(self, handler, arguments, cancel_event=None):
         if QThread.currentThread() == self.thread():
+            if cancel_event and cancel_event.is_set():
+                raise CancelledError("GUI action was cancelled before execution.")
             return handler(arguments)
         future = Future()
         self.invoke.emit(handler, arguments, future)
+        if cancel_event is not None:
+            # Cancellation while the callback is still queued prevents it from
+            # running. A callback already executing is allowed to finish; the
+            # ActionRegistry checks cancellation after approval and before the
+            # actual action handler.
+            while True:
+                if cancel_event.is_set() and future.cancel():
+                    raise CancelledError("GUI action was cancelled before dispatch.")
+                try:
+                    return future.result(timeout=0.05)
+                except TimeoutError:
+                    continue
         try:
             return future.result(timeout=20)
         except TimeoutError as exc:
-            # Cancelling a still-queued Future prevents the GUI callback from
-            # starting. Once it is running, Future.cancel() correctly refuses;
-            # callers must query the operation before retrying side effects.
             if future.cancel():
                 raise TimeoutError(
                     "GUI action timed out before execution and was cancelled."
                 ) from exc
             raise TimeoutError(
-                "GUI action is already running; its result is not yet available. "
-                "Do not retry until the operation status is checked."
+                "GUI action is already running; check the operation status before retrying."
             ) from exc
 
     @staticmethod
@@ -142,6 +153,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect_pages()
         self._register_agent_actions()
+        self.operation_manager = OperationManager(self.action_registry.execute)
         self._start_local_ipc()
         self._restore_geometry()
         self.apply_theme(settings_store.settings.theme)
@@ -620,15 +632,34 @@ class MainWindow(QMainWindow):
         register(ActionSpec("transcription.get_quality_report", "Calculate transcript quality metrics from real segment timing and any engine-provided word confidence.",
                             AgentPermission.READ_ONLY, self._agent_quality_report))
 
-    def _handle_ipc(self, method, params):
+    def _handle_ipc(self, method, params, request_id=None):
         if method in {"app.get_state", "app.list_actions"}:
             if AgentPermission.READ_ONLY not in self.action_registry.permissions:
                 raise PermissionDenied("Read-only Agent permission is disabled")
             if method == "app.get_state":
-                return self._app_state()
+                return self.dispatcher(lambda _payload: self._app_state(), {})
             return self.action_registry.describe()
         if method == "app.execute_action":
-            return self.action_registry.execute(str(params.get("name", "")), params.get("arguments") or {})
+            raise ValueError(
+                "Synchronous action execution is deprecated. Use app.submit_action with an "
+                "idempotency_key, then query app.get_operation."
+            )
+        if method == "app.submit_action":
+            return self.operation_manager.submit(
+                str(params.get("name", "")),
+                params.get("arguments") or {},
+                request_id=request_id,
+                idempotency_key=params.get("idempotency_key"),
+                deadline_seconds=params.get("deadline_seconds", 120),
+            )
+        if method == "app.get_operation":
+            return self.operation_manager.get(str(params.get("operation_id", "")))
+        if method == "app.cancel_operation":
+            return self.operation_manager.cancel(str(params.get("operation_id", "")))
+        if method == "app.list_operations":
+            if AgentPermission.READ_ONLY not in self.action_registry.permissions:
+                raise PermissionDenied("Read-only Agent permission is disabled")
+            return self.operation_manager.list(limit=params.get("limit", 50))
         raise KeyError(f"Unknown IPC method: {method}")
 
     def _app_state(self):
