@@ -12,6 +12,8 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtMultimedia import QAudioDevice, QAudioFormat, QAudioSource, QMediaDevices, QtAudio
 
+from transcriber.audio.devices import audio_device_id
+
 
 class QtAudioRecorder(QObject):
     state_changed = Signal(str)
@@ -67,7 +69,7 @@ class QtAudioRecorder(QObject):
     def start(self, path: Path, device: QAudioDevice | None = None) -> None:
         if self._state in {"recording", "paused"}:
             raise RuntimeError("A recording is already active")
-        selected = device or QMediaDevices.defaultAudioInput()
+        selected = device if device is not None else QMediaDevices.defaultAudioInput()
         if selected.isNull():
             raise RuntimeError("No microphone is available. Connect an input device and retry.")
         audio_format = self._recording_format(selected)
@@ -79,7 +81,7 @@ class QtAudioRecorder(QObject):
         self._path = temporary
         self._target_path = target
         self._format = audio_format
-        self.device_id = bytes(selected.id()).decode("utf-8", "replace")
+        self.device_id = audio_device_id(selected)
         self.device_name = str(selected.description())
         self._data_bytes = 0
         self._elapsed_before_pause = 0.0
