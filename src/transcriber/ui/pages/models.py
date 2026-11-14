@@ -1421,135 +1421,239 @@ class ModelLibraryPage(QWidget):
             f"{count} installed model{'s' if count != 1 else ''}"
         )
         if not installed:
-            empty = QLabel("No compatible local models are registered yet. Install one from Discover or import a model.")
+            empty = QLabel(
+                "No models installed yet. Discover a compatible model or import one from disk."
+            )
             empty.setObjectName("Muted")
             empty.setWordWrap(True)
+            empty.setAlignment(Qt.AlignCenter)
             self.installed_cards.addWidget(empty, 0, 0, 1, 2)
             return
 
+        tokens = get_tokens(self.settings_store.settings.theme).colors
         default_model = self.settings_store.settings.default_model
         wake_model_directory = str(self.settings_store.settings.wake_model_directory or "")
         for index, model in enumerate(installed):
             runtime = str(model.get("runtime") or "faster-whisper")
             is_vosk = runtime == "vosk"
-            runtime_name = "VOSK / KALDI" if is_vosk else "FASTER-WHISPER / CTR"
-            card = Card()
+            runtime_name = "VOSK / KALDI" if is_vosk else "FASTER-WHISPER"
+            repo_id = str(model["repo_id"])
+            active = bool(model.get("active"))
+            compatible = bool(model.get("compatible"))
+            state = "active" if active else "ready" if compatible else "repair"
+            state_text = {
+                "active": "ACTIVE",
+                "ready": "READY",
+                "repair": "NEEDS REPAIR",
+            }[state]
+            state_color = (
+                tokens["success"] if state == "active"
+                else tokens["accent"] if state == "ready"
+                else tokens["warning"]
+            )
+
+            card = QFrame()
+            card.setObjectName("InstalledModelCard")
             card.setMinimumWidth(300)
+            card.setStyleSheet(
+                f"QFrame#InstalledModelCard {{ background: {tokens['surface']}; "
+                f"border: 1px solid {tokens['border']}; border-left: 4px solid {state_color}; "
+                "border-radius: 13px; }}"
+            )
             layout = QVBoxLayout(card)
-            layout.setContentsMargins(16, 14, 16, 14)
-            layout.setSpacing(9)
+            layout.setContentsMargins(17, 15, 17, 14)
+            layout.setSpacing(10)
 
             top = QHBoxLayout()
-            title = QLabel(model["repo_id"])
-            title.setStyleSheet("font-size: 14px; font-weight: 700;")
+            top.setSpacing(8)
+            title = QLabel(repo_id)
+            title.setStyleSheet(
+                f"font-size: 13px; font-weight: 750; color: {tokens['text']};"
+            )
             title.setWordWrap(True)
+            title.setTextInteractionFlags(Qt.TextSelectableByMouse)
             top.addWidget(title, 1)
 
-            state = "active" if model["active"] else "ready" if model["compatible"] else "repair"
-            state_label_text = {
-                "active": "ACTIVE", "ready": "INSTALLED", "repair": "REPAIR NEEDED",
-            }[state]
-            state_color = "#36a47e" if model["compatible"] else "#d49a42"
-            state_label = QLabel(state_label_text)
-            state_label.setStyleSheet(
-                f"font-size: 9px; font-weight: 750; color: {state_color}; "
-                "padding: 4px 7px; border: 1px solid "
-                f"{state_color}; border-radius: 7px;"
+            state_badge = QLabel(state_text)
+            state_badge.setStyleSheet(
+                f"font-size: 9px; font-weight: 800; color: {state_color}; "
+                f"background: {_rgba(state_color, 0.12)}; "
+                f"border: 1px solid {_rgba(state_color, 0.28)}; "
+                "border-radius: 7px; padding: 4px 8px;"
             )
-            top.addWidget(state_label, 0, Qt.AlignTop)
+            top.addWidget(state_badge, 0, Qt.AlignTop)
             layout.addLayout(top)
 
-            if not is_vosk and model["repo_id"] == default_model:
-                default_label = QLabel("★  DEFAULT FOR FASTER-WHISPER TRANSCRIPTIONS")
-                default_label.setStyleSheet(
-                    "font-size: 9px; font-weight: 700; color: #75a7ff; "
-                    "padding: 4px 7px; border-radius: 6px; "
-                    "background: rgba(117, 167, 255, 0.12);"
-                )
-                layout.addWidget(default_label)
+            runtime_badge = QLabel(runtime_name)
+            runtime_badge.setStyleSheet(
+                f"font-size: 9px; font-weight: 750; color: {tokens['accent']}; "
+                f"background: {_rgba(tokens['accent'], 0.10)}; "
+                "border-radius: 6px; padding: 4px 7px;"
+            )
+            layout.addWidget(runtime_badge, 0, Qt.AlignLeft)
 
             revision = str(model.get("revision") or "Unknown")
             size_label = _human_size(model.get("size_bytes"))
             if is_vosk:
-                language = str(model.get("language_name") or model.get("language_code") or "Unknown language")
+                language = str(
+                    model.get("language_name") or model.get("language_code") or "Unknown language"
+                )
                 checksum_label = str(
                     model.get("archive_checksum_algorithm") or "revision"
                 ).upper()
                 info_text = (
-                    f"Vosk / Kaldi · {language} · {size_label}\n"
-                    f"Model: {model.get('model_name') or model['repo_id']} · "
+                    f"{language}  ·  {size_label}\n"
+                    f"{model.get('model_name') or repo_id}  ·  "
                     f"{checksum_label}: {revision[:16]}"
                 )
             else:
                 info_text = (
-                    f"Faster-Whisper / CTranslate2 · {size_label}\n"
+                    f"CTranslate2 model  ·  {size_label}\n"
                     f"Revision: {revision[:16]}{'…' if len(revision) > 16 else ''}"
                 )
-            info = QLabel(info_text)
-            info.setObjectName("Muted")
-            info.setWordWrap(True)
-            layout.addWidget(info)
+            info_panel = QFrame()
+            info_panel.setStyleSheet(
+                f"QFrame {{ background: {tokens['surface_2']}; "
+                f"border: 1px solid {tokens['border']}; border-radius: 8px; }}"
+            )
+            info_layout = QVBoxLayout(info_panel)
+            info_layout.setContentsMargins(10, 8, 10, 8)
+            info_label = QLabel(info_text)
+            info_label.setStyleSheet(
+                f"font-size: 11px; color: {tokens['text']}; border: 0; background: transparent;"
+            )
+            info_label.setWordWrap(True)
+            info_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            info_layout.addWidget(info_label)
+            layout.addWidget(info_panel)
 
+            if not is_vosk and repo_id == default_model:
+                default_label = QLabel("★  DEFAULT FOR FASTER-WHISPER TRANSCRIPTIONS")
+                default_label.setStyleSheet(
+                    f"font-size: 9px; font-weight: 750; color: {tokens['accent']}; "
+                    f"background: {_rgba(tokens['accent'], 0.09)}; "
+                    "border-radius: 6px; padding: 5px 8px;"
+                )
+                layout.addWidget(default_label)
+
+            path_caption = QLabel("MODEL LOCATION")
+            path_caption.setStyleSheet(
+                f"font-size: 9px; font-weight: 750; letter-spacing: 0.7px; color: {tokens['muted']};"
+            )
+            layout.addWidget(path_caption)
             path_label = QLabel(str(model["path"]))
-            path_label.setObjectName("Muted")
+            path_label.setStyleSheet(
+                f"font-size: 10px; color: {tokens['muted']}; "
+                f"background: {_rgba(tokens['surface_2'], 0.72)}; "
+                f"border: 1px solid {tokens['border']}; border-radius: 7px; padding: 7px 8px;"
+            )
             path_label.setWordWrap(True)
             path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
             path_label.setToolTip(str(model["path"]))
             layout.addWidget(path_label)
 
             compatibility = QLabel(
-                model.get("compatibility_message") or "Model files validated and ready to use."
+                model.get("compatibility_message") or
+                ("Model structure validated and ready to use." if compatible
+                 else "The local model structure needs attention.")
             )
-            compatibility.setObjectName("Muted")
+            compatibility_color = tokens["success"] if compatible else tokens["warning"]
+            compatibility.setStyleSheet(
+                f"font-size: 10px; color: {compatibility_color}; "
+                f"background: {_rgba(compatibility_color, 0.08)}; "
+                "border-radius: 6px; padding: 6px 8px;"
+            )
             compatibility.setWordWrap(True)
             layout.addWidget(compatibility)
 
-            actions = QHBoxLayout()
-            actions.setSpacing(6)
-            open_button = QPushButton("Open folder")
+            def action_button(label: str, role: str = "neutral") -> QPushButton:
+                button = QPushButton(label)
+                button.setCursor(Qt.PointingHandCursor)
+                button.setFixedHeight(29)
+                if role == "primary":
+                    button.setStyleSheet(
+                        f"QPushButton {{ background: {tokens['accent']}; color: white; "
+                        "border: 0; border-radius: 7px; padding: 4px 12px; font-weight: 650; } "
+                        f"QPushButton:hover {{ background: {tokens['accent_hover']}; }}"
+                    )
+                elif role == "danger":
+                    button.setStyleSheet(
+                        f"QPushButton {{ background: {_rgba(tokens['danger'], 0.08)}; "
+                        f"color: {tokens['danger']}; border: 1px solid {_rgba(tokens['danger'], 0.28)}; "
+                        "border-radius: 7px; padding: 4px 10px; font-weight: 600; } "
+                        f"QPushButton:hover {{ background: {_rgba(tokens['danger'], 0.16)}; }}"
+                    )
+                else:
+                    button.setStyleSheet(
+                        f"QPushButton {{ background: {tokens['surface_2']}; color: {tokens['text']}; "
+                        f"border: 1px solid {tokens['border']}; border-radius: 7px; "
+                        "padding: 4px 10px; font-weight: 600; } "
+                        f"QPushButton:hover {{ border-color: {tokens['accent']}; }}"
+                    )
+                return button
+
+            utility_actions = QHBoxLayout()
+            utility_actions.setSpacing(7)
+            open_button = action_button("Open folder")
             open_button.clicked.connect(
-                lambda _=False, p=model["path"]: QDesktopServices.openUrl(QUrl.fromLocalFile(p))
+                lambda _=False, p=str(model["path"]):
+                QDesktopServices.openUrl(QUrl.fromLocalFile(p))
             )
-            default_button = QPushButton("★ Default" if model["repo_id"] == default_model else "Set default")
-            default_button.setVisible(not is_vosk)
-            default_button.setEnabled(model["compatible"] and model["repo_id"] != default_model)
-            default_button.clicked.connect(
-                lambda _=False, rid=model["repo_id"]: self.set_default_model(rid)
-            )
-            load_button = QPushButton("Unload" if model["active"] else "Load")
-            load_button.setEnabled(model["compatible"])
-            load_button.clicked.connect(
-                lambda _=False, rid=model["repo_id"], active=model["active"]:
-                self.release_active_model() if active else self.load_model(rid)
-            )
-            delete_button = QPushButton("Delete")
-            delete_button.setObjectName("Danger")
-            delete_button.setEnabled(not model["active"])
-            delete_button.clicked.connect(
-                lambda _=False, rid=model["repo_id"]: self.delete_model(rid)
-            )
-            actions.addWidget(open_button)
-            actions.addWidget(default_button)
-            if is_vosk:
-                voice_button = QPushButton(
-                    "✓ Voice model selected"
-                    if str(Path(wake_model_directory).resolve()) == str(Path(model["path"]).resolve())
-                    else "Use for voice assistant"
+            utility_actions.addWidget(open_button)
+
+            if not is_vosk:
+                is_default = repo_id == default_model
+                default_button = action_button(
+                    "★ Default model" if is_default else "Set as default"
                 )
-                voice_button.setEnabled(model["compatible"])
+                default_button.setEnabled(compatible and not is_default)
+                default_button.clicked.connect(
+                    lambda _=False, rid=repo_id: self.set_default_model(rid)
+                )
+                utility_actions.addWidget(default_button)
+            else:
+                current_voice_path = ""
+                try:
+                    current_voice_path = str(Path(wake_model_directory).resolve())
+                except (OSError, RuntimeError):
+                    pass
+                try:
+                    this_model_path = str(Path(model["path"]).resolve())
+                except (OSError, RuntimeError):
+                    this_model_path = str(model["path"])
+                voice_selected = bool(current_voice_path and current_voice_path == this_model_path)
+                voice_button = action_button(
+                    "✓ Voice model selected" if voice_selected else "Use for voice assistant"
+                )
+                voice_button.setEnabled(compatible and not voice_selected)
                 voice_button.clicked.connect(
-                    lambda _=False, rid=model["repo_id"]: self.set_vosk_voice_model(rid)
+                    lambda _=False, rid=repo_id: self.set_vosk_voice_model(rid)
                 )
-                actions.addWidget(voice_button)
-            actions.addWidget(load_button)
-            actions.addStretch(1)
-            actions.addWidget(delete_button)
-            layout.addLayout(actions)
+                utility_actions.addWidget(voice_button)
+            utility_actions.addStretch(1)
+            layout.addLayout(utility_actions)
+
+            main_actions = QHBoxLayout()
+            load_button = action_button("Unload" if active else "Load model", "primary" if compatible and not active else "neutral")
+            load_button.setEnabled(compatible)
+            load_button.clicked.connect(
+                lambda _=False, rid=repo_id, is_active=active:
+                self.release_active_model() if is_active else self.load_model(rid)
+            )
+            delete_button = action_button("Delete model", "danger")
+            delete_button.setEnabled(not active)
+            delete_button.clicked.connect(
+                lambda _=False, rid=repo_id: self.delete_model(rid)
+            )
+            main_actions.addWidget(load_button)
+            main_actions.addStretch(1)
+            main_actions.addWidget(delete_button)
+            layout.addLayout(main_actions)
 
             row, column = divmod(index, 2)
             self.installed_cards.addWidget(card, row, column)
             searchable = " ".join((
-                model["repo_id"], str(model.get("runtime") or ""),
+                repo_id, runtime,
                 str(model.get("language_name") or model.get("language_code") or ""),
                 str(model.get("revision") or ""), str(model.get("path") or ""),
             )).casefold()
