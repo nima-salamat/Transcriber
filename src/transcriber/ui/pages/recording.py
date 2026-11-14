@@ -28,10 +28,11 @@ class RecordingPage(QWidget):
     audio_ready = Signal(str)
     status_message = Signal(str)
 
-    def __init__(self, paths, recording_history=None, parent=None):
+    def __init__(self, paths, recording_history=None, settings_store=None, parent=None):
         super().__init__(parent)
         self.paths = paths
         self.recording_history = recording_history
+        self.settings_store = settings_store
         self._auto_transcribe_after_save = True
         self.recorder = QtAudioRecorder(self)
         # Qt exposes audioInputsChanged as an instance signal, not a static signal.
@@ -59,6 +60,7 @@ class RecordingPage(QWidget):
         panel_layout.addWidget(QLabel("INPUT DEVICE"))
         self.device_combo = QComboBox()
         self.device_combo.setMinimumWidth(300)
+        self.device_combo.currentIndexChanged.connect(self._save_device_preference)
         panel_layout.addWidget(self.device_combo, 0)
         panel_layout.addStretch(1)
         self.record_button = QPushButton("●")
@@ -134,32 +136,72 @@ class RecordingPage(QWidget):
         self.media_devices.audioInputsChanged.connect(self.refresh_devices)
         self.refresh_devices()
 
+    @staticmethod
+    def _device_id(device) -> str:
+        try:
+            return bytes(device.id()).decode("utf-8", "replace")
+        except (AttributeError, TypeError, ValueError):
+            return str(device.id())
+
+    def _save_device_preference(self, _index: int = -1):
+        if self.settings_store is None:
+            return
+        device_id = str(self.device_combo.currentData() or "")
+        if self.settings_store.settings.audio_input_device_id != device_id:
+            self.settings_store.update(audio_input_device_id=device_id)
+
     def refresh_devices(self):
-        selected_id = self.device_combo.currentData()
-        self.device_combo.clear()
+        selected_id = (
+            self.settings_store.settings.audio_input_device_id
+            if self.settings_store is not None else str(self.device_combo.currentData() or "")
+        )
         devices = QtAudioRecorder.devices()
+        default_device = QMediaDevices.defaultAudioInput()
+        self.device_combo.blockSignals(True)
+        self.device_combo.clear()
+        self.device_combo.addItem("System default microphone", "")
+        available_ids = set()
         for device in devices:
-            self.device_combo.addItem(device.description(), device)
-        if selected_id is not None:
-            for index in range(self.device_combo.count()):
-                if self.device_combo.itemData(index).id() == selected_id:
-                    self.device_combo.setCurrentIndex(index)
-                    break
+            device_id = self._device_id(device)
+            available_ids.add(device_id)
+            label = device.description()
+            if not default_device.isNull() and device == default_device:
+                label += " · System default"
+            self.device_combo.addItem(label, device_id)
+        if selected_id and selected_id not in available_ids:
+            self.device_combo.addItem(f"Unavailable microphone · {selected_id}", selected_id)
+        index = self.device_combo.findData(selected_id)
+        self.device_combo.setCurrentIndex(max(0, index))
+        self.device_combo.blockSignals(False)
+
         if self.recorder._state in {"recording", "paused"}:
             active_device = self.recorder.device_id
-            available_ids = {device.id() for device in devices}
             if active_device and active_device not in available_ids:
                 self.recorder.device_disconnected()
         self.device_combo.setEnabled(self.recorder._state == "idle")
-        self.record_button.setEnabled(self.device_combo.count() > 0 and self.recorder._state == "idle")
+        can_record = bool(devices) and (
+            not selected_id or selected_id in available_ids
+        ) and (not selected_id or any(self._device_id(d) == selected_id for d in devices))
+        self.record_button.setEnabled(can_record and self.recorder._state == "idle")
         self.device_hint.setText(
-            "Audio is captured as 16-bit PCM WAV. No network service is used."
+            "Audio is captured as 16-bit PCM WAV. Your preferred microphone is shared with Settings."
             if devices else "No input device detected. Connect a microphone and refresh device settings."
         )
 
+    def _selected_input_device(self):
+        selected_id = str(self.device_combo.currentData() or "")
+        devices = QtAudioRecorder.devices()
+        if not selected_id:
+            return QMediaDevices.defaultAudioInput()
+        return next((device for device in devices if self._device_id(device) == selected_id), None)
+
     def start_recording(self):
-        if self.device_combo.count() == 0:
-            QMessageBox.warning(self, "No microphone", "Connect a microphone and try again.")
+        device = self._selected_input_device()
+        if device is None or device.isNull():
+            QMessageBox.warning(
+                self, "Microphone unavailable",
+                "The selected microphone is not available. Choose another input device in Settings.",
+            )
             return
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         default_path = self.paths.recordings / f"Recording-{stamp}.wav"
@@ -176,7 +218,6 @@ class RecordingPage(QWidget):
             )
             if answer != QMessageBox.Yes:
                 return
-        device = self.device_combo.currentData()
         self._auto_transcribe_after_save = self.auto_transcribe.isChecked()
         try:
             self.recorder.start(Path(path), device)
