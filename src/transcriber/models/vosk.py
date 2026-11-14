@@ -693,15 +693,24 @@ class VoskModelCatalog:
 
 
 
-def validate_vosk_model_directory(path: str | Path) -> VoskCompatibilityReport:
-    """Validate the on-disk layout expected by the Vosk API without loading model weights."""
-    root = Path(path).expanduser()
-    if root.is_symlink() or not root.is_dir():
-        return VoskCompatibilityReport(
-            compatible=False,
-            missing_files=("model directory",),
-            reason="Vosk model path must be a real directory, not a symbolic link.",
-        )
+def _iter_vosk_model_roots(root: Path, *, max_depth: int = 8):
+    """Yield real directories in an extracted archive without following symlinks."""
+    root_depth = len(root.parts)
+    for current, directories, _files in os.walk(root, topdown=True, followlinks=False):
+        current_path = Path(current)
+        depth = len(current_path.parts) - root_depth
+        if depth >= max_depth:
+            directories[:] = []
+        else:
+            directories[:] = sorted(
+                name for name in directories
+                if not (current_path / name).is_symlink()
+            )
+        yield current_path
+
+
+def _validate_vosk_model_root(root: Path) -> VoskCompatibilityReport:
+    """Check one candidate against the layouts actually loaded by Vosk API."""
     try:
         root = root.resolve(strict=True)
     except (OSError, RuntimeError):
@@ -724,11 +733,18 @@ def validate_vosk_model_directory(path: str | Path) -> VoskCompatibilityReport:
 
     included: list[str] = []
     missing: list[str] = []
-    # Current Vosk 0.3+ distributions use am/, conf/ and graph/.
-    if has_file("am/final.mdl") and has_file("conf/model.conf"):
-        included.extend(("am/final.mdl", "conf/model.conf"))
+    has_v2_marker = has_file("am/final.mdl") or has_file("conf/model.conf")
+    if has_v2_marker:
+        layout = "Vosk v2"
+        for required in ("am/final.mdl", "conf/model.conf"):
+            if has_file(required):
+                included.append(required)
+            else:
+                missing.append(required)
+
         feature_configs = [
-            name for name in ("conf/mfcc.conf", "conf/fbank.conf") if has_file(name)
+            name for name in ("conf/mfcc.conf", "conf/fbank.conf")
+            if has_file(name)
         ]
         if feature_configs:
             included.extend(feature_configs)
@@ -739,34 +755,46 @@ def validate_vosk_model_directory(path: str | Path) -> VoskCompatibilityReport:
             included.append("graph/HCLG.fst")
         elif has_file("graph/HCLr.fst") and has_file("graph/Gr.fst"):
             included.extend(("graph/HCLr.fst", "graph/Gr.fst"))
+            if has_file("graph/disambig_tid.int"):
+                included.append("graph/disambig_tid.int")
+            else:
+                missing.append("graph/disambig_tid.int")
         else:
             missing.append("graph/HCLG.fst or graph/HCLr.fst + graph/Gr.fst")
+
+        # Vosk first tries the symbol table embedded in the FST. words.txt is
+        # only needed for models whose graph does not contain output symbols.
         if has_file("graph/words.txt"):
             included.append("graph/words.txt")
-        else:
-            missing.append("graph/words.txt")
-        layout = "Vosk v2"
     else:
-        # Legacy layouts keep the decoding files at the model root.
-        if has_file("final.mdl"):
-            included.append("final.mdl")
+        layout = "legacy Vosk"
+        for required in ("final.mdl",):
+            if has_file(required):
+                included.append(required)
+            else:
+                missing.append(required)
+
+        feature_configs = [
+            name for name in ("mfcc.conf", "fbank.conf") if has_file(name)
+        ]
+        if feature_configs:
+            included.extend(feature_configs)
         else:
-            missing.append("final.mdl or am/final.mdl")
-        if has_file("mfcc.conf"):
-            included.append("mfcc.conf")
-        else:
-            missing.append("mfcc.conf or conf/model.conf")
+            missing.append("mfcc.conf or fbank.conf")
+
         if has_file("HCLG.fst"):
             included.append("HCLG.fst")
         elif has_file("HCLr.fst") and has_file("Gr.fst"):
             included.extend(("HCLr.fst", "Gr.fst"))
+            if has_file("disambig_tid.int"):
+                included.append("disambig_tid.int")
+            else:
+                missing.append("disambig_tid.int")
         else:
             missing.append("HCLG.fst or HCLr.fst + Gr.fst")
+
         if has_file("words.txt"):
             included.append("words.txt")
-        else:
-            missing.append("words.txt")
-        layout = "legacy Vosk"
 
     if missing:
         return VoskCompatibilityReport(
@@ -774,15 +802,62 @@ def validate_vosk_model_directory(path: str | Path) -> VoskCompatibilityReport:
             missing_files=tuple(missing),
             included_files=tuple(sorted(set(included))),
             reason=(
-                "The extracted directory does not contain the model, feature configuration "
-                "and decoding graph expected by the Vosk API."
+                f"The candidate directory does not satisfy the {layout} model layout "
+                "used by Vosk API."
             ),
         )
     return VoskCompatibilityReport(
         compatible=True,
         included_files=tuple(sorted(set(included))),
-        reason=f"Required files found for {layout}. Model weights are not loaded during inspection.",
+        reason=(
+            f"Vosk API {layout} model structure found. "
+            "Model weights are not loaded during inspection."
+        ),
     )
+
+
+def _find_vosk_model_directory(
+    path: str | Path,
+) -> tuple[Path | None, VoskCompatibilityReport]:
+    """Find the real model root, even when the ZIP adds several wrapper folders."""
+    root = Path(path).expanduser()
+    if root.is_symlink() or not root.is_dir():
+        return None, VoskCompatibilityReport(
+            compatible=False,
+            missing_files=("model directory",),
+            reason="Vosk model path must be a real directory, not a symbolic link.",
+        )
+    try:
+        root = root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None, VoskCompatibilityReport(
+            compatible=False,
+            missing_files=("model directory",),
+            reason="Vosk model directory cannot be resolved safely.",
+        )
+
+    best_path: Path | None = None
+    best_report: VoskCompatibilityReport | None = None
+    best_score: tuple[int, int] | None = None
+    for candidate in _iter_vosk_model_roots(root):
+        report = _validate_vosk_model_root(candidate)
+        if report.compatible:
+            return candidate, report
+        score = (len(report.missing_files), -len(report.included_files))
+        if best_score is None or score < best_score:
+            best_path, best_report, best_score = candidate, report, score
+
+    return best_path, best_report or VoskCompatibilityReport(
+        compatible=False,
+        missing_files=("Vosk model files",),
+        reason="No model directory was found in the extracted archive.",
+    )
+
+
+def validate_vosk_model_directory(path: str | Path) -> VoskCompatibilityReport:
+    """Validate a Vosk directory or archive root, including nested model folders."""
+    _model_root, report = _find_vosk_model_directory(path)
+    return report
 
 
 class VoskModelDownloader:
