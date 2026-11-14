@@ -89,6 +89,157 @@ class ModelManager:
             progress=progress, task_id=job["task_id"], metadata=job.get("metadata") or {},
         )
 
+    def _publish_imported_directory(self, source: Path, repo_id: str) -> Path:
+        """Validate and atomically register a local CTranslate2 model directory."""
+        import hashlib
+        import shutil
+        import uuid
+
+        repo_id = validate_repo_id(repo_id)
+        if source.is_symlink() or not source.is_dir():
+            raise ValueError("Choose a real local model directory, not a symbolic link.")
+        for item in source.rglob("*"):
+            if item.is_symlink():
+                raise ValueError(f"Symbolic links are not allowed in an imported model: {item.name}")
+            if not (item.is_file() or item.is_dir()):
+                raise ValueError(f"Unsupported filesystem entry in imported model: {item.name}")
+
+        root_files = [item.name for item in source.iterdir() if item.is_file()]
+        report = validate_faster_whisper_files(root_files)
+        if not report.compatible:
+            raise ValueError(
+                report.reason + " Missing: " + ", ".join(report.missing_files)
+            )
+        target = self.registry.root / self.registry.directory_name(repo_id)
+        if target.exists() or target.is_symlink():
+            raise FileExistsError(
+                f"A managed model already exists for {repo_id}; remove or rename it before importing."
+            )
+        staging_root = self.registry.root / ".staging"
+        staging_root.mkdir(parents=True, exist_ok=True)
+        staging = staging_root / f"import-{uuid.uuid4().hex}"
+        staging.mkdir(parents=False, exist_ok=False)
+        digest = hashlib.sha256()
+        try:
+            total_size = sum((source / name).stat().st_size for name in report.included_files)
+            if shutil.disk_usage(self.registry.root).free < total_size + 32 * 1024 * 1024:
+                raise OSError("Not enough free disk space to import and validate this model.")
+            for name in report.included_files:
+                source_file = source / name
+                if source_file.is_symlink() or not source_file.is_file() or source_file.parent != source:
+                    raise ValueError(f"Model artefact is not a safe root-level file: {name}")
+                destination = staging / name
+                with source_file.open("rb") as reader, destination.open("xb") as writer:
+                    while True:
+                        chunk = reader.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        writer.write(chunk)
+                        digest.update(name.encode("utf-8") + b"\0" + chunk)
+            revision = "local-" + digest.hexdigest()
+            manifest = {
+                "repo_id": repo_id,
+                "revision": revision,
+                "engine": "faster-whisper",
+                "files": list(report.included_files),
+                "license": None,
+                "source": "local-import",
+            }
+            (staging / ".transcriber-model.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            staging.rename(target)
+            try:
+                self.registry.register(
+                    repo_id, target, revision=revision,
+                    files=list(report.included_files), license_name=None,
+                )
+            except Exception:
+                shutil.rmtree(target, ignore_errors=True)
+                raise
+            return target
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
+    def import_directory(self, source: str | Path, repo_id: str) -> Path:
+        """Import a local Faster-Whisper/CTranslate2 directory."""
+        path = Path(source).expanduser()
+        if path.is_symlink():
+            raise ValueError("Importing a symbolic-link directory is not allowed.")
+        return self._publish_imported_directory(path.resolve(), repo_id)
+
+    def import_zip(self, archive_path: str | Path, repo_id: str) -> Path:
+        """Safely extract and import a ZIP without path traversal or symlink entries."""
+        import shutil
+        import stat
+        import uuid
+        import zipfile
+        from pathlib import PurePosixPath
+
+        archive = Path(archive_path).expanduser()
+        if archive.is_symlink() or not archive.is_file():
+            raise FileNotFoundError(f"Model ZIP archive does not exist: {archive}")
+        repo_id = validate_repo_id(repo_id)
+        staging_root = self.registry.root / ".staging"
+        staging_root.mkdir(parents=True, exist_ok=True)
+        extraction = staging_root / f"zip-import-{uuid.uuid4().hex}"
+        extraction.mkdir(parents=False, exist_ok=False)
+        try:
+            with zipfile.ZipFile(archive, "r") as package:
+                entries = package.infolist()
+                if len(entries) > 100_000:
+                    raise ValueError("ZIP contains too many entries to import safely.")
+                total_unpacked = sum(entry.file_size for entry in entries if not entry.is_dir())
+                if total_unpacked > 100 * 1024**3:
+                    raise ValueError("ZIP expands beyond the 100 GB import safety limit.")
+                if shutil.disk_usage(self.registry.root).free < total_unpacked + 64 * 1024 * 1024:
+                    raise OSError("Not enough free disk space to extract and validate this model.")
+                extraction_root = extraction.resolve()
+                for entry in entries:
+                    raw_name = entry.filename
+                    if "\\" in raw_name:
+                        raise ValueError("ZIP entries with backslash paths are not accepted.")
+                    member = PurePosixPath(raw_name)
+                    if (
+                        member.is_absolute()
+                        or not member.parts
+                        or ".." in member.parts
+                        or any(part.endswith(":") for part in member.parts)
+                    ):
+                        raise ValueError(f"Unsafe ZIP path: {raw_name}")
+                    mode = entry.external_attr >> 16
+                    if stat.S_ISLNK(mode):
+                        raise ValueError(f"ZIP symbolic links are not accepted: {raw_name}")
+                    destination = extraction.joinpath(*member.parts)
+                    resolved = destination.resolve()
+                    if not resolved.is_relative_to(extraction_root):
+                        raise ValueError(f"ZIP path escapes the import directory: {raw_name}")
+                    if entry.is_dir():
+                        destination.mkdir(parents=True, exist_ok=True)
+                        continue
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with package.open(entry, "r") as reader, destination.open("xb") as writer:
+                        shutil.copyfileobj(reader, writer, length=1024 * 1024)
+                    if destination.stat().st_size != entry.file_size:
+                        raise ValueError(f"ZIP entry size mismatch: {raw_name}")
+
+            source_root = extraction
+            root_report = validate_faster_whisper_files(
+                item.name for item in source_root.iterdir() if item.is_file()
+            )
+            if not root_report.compatible:
+                directories = [
+                    item for item in extraction.iterdir()
+                    if item.is_dir() and not item.is_symlink()
+                ]
+                if len(directories) == 1 and not any(
+                    item.is_file() for item in extraction.iterdir()
+                ):
+                    source_root = directories[0]
+            return self._publish_imported_directory(source_root, repo_id)
+        finally:
+            shutil.rmtree(extraction, ignore_errors=True)
+
     def get_engine(self, repo_id: str, settings=None) -> FasterWhisperEngine:
         repo_id = validate_repo_id(repo_id)
         with self._operation_lock, self._lock:
