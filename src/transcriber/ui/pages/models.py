@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.models.hub_client import CURATED_MODELS
+from transcriber.ui.design.tokens import get_tokens
 from transcriber.ui.widgets import Card, page_header, primary_button
 from transcriber.ui.workers import FunctionWorker
 
@@ -42,6 +43,15 @@ def _human_size(value: int | None) -> str:
             return f"{amount:.1f} {unit}"
         amount /= 1024
     return "Unknown"
+
+
+def _rgba(color: str, alpha: float = 0.12) -> str:
+    """Turn a design-token hex color into a subtle Qt stylesheet tint."""
+    value = str(color).lstrip("#")
+    if len(value) != 6:
+        return f"rgba(128, 144, 164, {alpha:.2f})"
+    red, green, blue = (int(value[index:index + 2], 16) for index in (0, 2, 4))
+    return f"rgba({red}, {green}, {blue}, {alpha:.2f})"
 
 
 class ModelCard(Card):
@@ -359,7 +369,14 @@ class ModelLibraryPage(QWidget):
         download_filters.addWidget(self.download_summary)
         downloads_layout.addLayout(download_filters)
         self.download_list = QListWidget()
-        self.download_list.setAlternatingRowColors(True)
+        self.download_list.setObjectName("DownloadTaskList")
+        self.download_list.setAlternatingRowColors(False)
+        self.download_list.setSpacing(10)
+        self.download_list.setFrameShape(QFrame.NoFrame)
+        self.download_list.setStyleSheet(
+            "QListWidget#DownloadTaskList { background: transparent; border: 0; outline: 0; } "
+            "QListWidget#DownloadTaskList::item { background: transparent; border: 0; padding: 0; }"
+        )
         downloads_layout.addWidget(self.download_list, 1)
         download_actions = QHBoxLayout()
         refresh_downloads = QPushButton("Refresh downloads")
