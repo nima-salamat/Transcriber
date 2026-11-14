@@ -190,9 +190,10 @@ class ModelCard(Card):
             if progress.state == "Installed":
                 self.install_button.setText("Installed")
                 self.install_button.setEnabled(False)
-            elif not self.installed_info:
-                self.install_button.setText("Install model")
-                self.install_button.setEnabled(bool(self.report and self.report.compatible))
+            else:
+                # Keep the cancel-action wiring intact until the worker's
+                # finished signal restores the normal Install button.
+                self.install_button.setEnabled(False)
 
 
 class ModelLibraryPage(QWidget):
@@ -792,7 +793,6 @@ class ModelLibraryPage(QWidget):
         }.get(state, "Download failed")
         if card:
             card.progress_text.setText(f"{state_label}: {message}")
-            card.install_button.setText("Install model")
         self.status_message.emit(f"{state_label}: {repo_id}")
 
     def _download_finished(self, repo_id, task_id):
