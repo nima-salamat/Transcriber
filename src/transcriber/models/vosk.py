@@ -62,6 +62,7 @@ class VoskModelInfo:
     size_text: str
     md5: str
     url: str
+    download_url: str
     version: str
     obsolete: bool = False
     runtime: str = "vosk"
@@ -111,6 +112,7 @@ class VoskModelInfo:
             "size_text": self.size_text,
             "md5": self.md5,
             "url": self.url,
+            "download_url": self.download_url,
             "version": self.version,
             "catalogue": MODEL_LIST_URL,
         }
@@ -184,7 +186,8 @@ def _parse_catalogue_entry(raw: object) -> VoskModelInfo | None:
             size_bytes=size_bytes,
             size_text=size_text or f"{size_bytes:,} bytes",
             md5=md5,
-            url=url,
+            url=MODEL_PAGE_URL,
+            download_url=url,
             version=version,
             obsolete=obsolete,
             description=description,
@@ -572,7 +575,7 @@ class VoskModelDownloader:
             request_headers = {"User-Agent": "Transcriber-Desktop/2.1", "Accept": "application/zip"}
             if downloaded:
                 request_headers["Range"] = f"bytes={downloaded}-"
-            request = urllib.request.Request(model.url, headers=request_headers)
+            request = urllib.request.Request(model.download_url, headers=request_headers)
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 status = getattr(response, "status", 200)
                 if downloaded and status != 206:
