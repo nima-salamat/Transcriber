@@ -112,6 +112,7 @@ class SettingsPage(QWidget):
         recog_form.setContentsMargins(18, 16, 18, 16)
         self.engine = QComboBox()
         self.engine.addItem("Faster-Whisper (offline)", "faster-whisper")
+        self.engine.addItem("Vosk / Kaldi (offline)", "vosk")
         self.engine.addItem("Google Cloud Speech-to-Text V2 (online)", "google-cloud")
         self.engine.setCurrentIndex(max(0, self.engine.findData(current.default_engine)))
         self.engine.currentIndexChanged.connect(lambda: self._save(default_engine=self.engine.currentData()))
