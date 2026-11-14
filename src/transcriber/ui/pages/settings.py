@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from transcriber.audio.devices import audio_device_id
 from transcriber.storage.backup import create_backup, restore_backup
 from transcriber.ui.widgets import Card, page_header
 from transcriber.ui.workers import FunctionWorker
@@ -359,12 +360,6 @@ class SettingsPage(QWidget):
         self._sections[key] = outer
         return outer
 
-    @staticmethod
-    def _device_id(device) -> str:
-        try:
-            return bytes(device.id()).decode("utf-8", "replace")
-        except (AttributeError, TypeError, ValueError):
-            return str(device.id())
 
     def refresh_audio_devices(self):
         if not hasattr(self, "audio_input_device"):
@@ -379,14 +374,20 @@ class SettingsPage(QWidget):
         output_blocker = self.audio_output_device.blockSignals(True)
         try:
             self.audio_input_device.clear()
-            self.audio_input_device.addItem("System default microphone", "")
+            default_input_id = "" if default_input.isNull() else audio_device_id(default_input)
+            default_input_label = "Follow Windows default"
+            if not default_input.isNull():
+                default_input_label += f" · {default_input.description()}"
+            else:
+                default_input_label += " · No microphone detected"
+            self.audio_input_device.addItem(default_input_label, "")
             input_ids = set()
             for device in inputs:
-                device_id = self._device_id(device)
+                device_id = audio_device_id(device)
                 input_ids.add(device_id)
                 label = device.description()
-                if not default_input.isNull() and device == default_input:
-                    label += " · System default"
+                if device_id == default_input_id and default_input_id:
+                    label += " · Windows default (pin device)"
                 self.audio_input_device.addItem(label, device_id)
             if current.audio_input_device_id and current.audio_input_device_id not in input_ids:
                 self.audio_input_device.addItem(
@@ -397,14 +398,20 @@ class SettingsPage(QWidget):
             self.audio_input_device.setCurrentIndex(max(0, input_index))
 
             self.audio_output_device.clear()
-            self.audio_output_device.addItem("System default speakers", "")
+            default_output_id = "" if default_output.isNull() else audio_device_id(default_output)
+            default_output_label = "Follow Windows default"
+            if not default_output.isNull():
+                default_output_label += f" · {default_output.description()}"
+            else:
+                default_output_label += " · No output detected"
+            self.audio_output_device.addItem(default_output_label, "")
             output_ids = set()
             for device in outputs:
                 device_id = self._device_id(device)
                 output_ids.add(device_id)
                 label = device.description()
-                if not default_output.isNull() and device == default_output:
-                    label += " · System default"
+                if device_id == default_output_id and default_output_id:
+                    label += " · Windows default (pin device)"
                 self.audio_output_device.addItem(label, device_id)
             if current.audio_output_device_id and current.audio_output_device_id not in output_ids:
                 self.audio_output_device.addItem(
