@@ -52,20 +52,31 @@ class MainThreadDispatcher(QObject):
         self.invoke.emit(handler, arguments, future)
         try:
             return future.result(timeout=20)
-        except TimeoutError:
-            # A delayed GUI callback must not execute after the caller has
-            # already received a timeout and retried the operation.
-            future.cancel()
-            raise
+        except TimeoutError as exc:
+            # Cancelling a still-queued Future prevents the GUI callback from
+            # starting. Once it is running, Future.cancel() correctly refuses;
+            # callers must query the operation before retrying side effects.
+            if future.cancel():
+                raise TimeoutError(
+                    "GUI action timed out before execution and was cancelled."
+                ) from exc
+            raise TimeoutError(
+                "GUI action is already running; its result is not yet available. "
+                "Do not retry until the operation status is checked."
+            ) from exc
 
     @staticmethod
     def _execute(handler, arguments, future):
-        if future.cancelled():
+        # Atomically move PENDING -> RUNNING or abort if the caller timed out
+        # and cancelled while the callback was still queued.
+        if not future.set_running_or_notify_cancel():
             return
         try:
-            future.set_result(handler(arguments))
-        except Exception as exc:
+            result = handler(arguments)
+        except BaseException as exc:
             future.set_exception(exc)
+        else:
+            future.set_result(result)
 
 
 class MainWindow(QMainWindow):

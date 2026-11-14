@@ -253,12 +253,33 @@ class AssistantPanel(QWidget):
         if self.settings_store:
             self.settings_store.update(opencode_project_directory=str(new_path))
 
+    @staticmethod
+    def _mcp_child_environment(source=None):
+        """Build a minimal environment for the local MCP child process.
+
+        API keys, model-hub tokens and unrelated application secrets are not
+        inherited. Only executable discovery, Python runtime and OS paths
+        needed to launch the local interpreter are forwarded.
+        """
+        allowed = {
+            "path", "systemroot", "windir", "temp", "tmp", "home",
+            "userprofile", "appdata", "localappdata", "programdata",
+            "virtual_env", "conda_prefix", "pythonpath", "pythonhome",
+            "ld_library_path", "dyld_library_path",
+        }
+        source = os.environ if source is None else source
+        result = {}
+        for key, value in source.items():
+            if str(key).casefold() in allowed:
+                result[str(key)] = str(value)
+        return result
+
     def _mcp_server_config(self):
         if getattr(sys, "frozen", False):
             command, args = sys.executable, ["--mcp-server"]
         else:
             command, args = sys.executable, ["-m", "transcriber.mcp_server"]
-        environment = dict(os.environ)
+        environment = self._mcp_child_environment()
         return [{
             "type": "stdio", "name": "transcriber", "command": command,
             "args": args, "env": environment,
