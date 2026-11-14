@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
 from transcriber.storage.database import Database
 from transcriber.storage.downloads import DownloadRepository
@@ -39,3 +40,37 @@ def test_removing_missing_download_task_is_idempotent(tmp_path):
     repository = _repository(tmp_path)
 
     assert repository.delete("missing-task") is False
+
+
+
+def test_model_manager_reads_shared_download_ledger_once(tmp_path):
+    from transcriber.models.manager import ModelManager
+
+    repository = _repository(tmp_path)
+    repository.enqueue("hub-task", "publisher/model", "rev-a", "/models/hub")
+    repository.enqueue(
+        "vosk-task", "vosk/vosk-model-small-fa-0.42", "checksum-b",
+        "/models/vosk", {"runtime": "vosk"},
+    )
+    manager = object.__new__(ModelManager)
+    manager.downloader = SimpleNamespace(job_repository=repository)
+    manager.vosk_downloader = SimpleNamespace(
+        list_jobs=lambda: [job for job in repository.list() if job["metadata"].get("runtime") == "vosk"]
+    )
+
+    jobs = manager.list_download_jobs()
+
+    assert [job["task_id"] for job in jobs] == ["vosk-task", "hub-task"]
+
+
+def test_model_manager_removes_history_entry_without_deleting_model_files(tmp_path):
+    from transcriber.models.manager import ModelManager
+
+    repository = _repository(tmp_path)
+    repository.enqueue("failed-task", "publisher/model", "rev-a", "/models/model")
+    repository.update("failed-task", state="failed", error="test failure")
+    manager = object.__new__(ModelManager)
+    manager.downloader = SimpleNamespace(job_repository=repository)
+
+    assert manager.remove_download_job("failed-task")
+    assert repository.get("failed-task") is None
