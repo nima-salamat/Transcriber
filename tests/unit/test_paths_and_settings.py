@@ -29,6 +29,22 @@ def test_settings_round_trip_and_validation(tmp_path):
     assert SettingsStore(store.path).load() == saved
 
 
+def test_audio_device_preferences_round_trip(tmp_path):
+    store = SettingsStore(tmp_path / "settings.json")
+    store.load()
+
+    saved = store.update(
+        audio_input_device_id="microphone-device-id",
+        audio_output_device_id="speaker-device-id",
+    )
+    reloaded = SettingsStore(store.path).load()
+
+    assert saved.audio_input_device_id == "microphone-device-id"
+    assert saved.audio_output_device_id == "speaker-device-id"
+    assert reloaded.audio_input_device_id == "microphone-device-id"
+    assert reloaded.audio_output_device_id == "speaker-device-id"
+
+
 def test_malformed_settings_file_is_preserved_and_defaults_are_used(tmp_path):
     path = tmp_path / "settings.json"
     broken = '{"beam_size": "not-a-number", "theme": "neon"}'
