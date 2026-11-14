@@ -350,7 +350,20 @@ class VoskModelCatalog:
         self, *, include_obsolete: bool = False, include_huggingface: bool = True,
         refresh: bool = False,
     ) -> list[VoskModelInfo]:
-        models = self.list_models(include_obsolete=include_obsolete, refresh=refresh)
+        try:
+            models = self.list_models(
+                include_obsolete=include_obsolete, refresh=refresh,
+            )
+        except RuntimeError:
+            # Keep pinned Hugging Face mirrors discoverable when the AlphaCephei
+            # catalogue is temporarily unavailable.
+            if not include_huggingface:
+                raise
+            with self._lock:
+                models = [
+                    item for item in self._models
+                    if include_obsolete or not item.obsolete
+                ]
         if include_huggingface:
             with self._lock:
                 if self._hub_models is None:
