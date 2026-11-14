@@ -286,7 +286,11 @@ class GoogleCloudEngine(TranscriptionEngine):
                         (index - 1) / len(chunks) * 100.0,
                         f"Submitting cloud recognition request {index} of {len(chunks)}",
                     )
-                response = self._recognize_chunk(content, language, options.word_timestamps)
+                try:
+                    response = self._recognize_chunk(content, language, options.word_timestamps)
+                except Exception:
+                    self.unload()
+                    raise
                 if cancel_event.is_set():
                     raise InterruptedError("Cloud transcription cancelled after a recognition request.")
                 previous_result_end = 0.0

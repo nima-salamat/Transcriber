@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from transcriber.audio.decoder import decoder_help, validate_audio_file
 from transcriber.audio.player import AudioPlayer
 from transcriber.editor.document import TranscriptDocument
-from transcriber.engines.faster_whisper import FasterWhisperEngine
+from transcriber.engines.base import TranscriptionEngine
 from transcriber.transcription.exporters import export_transcript
 from transcriber.transcription.segments import (
     TranscriptionOptions,
@@ -55,8 +55,9 @@ class TranscriptionPage(QWidget):
         self.audio_path: Path | None = None
         self.segments = []
         self.transcript_id: str | None = None
-        self.engine: FasterWhisperEngine | None = None
+        self.engine: TranscriptionEngine | None = None
         self.cancel_event: threading.Event | None = None
+        self._job_engine_id: str | None = None
         self._segment_ranges: list[tuple[int, int, TranscriptSegment]] = []
         self._loading_text = False
         self._record_metadata: dict | None = None
@@ -68,7 +69,7 @@ class TranscriptionPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(16)
-        layout.addWidget(page_header("New transcription", "Import an audio file and run recognition entirely on your device."))
+        layout.addWidget(page_header("New transcription", "Choose a local or explicitly consented cloud recognition engine for each job."))
 
         source_card = Card()
         source_layout = QHBoxLayout()
@@ -117,7 +118,8 @@ class TranscriptionPage(QWidget):
         self.word_timestamps.setChecked(self.settings_store.settings.word_timestamps)
         self.word_timestamps.toggled.connect(lambda value: self.settings_store.update(word_timestamps=value))
         self.initial_prompt = QLineEdit()
-        self.initial_prompt.setPlaceholderText("Optional vocabulary or context to guide recognition…")
+        self.initial_prompt.setPlaceholderText("Whisper initial prompt (local engine only)…")
+        self.initial_prompt.setToolTip("This setting is supported by Faster-Whisper, not Google Cloud Speech-to-Text V2.")
         advanced_options.addWidget(QLabel("Task"))
         advanced_options.addWidget(self.task_combo)
         advanced_options.addWidget(self.word_timestamps)
@@ -239,6 +241,7 @@ class TranscriptionPage(QWidget):
         self.beam_spin.setEnabled(not cloud_selected)
         self.vad_check.setEnabled(not cloud_selected)
         self.task_combo.setEnabled(not cloud_selected)
+        self.initial_prompt.setEnabled(not cloud_selected)
         if cloud_selected and self.task_combo.currentData() != "transcribe":
             self.task_combo.setCurrentIndex(self.task_combo.findData("transcribe"))
         if hasattr(self, "start_button"):
@@ -350,6 +353,7 @@ class TranscriptionPage(QWidget):
         audio_path = self.audio_path
         cancel_event = threading.Event()
         self.cancel_event = cancel_event
+        self._job_engine_id = engine_id
         self.start_button.setEnabled(False)
         self.cancel_button.setVisible(True)
         self.progress.setValue(0)
@@ -399,7 +403,12 @@ class TranscriptionPage(QWidget):
     def cancel_transcription(self):
         if self.cancel_event:
             self.cancel_event.set()
-            self.progress_label.setText("Cancelling…")
+            message = (
+                "Cancellation requested · waiting for the current Google request"
+                if self._job_engine_id == "google-cloud"
+                else "Cancelling…"
+            )
+            self.progress_label.setText(message)
             self.cancel_button.setEnabled(False)
 
     def _on_progress(self, value):
@@ -453,6 +462,7 @@ class TranscriptionPage(QWidget):
         if self.cancel_event and self.cancel_event.is_set():
             self.progress_label.setText("Transcription cancelled")
         self.cancel_event = None
+        self._job_engine_id = None
 
     def _schedule_autosave(self):
         if self._loading_text:
