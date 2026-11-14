@@ -48,29 +48,41 @@ def build_mcp_server():
         return _call("app.list_actions")
 
     @server.tool()
-    async def app_execute_action(action_name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Execute one registered Transcriber action; permission checks and GUI approvals remain enforced by the app."""
-        if not action_name or len(action_name) > 120:
-            return {"available": False, "error": "Invalid action name"}
-        return _call("app.execute_action", {"name": action_name, "arguments": arguments or {}})
+async def app_execute_action(
+    action_name: str,
+    arguments: dict | None = None,
+    idempotency_key: str = "",
+    deadline_seconds: int = 120,
+) -> dict:
+    """Submit an application action asynchronously.
 
-    @server.resource("transcriber://capabilities")
-    async def capabilities() -> str:
-        """Describe supported agent integration and the distinction between GUI and MCP process availability."""
-        import json
-        return json.dumps({
-            "protocol": "MCP 2026-07-28 SDK v2",
-            "transport": "stdio",
-            "tools": ["app_get_state", "app_list_available_actions", "app_execute_action"],
-            "gui_connection": "authenticated per-user local IPC",
-            "gui_required_for_actions": True,
-            "arbitrary_shell_or_python": False,
-        }, ensure_ascii=False, indent=2)
-
-    return server
+    Supply the same idempotency_key when retrying the same logical request.
+    The returned operation_id is used with app_get_operation_status and
+    app_cancel_operation; submission does not wait for UI approval or execution.
+    """
+    return _call("app.submit_action", {
+        "name": action_name,
+        "arguments": arguments or {},
+        "idempotency_key": idempotency_key,
+        "deadline_seconds": deadline_seconds,
+    })
 
 
-def main() -> int:
-    server = build_mcp_server()
-    server.run(transport="stdio")
-    return 0
+@server.tool()
+async def app_get_operation_status(operation_id: str) -> dict:
+    """Get the state, approval status, result or error of a submitted action."""
+    return _call("app.get_operation", {"operation_id": operation_id})
+
+
+@server.tool()
+async def app_cancel_operation(operation_id: str) -> dict:
+    """Request cancellation of a queued/running action. A running handler may finish safely."""
+    return _call("app.cancel_operation", {"operation_id": operation_id})
+
+
+@server.tool()
+async def app_list_operations(limit: int = 50) -> list[dict]:
+    """List recent Agent operations and their lifecycle states."""
+    return _call("app.list_operations", {"limit": limit})
+
+
