@@ -57,9 +57,22 @@ def collect_media_paths(paths, *, existing_paths=()) -> MediaImportReport:
                 supported = []
                 for item in discovered:
                     if item.suffix.casefold() in {
-                        ".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus",
-                        ".wma", ".aiff", ".aif", ".mp4", ".m4v", ".mkv", ".mov",
-                        ".webm", ".avi",
+                        ".wav",
+                        ".mp3",
+                        ".m4a",
+                        ".aac",
+                        ".flac",
+                        ".ogg",
+                        ".opus",
+                        ".wma",
+                        ".aiff",
+                        ".aif",
+                        ".mp4",
+                        ".m4v",
+                        ".mkv",
+                        ".mov",
+                        ".webm",
+                        ".avi",
                     }:
                         supported.append(item)
                 if not supported:
