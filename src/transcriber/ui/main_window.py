@@ -28,6 +28,7 @@ from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
 from transcriber.audio.decoder import validate_audio_file
 from transcriber.audio.waveform import build_waveform
+from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
 from transcriber.storage.recordings import RecordingRepository
 from transcriber.ipc.server import LocalIPCServer
@@ -118,6 +119,7 @@ class MainWindow(QMainWindow):
         self.recording_history = recording_history or RecordingRepository(database)
         # One domain document is shared by transcription and segment editing.
         self.transcript_document = TranscriptDocument()
+        self.transcript_history = CommandHistory(self.transcript_document)
         self._sidebar_collapsed = False
         self.thread_pool = QThreadPool(self)
         self.icon_registry = IconRegistry()
@@ -237,7 +239,7 @@ class MainWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         self.home_page = HomePage(self.history, self.model_manager, self.thread_pool)
-        self.transcription_page = TranscriptionPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool, document=self.transcript_document)
+        self.transcription_page = TranscriptionPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool, document=self.transcript_document, command_history=self.transcript_history)
         self.recording_page = RecordingPage(self.paths, self.recording_history)
         self.history_page = HistoryPage(self.history, self.thread_pool)
         self.model_page = ModelLibraryPage(
@@ -247,7 +249,7 @@ class MainWindow(QMainWindow):
         self.audio_cleanup_page = AudioCleanupPage(self.paths, self.thread_pool)
         self.settings_page = SettingsPage(self.paths, self.settings_store, self.database, self.thread_pool, self.model_manager)
         self.batch_page = BatchProcessingPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool)
-        self.editor_page = TranscriptEditorPage(document=self.transcript_document)
+        self.editor_page = TranscriptEditorPage(document=self.transcript_document, history=self.transcript_history)
         self.subtitle_page = SubtitleStudioPage()
         self.pages = {
             "home": ("Home", self.home_page),
@@ -786,8 +788,12 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Waveform unavailable: {message}", 7000)
 
     def _on_transcript_changed(self, segments, source_path, language, duration, original_text=""):
-        self.editor_page.load_segments(segments, source_path=source_path, language=language,
-                                       duration=duration, original_text=original_text)
+        self.editor_page.load_segments(
+            segments, source_path=source_path, language=language, duration=duration,
+            original_text=original_text,
+            text=self.transcription_page.editor.toPlainText(),
+            reset_history=True,
+        )
         self.subtitle_page.load_segments(segments)
         self.timeline.set_segments(segments)
         self.inspector_title.setText(Path(source_path).name if source_path else "Transcript")
@@ -796,29 +802,40 @@ class MainWindow(QMainWindow):
             self._load_waveform(source_path)
 
     def _sync_editor_document(self, document):
-        self.transcription_page.segments = self.editor_page.snapshot_segments()
         text = document.text
         self.transcription_page._loading_text = True
         self.transcription_page.editor.setPlainText(text)
         self.transcription_page._loading_text = False
         self.transcription_page._editor_base_text = text
+        self.transcription_page._pending_text_undo_snapshot = None
         self.transcription_page._rebuild_segment_ranges()
         self.transcription_page._schedule_autosave()
-        self.subtitle_page.load_segments(self.transcription_page.segments)
-        self.timeline.set_segments(self.transcription_page.segments)
+        self.subtitle_page.load_segments(document.segments)
+        self.timeline.set_segments(document.segments)
 
     def _sync_subtitle_document(self, segments):
-        self.transcription_page.segments = list(segments)
-        self.editor_page.load_segments(segments, source_path=self.transcription_page.audio_path,
-                                       duration=self._audio_duration_seconds())
+        before = self.transcript_history.snapshot()
         text = " ".join(item.text.strip() for item in segments if item.text.strip())
+        self.transcript_document.replace_all(segments, text=text)
+        self.transcript_history.record_snapshot(before)
+        self.editor_page.load_segments(
+            self.transcript_document.segments,
+            source_path=self.transcription_page.audio_path,
+            language=self.transcript_document.language,
+            duration=self._audio_duration_seconds(),
+            original_text=self.transcript_document.original_text,
+            text=self.transcript_document.text,
+            reset_history=False,
+            update_document=False,
+        )
         self.transcription_page._loading_text = True
-        self.transcription_page.editor.setPlainText(text)
+        self.transcription_page.editor.setPlainText(self.transcript_document.text)
         self.transcription_page._loading_text = False
-        self.transcription_page._editor_base_text = text
+        self.transcription_page._editor_base_text = self.transcript_document.text
+        self.transcription_page._pending_text_undo_snapshot = None
         self.transcription_page._rebuild_segment_ranges()
         self.transcription_page._schedule_autosave()
-        self.timeline.set_segments(segments)
+        self.timeline.set_segments(self.transcript_document.segments)
 
     def _shortcuts(self):
         shortcuts = {

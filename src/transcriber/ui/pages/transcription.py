@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from transcriber.audio.decoder import decoder_help, validate_audio_file
 from transcriber.audio.player import AudioPlayer
+from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
 from transcriber.engines.base import TranscriptionEngine
 from transcriber.transcription.exporters import export_transcript
@@ -44,7 +46,7 @@ class TranscriptionPage(QWidget):
     transcript_changed = Signal(object, str, str, float, str)
     segments_edited = Signal(object)
 
-    def __init__(self, paths, settings_store, history, model_manager, thread_pool, parent=None, *, document=None):
+    def __init__(self, paths, settings_store, history, model_manager, thread_pool, parent=None, *, document=None, command_history=None):
         super().__init__(parent)
         self.paths = paths
         self.settings_store = settings_store
@@ -52,6 +54,10 @@ class TranscriptionPage(QWidget):
         self.model_manager = model_manager
         self.thread_pool = thread_pool
         self.document = document or TranscriptDocument()
+        self.command_history = command_history or CommandHistory(self.document)
+        if self.command_history.document is not self.document:
+            raise ValueError("TranscriptionPage and CommandHistory must share the same TranscriptDocument")
+        self._pending_text_undo_snapshot = None
         self.audio_path: Path | None = None
         self.segments = []
         self.transcript_id: str | None = None
@@ -191,6 +197,7 @@ class TranscriptionPage(QWidget):
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText("Your transcript will appear here. You can edit it at any time.")
         self.editor.setTabChangesFocus(True)
+        self.editor.setUndoRedoEnabled(False)
         self.editor.textChanged.connect(self._schedule_autosave)
         editor_layout.addWidget(self.editor, 1)
         footer = QHBoxLayout()
@@ -290,6 +297,8 @@ class TranscriptionPage(QWidget):
             return
         if self.audio_path is not None and self.audio_path.resolve() != audio.resolve():
             self._autosave()
+            self.command_history.clear()
+            self._pending_text_undo_snapshot = None
             self.transcript_id = None
             self._record_metadata = None
             self.segments = []
@@ -418,7 +427,9 @@ class TranscriptionPage(QWidget):
 
     def _on_transcription_complete(self, outcome):
         self.engine, result = outcome
-        self.segments = result.segments
+        self.command_history.clear()
+        self._pending_text_undo_snapshot = None
+        self.document.replace_all(result.segments, text=result.text)
         self.transcript_id = result.transcript_id
         self._record_metadata = {
             "title": self.audio_path.stem if self.audio_path else "Transcript",
@@ -464,28 +475,40 @@ class TranscriptionPage(QWidget):
         self.cancel_event = None
         self._job_engine_id = None
 
+    def _sync_editor_text_to_document(self):
+        current = self.editor.toPlainText()
+        if current == self._editor_base_text:
+            return
+        if self._pending_text_undo_snapshot is None:
+            self._pending_text_undo_snapshot = self.command_history.snapshot()
+        reconciled = (
+            reconcile_segments(self._editor_base_text, current, self.segments)
+            if self.segments else []
+        )
+        self.document.replace_all(reconciled, text=current)
+        self._editor_base_text = current
+        self._rebuild_segment_ranges()
+        self.segments_edited.emit(list(self.segments))
+
+    def _commit_pending_text_edit(self):
+        snapshot, self._pending_text_undo_snapshot = self._pending_text_undo_snapshot, None
+        if snapshot is not None:
+            self.command_history.record_snapshot(snapshot)
+
     def _schedule_autosave(self):
         if self._loading_text:
             return
-        current = self.editor.toPlainText()
-        if self.segments and current != self._editor_base_text:
-            self.segments = reconcile_segments(self._editor_base_text, current, self.segments)
-            self._editor_base_text = current
-            self._rebuild_segment_ranges()
-            self.segments_edited.emit(list(self.segments))
+        self._sync_editor_text_to_document()
         self._update_word_count()
         self.autosave_timer.start()
 
     def _capture_save_snapshot(self) -> dict | None:
+        self._sync_editor_text_to_document()
         if not self.transcript_id or not self._record_metadata:
             return None
         text = self.editor.toPlainText()
         if not text.strip():
             return None
-        if self.segments and text != self._editor_base_text:
-            self.segments = reconcile_segments(self._editor_base_text, text, self.segments)
-            self._editor_base_text = text
-            self._rebuild_segment_ranges()
         return {
             "transcript_id": self.transcript_id,
             "metadata": dict(self._record_metadata),
@@ -512,6 +535,8 @@ class TranscriptionPage(QWidget):
         )
 
     def _autosave(self):
+        self._sync_editor_text_to_document()
+        self._commit_pending_text_edit()
         snapshot = self._capture_save_snapshot()
         if snapshot is None:
             return
@@ -548,6 +573,8 @@ class TranscriptionPage(QWidget):
         synchronous final flush cannot race a background SQLite write.
         """
         self.autosave_timer.stop()
+        self._sync_editor_text_to_document()
+        self._commit_pending_text_edit()
         current = self._capture_save_snapshot()
         if current:
             if self._save_queue and self._save_queue[-1]["transcript_id"] == current["transcript_id"]:
@@ -586,7 +613,12 @@ class TranscriptionPage(QWidget):
             self.set_audio(self.audio_path)
         else:
             self.file_name.setText("Source audio is unavailable")
-        self.segments = [TranscriptSegment(**item) for item in record["segments"]]
+        self.document.replace_all(
+            [TranscriptSegment(**item) for item in record["segments"]],
+            text=record["text"],
+        )
+        self.command_history.clear()
+        self._pending_text_undo_snapshot = None
         self._loading_text = True
         self.editor.setPlainText(record["text"])
         self._loading_text = False

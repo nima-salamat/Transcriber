@@ -36,10 +36,12 @@ class TranscriptEditorPage(QWidget):
     document_changed = Signal(object)
     seek_requested = Signal(float)
 
-    def __init__(self, parent=None, *, document=None):
+    def __init__(self, parent=None, *, document=None, history=None):
         super().__init__(parent)
         self.document = document or TranscriptDocument()
-        self.history = CommandHistory(self.document)
+        self.history = history or CommandHistory(self.document)
+        if self.history.document is not self.document:
+            raise ValueError("TranscriptEditorPage and CommandHistory must share the same TranscriptDocument")
         self._busy_refresh = False
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -137,14 +139,19 @@ class TranscriptEditorPage(QWidget):
         self.summary.setObjectName("Muted")
         root.addWidget(self.summary)
 
-    def load_segments(self, segments, *, source_path=None, language=None, duration=0.0, original_text=None):
+    def load_segments(
+        self, segments, *, source_path=None, language=None, duration=0.0,
+        original_text=None, text=None, reset_history=True, update_document=True,
+    ):
         cloned = deepcopy(list(segments or []))
-        self.document.replace_all(cloned)
+        if update_document:
+            self.document.replace_all(cloned, text=text)
         self.document.source_path = str(source_path) if source_path else None
         self.document.language = language
         self.document.duration = max(0.0, float(duration or 0.0))
-        self.document.original_text = original_text or self.document.text
-        self.history = CommandHistory(self.document)
+        self.document.original_text = self.document.text if original_text is None else str(original_text)
+        if reset_history:
+            self.history.clear()
         self.refresh()
 
     def refresh(self):

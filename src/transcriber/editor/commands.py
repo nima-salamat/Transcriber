@@ -14,6 +14,7 @@ from transcriber.transcription.segments import TranscriptSegment
 class _Snapshot:
     segments: list[TranscriptSegment]
     revision: int
+    text_override: str | None
 
 
 class CommandHistory:
@@ -53,10 +54,35 @@ class CommandHistory:
         self._restore(self._redo.pop())
         return True
 
+    def snapshot(self) -> _Snapshot:
+        return _Snapshot(
+            deepcopy(self.document.segments),
+            self.document.revision,
+            self.document.text_override,
+        )
+
+    def record_snapshot(self, snapshot: _Snapshot) -> None:
+        """Record a pre-edit state captured before a debounced external edit."""
+        current = self.snapshot()
+        if (
+            snapshot.revision == current.revision
+            and snapshot.text_override == current.text_override
+            and snapshot.segments == current.segments
+        ):
+            return
+        self._undo.append(snapshot)
+        self._undo = self._undo[-self.limit:]
+        self._redo.clear()
+
+    def clear(self) -> None:
+        self._undo.clear()
+        self._redo.clear()
+
     def _snapshot(self) -> _Snapshot:
-        return _Snapshot(deepcopy(self.document.segments), self.document.revision)
+        return self.snapshot()
 
     def _restore(self, snapshot: _Snapshot) -> None:
         self.document.segments = deepcopy(snapshot.segments)
+        self.document.text_override = snapshot.text_override
         self.document.revision = snapshot.revision
         self.document.validate()

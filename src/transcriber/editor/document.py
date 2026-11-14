@@ -20,6 +20,7 @@ class TranscriptDocument:
     language: str | None = None
     duration: float = 0.0
     revision: int = 0
+    text_override: str | None = None
 
     def __post_init__(self) -> None:
         self.segments = [
@@ -33,6 +34,8 @@ class TranscriptDocument:
 
     @property
     def text(self) -> str:
+        if self.text_override is not None:
+            return self.text_override
         return " ".join(item.text.strip() for item in self.segments if item.text.strip())
 
     def validate(self, *, allow_overlap: bool = True) -> None:
@@ -81,6 +84,8 @@ class TranscriptDocument:
             self.segments.insert(previous_index, current)
             self.segments.sort(key=lambda item: (item.start, item.end, item.id))
             raise
+        if "text" in changes:
+            self.text_override = None
         self.revision += 1
         return candidate
 
@@ -107,7 +112,9 @@ class TranscriptDocument:
             raise ValueError("Word timing overlaps the next word")
         words[word_index] = candidate
         segment.words = words
+        segment.text = " ".join(word.text.strip() for word in words if word.text.strip())
         segment.is_edited = True
+        self.text_override = None
         self.revision += 1
         return candidate
 
@@ -132,6 +139,7 @@ class TranscriptDocument:
         self.segments[self.segments.index(current)] = left
         self.segments.append(right)
         self.segments.sort(key=lambda item: (item.start, item.end))
+        self.text_override = None
         self.revision += 1
         self.validate()
         return left, right
@@ -156,6 +164,7 @@ class TranscriptDocument:
         self.segments[self.segments.index(current)] = left
         self.segments.append(right)
         self.segments.sort(key=lambda item: (item.start, item.end))
+        self.text_override = None
         self.revision += 1
         self.validate()
         return left, right
@@ -184,6 +193,7 @@ class TranscriptDocument:
         self.segments = [item for item in self.segments if item.id not in {first.id, second.id}]
         self.segments.append(merged)
         self.segments.sort(key=lambda item: (item.start, item.end))
+        self.text_override = None
         self.revision += 1
         self.validate()
         return merged
@@ -193,6 +203,7 @@ class TranscriptDocument:
         if item.locked:
             raise PermissionError("This segment is locked")
         self.segments.remove(item)
+        self.text_override = None
         self.revision += 1
 
     def insert_segment(self, segment: TranscriptSegment, *, index: int | None = None) -> None:
@@ -203,6 +214,7 @@ class TranscriptDocument:
         else:
             self.segments.insert(max(0, min(index, len(self.segments))), segment)
         self.segments.sort(key=lambda item: (item.start, item.end))
+        self.text_override = None
         self.revision += 1
         self.validate()
 
@@ -224,8 +236,19 @@ class TranscriptDocument:
         self.revision += 1
         return item.locked
 
-    def replace_all(self, segments: Iterable[TranscriptSegment]) -> None:
-        self.segments = list(segments)
-        self.segments.sort(key=lambda item: (item.start, item.end))
+    def replace_all(
+        self, segments: Iterable[TranscriptSegment], *, text: str | None = None
+    ) -> None:
+        candidate = list(segments)
+        candidate.sort(key=lambda item: (item.start, item.end, item.id))
+        previous_segments = self.segments
+        previous_text = self.text_override
+        self.segments = candidate
+        self.text_override = None if text is None else str(text)
+        try:
+            self.validate()
+        except Exception:
+            self.segments = previous_segments
+            self.text_override = previous_text
+            raise
         self.revision += 1
-        self.validate()
