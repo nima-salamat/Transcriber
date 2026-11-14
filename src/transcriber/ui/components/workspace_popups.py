@@ -107,7 +107,9 @@ class GlobalSearchPopup(QFrame):
     def move_selection(self, amount: int):
         count = self.list_widget.count()
         if count:
-            self.list_widget.setCurrentRow(max(0, min(count - 1, self.list_widget.currentRow() + amount)))
+            self.list_widget.setCurrentRow(
+                max(0, min(count - 1, self.list_widget.currentRow() + amount))
+            )
 
     def activate_current(self):
         item = self.list_widget.currentItem()
@@ -184,7 +186,8 @@ class CommandPalettePopup(QFrame):
         self.setGeometry(
             max(16, (parent.width() - width) // 2),
             max(16, (parent.height() - height) // 2),
-            width, height,
+            width,
+            height,
         )
         self.show()
         self.raise_()
@@ -232,7 +235,8 @@ class CommandPalettePopup(QFrame):
             self.list_widget.setCurrentRow(0)
         self.hint.setText(
             f"{len(commands)} result(s) · ↑ ↓ Navigate · Enter Run · Esc Close"
-            if commands else "No matching pages, settings or actions"
+            if commands
+            else "No matching pages, settings or actions"
         )
 
     def _activate_item(self, item):
@@ -246,7 +250,11 @@ class CommandPalettePopup(QFrame):
             if event.key() == Qt.Key_Escape:
                 self.hide()
                 return True
-            if watched is self.search_input and event.key() == Qt.Key_Down and self.list_widget.count():
+            if (
+                watched is self.search_input
+                and event.key() == Qt.Key_Down
+                and self.list_widget.count()
+            ):
                 self.list_widget.setFocus()
                 self.list_widget.setCurrentRow(0)
                 return True
