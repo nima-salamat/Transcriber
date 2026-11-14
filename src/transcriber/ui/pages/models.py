@@ -1098,6 +1098,72 @@ class ModelLibraryPage(QWidget):
                 and (not state_filter or state == state_filter)
             )
 
+    def remove_download_job(self, job: dict):
+        """Remove one terminal task from history, without touching model files or caches."""
+        task_id = str(job.get("task_id") or "")
+        repo_id = str(job.get("repo_id") or "this model")
+        if not task_id:
+            return
+        if repo_id in self._downloads:
+            QMessageBox.information(
+                self, "Download is active",
+                "Cancel or stop the active task before removing it from history.",
+            )
+            return
+        state = str(job.get("state") or "").casefold()
+        if state in {"queued", "inspecting", "downloading", "validating", "installing",
+                     "pausing", "stopping", "cancelling"}:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Remove download history?",
+            f"Remove the {state or 'finished'} entry for {repo_id} from Downloads?\n\n"
+            "This only removes the history entry. Installed model files and reusable download "
+            "cache data are not deleted.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            removed = self.model_manager.remove_download_job(task_id)
+            if removed:
+                self.status_message.emit(f"Removed download history: {repo_id}")
+            self.refresh_downloads()
+        except Exception as exc:
+            QMessageBox.warning(self, "Cannot remove download history", str(exc))
+
+    def clear_failed_downloads(self):
+        jobs = self.model_manager.list_download_jobs()
+        failed = [job for job in jobs if str(job.get("state") or "").casefold() == "failed"]
+        if not failed:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Clear failed downloads?",
+            f"Remove {len(failed)} failed download entr{'y' if len(failed) == 1 else 'ies'} "
+            "from history? Installed models and reusable cache files will not be deleted.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        removed = 0
+        errors = []
+        for job in failed:
+            try:
+                removed += int(self.model_manager.remove_download_job(str(job.get("task_id") or "")))
+            except Exception as exc:
+                errors.append(str(exc))
+        if errors:
+            QMessageBox.warning(
+                self, "Some failed tasks could not be removed",
+                f"Removed {removed} task(s).\\n" + "\\n".join(errors[:3]),
+            )
+        else:
+            self.status_message.emit(f"Removed {removed} failed download entr{'y' if removed == 1 else 'ies'}.")
+        self.refresh_downloads()
+
     def pause_download(self, repo_id: str):
         if self.model_manager.pause_download(repo_id):
             self.status_message.emit(f"Pausing {repo_id} at the next safe transfer boundary…")
