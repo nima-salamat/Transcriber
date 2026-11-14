@@ -22,17 +22,21 @@ logger = logging.getLogger("transcriber.models.downloader")
 
 
 def _redact_error(message: str) -> str:
-    """Remove common credential and URL-secret forms from user-facing diagnostics."""
+    """Remove common credential and signed-URL secret forms from diagnostics."""
     value = str(message)[:1000]
     value = re.sub(
-        r"(?i)(authorization|access[_-]?token|api[_-]?key|password|token)\\s*[:=]\\s*[^,;\\s]+",
+        r"(?i)(authorization|access[_-]?token|api[_-]?key|password|token)\s*[:=]\s*[^,;\s]+",
         r"\1=[redacted]",
         value,
     )
-    value = re.sub(r"(?i)bearer\\s+[A-Za-z0-9._~+/=-]+", "Bearer [redacted]", value)
-    value = re.sub(r"(?i)(https?://)[^/@:\\s]+:[^/@\\s]+@", r"\1[redacted]@", value)
+    value = re.sub(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [redacted]", value)
+    value = re.sub(r"(?i)(https?://)[^/@:\s]+:[^/@\s]+@", r"\1[redacted]@", value)
+    value = re.sub(
+        r"(?i)([?&](?:signature|sig|x-amz-signature|x-amz-credential|token|access_token)=)[^&\s]+",
+        r"\1[redacted]",
+        value,
+    )
     return value
-
 
 class DownloadPaused(Exception):
     """A user-requested pause reached a cancellable transfer boundary."""
@@ -322,6 +326,12 @@ class ModelDownloader:
             if stop_event.is_set():
                 raise DownloadStopped("Download stopped before transfer")
 
+            if staging.is_symlink():
+                raise ValueError("Refusing to use a symbolic-link staging directory.")
+            if staging.exists():
+                # A previous process may have exited before cleanup. Any
+                # reusable partial blobs remain in the shared Hub cache.
+                shutil.rmtree(staging)
             staging.mkdir(parents=True, exist_ok=False)
             emit("Downloading", total=total, message="Downloading pinned model files")
             try:
@@ -363,6 +373,14 @@ class ModelDownloader:
                     local_dir=str(staging),
                     tqdm_class=ProgressTqdm,
                 )
+                # Count completed local artefacts too: a cache hit does not
+                # generate network-byte callbacks but still completes work.
+                downloaded = sum(
+                    (staging / name).stat().st_size
+                    for name in chosen[:chosen.index(filename) + 1]
+                    if (staging / name).is_file()
+                )
+                emit("Downloading", total=total, message=f"Prepared {filename}")
             if pause_event.is_set():
                 raise DownloadPaused("Download paused before validation")
             if stop_event.is_set():
