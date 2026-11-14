@@ -923,16 +923,20 @@ class VoskModelDownloader:
             (model_id + algorithm + checksum).encode("utf-8")
         ).hexdigest()
         staging_root = self.registry.root / ".staging"
+        if staging_root.is_symlink():
+            raise ValueError("Refusing to remove Vosk download data through a symbolic-link staging directory.")
         cache_root = staging_root / "vosk-download-cache"
+        if cache_root.is_symlink():
+            raise ValueError("Refusing to remove Vosk partial data through a symbolic-link cache directory.")
         partial = cache_root / f"{cache_key}.zip.partial"
         staging = staging_root / f"vosk-{cache_key}-{task_id}"
         removed = 0
 
-        if partial.parent == cache_root and partial.exists():
+        if partial.parent == cache_root and (partial.exists() or partial.is_symlink()):
             if partial.is_symlink() or partial.is_file():
                 partial.unlink()
                 removed += 1
-        if staging.parent == staging_root and staging.exists():
+        if staging.parent == staging_root and (staging.exists() or staging.is_symlink()):
             if staging.is_symlink():
                 staging.unlink()
             elif staging.is_dir():
