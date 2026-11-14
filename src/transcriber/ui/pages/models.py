@@ -6,7 +6,7 @@ import threading
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -408,7 +408,7 @@ class ModelLibraryPage(QWidget):
         self.download_list = QListWidget()
         self.download_list.setObjectName("DownloadTaskList")
         self.download_list.setAlternatingRowColors(False)
-        self.download_list.setSpacing(10)
+        self.download_list.setSpacing(12)
         self.download_list.setFrameShape(QFrame.NoFrame)
         self.download_list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.download_list.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -932,7 +932,7 @@ class ModelLibraryPage(QWidget):
             row.setObjectName("DownloadTaskCard")
             row.setFrameShape(QFrame.NoFrame)
             row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            row.setFixedHeight(236)
+            row.setFixedHeight(252)
             row.setStyleSheet(
                 _card_frame_stylesheet("DownloadTaskCard", tokens, state_color, 12)
             )
@@ -1130,10 +1130,16 @@ class ModelLibraryPage(QWidget):
                 actions.addWidget(remove)
             row_layout.addLayout(actions)
 
+            # The QListWidget item must reserve the exact same height as its
+            # fixed-height card. QWidget.sizeHint() can still be smaller than a
+            # fixed-height constraint before the layout is polished, which causes
+            # the next item to be painted over this card on some Qt styles.
+            row_layout.activate()
+            row.updateGeometry()
             item = QListWidgetItem()
-            item.setSizeHint(row.sizeHint())
             self.download_list.addItem(item)
             self.download_list.setItemWidget(item, row)
+            item.setSizeHint(QSize(0, row.height()))
             searchable = " ".join((
                 repo_id, model_title, str(source), runtime, state, language,
                 str(job.get("error") or ""),
