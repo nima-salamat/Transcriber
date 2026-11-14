@@ -58,6 +58,7 @@ def _view_menu(window):
 
 def test_view_menu_can_reopen_each_closeable_workspace_dock(qtbot, tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
+    assert app is not None
     window, _settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
     window.show()
@@ -87,6 +88,7 @@ def test_view_menu_can_reopen_each_closeable_workspace_dock(qtbot, tmp_path, mon
 
 def test_restore_default_layout_restores_the_workspace_docks(qtbot, tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
+    assert app is not None
     window, _settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
     window.show()

@@ -59,6 +59,7 @@ def load_sample_transcript(window, history):
 
 def test_direct_text_edit_updates_segment_editor_and_subtitle_views(qtbot, tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
+    assert app is not None
     window, history = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
     window.show()
@@ -80,6 +81,7 @@ def test_direct_text_edit_updates_segment_editor_and_subtitle_views(qtbot, tmp_p
 
 def test_direct_text_edit_is_autosaved_without_navigation_or_close(qtbot, tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
+    assert app is not None
     window, history = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
     window.show()

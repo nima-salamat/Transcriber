@@ -199,7 +199,7 @@ class TranscriptEditorPage(QWidget):
             return
         segment_id = item.data(Qt.UserRole)
         try:
-            segment = self.document.get(segment_id)
+            self.document.get(segment_id)
             if item.column() == 0:
                 changes = {"start": float(item.text())}
             elif item.column() == 1:

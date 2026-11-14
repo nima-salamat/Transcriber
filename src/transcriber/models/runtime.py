@@ -298,7 +298,13 @@ class ModelRuntimeManager:
         if snapshot.vram_available_mb is not None:
             vram_cap = min(vram_cap, snapshot.vram_available_mb)
         # We do not assume unknown accelerator memory is free. Non-GPU specs remain eligible.
-        over = lambda: projected_count > self.max_active_models or ram_needed > ram_cap or vram_needed > vram_cap
+        def over():
+            return (
+                projected_count > self.max_active_models
+                or ram_needed > ram_cap
+                or vram_needed > vram_cap
+            )
+
         while over():
             candidates = [entry for entry in loaded if not entry.pinned and entry.active_calls == 0
                           and entry.state == ModelState.LOADED]
