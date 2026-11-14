@@ -6,6 +6,7 @@ import math
 import os
 import struct
 import time
+import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
@@ -25,6 +26,7 @@ class QtAudioRecorder(QObject):
         self._io = None
         self._stream = None
         self._path: Path | None = None
+        self._target_path: Path | None = None
         self._format: QAudioFormat | None = None
         self._data_bytes = 0
         self._started = 0.0
@@ -65,8 +67,12 @@ class QtAudioRecorder(QObject):
             raise RuntimeError("No microphone is available. Connect an input device and retry.")
         audio_format = self._recording_format(selected)
         target = Path(path).expanduser().resolve()
+        if target.suffix.casefold() != ".wav":
+            raise ValueError("The Qt microphone recorder writes PCM WAV only. Choose a .wav destination.")
         target.parent.mkdir(parents=True, exist_ok=True)
-        self._path = target
+        temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.recording.tmp")
+        self._path = temporary
+        self._target_path = target
         self._format = audio_format
         self.device_id = str(selected.id())
         self.device_name = str(selected.description())
@@ -74,7 +80,7 @@ class QtAudioRecorder(QObject):
         self._elapsed_before_pause = 0.0
         self._started = time.monotonic()
         try:
-            self._stream = target.open("wb")
+            self._stream = temporary.open("xb")
             self._stream.write(b"\0" * 44)
             source = QAudioSource(selected, audio_format, self)
             source.setBufferSize(max(4096, audio_format.bytesPerFrame() * audio_format.sampleRate() // 5))
@@ -91,8 +97,9 @@ class QtAudioRecorder(QObject):
             if self._stream:
                 self._stream.close()
                 self._stream = None
-            target.unlink(missing_ok=True)
+            temporary.unlink(missing_ok=True)
             self._path = None
+            self._target_path = None
             self._format = None
             self.device_id = None
             self.device_name = None
@@ -112,6 +119,9 @@ class QtAudioRecorder(QObject):
             return
         try:
             chunk = bytes(self._io.readAll())
+            frame_bytes = self._format.bytesPerFrame() if self._format else 0
+            if frame_bytes > 0:
+                chunk = chunk[: len(chunk) - (len(chunk) % frame_bytes)]
             if not chunk:
                 return
             self._stream.write(chunk)
@@ -211,11 +221,20 @@ class QtAudioRecorder(QObject):
         self.duration_changed.emit(self._elapsed_before_pause)
         if write_error:
             self.error_occurred.emit(f"Could not finalize the WAV recording: {write_error}")
-        if self._path and self._data_bytes > 0 and publish:
-            saved_path = self._path
+        temporary, self._path = self._path, None
+        target, self._target_path = self._target_path, None
+        if temporary and self._data_bytes > 0 and publish and not write_error and target:
+            try:
+                os.replace(temporary, target)
+                saved_path = target
+            except OSError as exc:
+                self.error_occurred.emit(f"Could not publish the completed recording: {exc}")
+                temporary.unlink(missing_ok=True)
+        elif temporary:
+            temporary.unlink(missing_ok=True)
+        self._format = None
+        if saved_path:
             self.recording_saved.emit(str(saved_path))
-        elif self._path:
-            self._path.unlink(missing_ok=True)
         return saved_path
 
     def cancel(self) -> None:
