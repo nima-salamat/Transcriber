@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import threading
 import uuid
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -21,6 +23,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QScrollArea,
     QTabWidget,
     QVBoxLayout,
@@ -63,6 +66,28 @@ def _card_frame_stylesheet(
         f"background: {tokens['surface']}; border: 1px solid {tokens['border']}; "
         f"border-left: 4px solid {accent_color}; border-radius: {int(radius)}px; }}"
     )
+
+
+def _installed_runtime_key(model: dict | str) -> str:
+    """Normalize current and older registry metadata into the two UI runtime filters."""
+    if isinstance(model, dict):
+        metadata = model.get("metadata") if isinstance(model.get("metadata"), dict) else {}
+        raw = (
+            model.get("runtime") or model.get("engine") or metadata.get("runtime")
+            or model.get("model_type") or ""
+        )
+        identity = " ".join((
+            str(raw), str(model.get("repo_id") or ""),
+            str(model.get("model_name") or ""),
+        )).casefold()
+    else:
+        identity = str(model or "").casefold()
+
+    if "vosk" in identity or "kaldi" in identity:
+        return "vosk"
+    if "whisper" in identity or "ctranslate" in identity:
+        return "faster-whisper"
+    return "faster-whisper"
 
 
 class ModelCard(Card):
@@ -385,6 +410,11 @@ class ModelLibraryPage(QWidget):
         self.download_list.setAlternatingRowColors(False)
         self.download_list.setSpacing(10)
         self.download_list.setFrameShape(QFrame.NoFrame)
+        self.download_list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.download_list.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.download_list.verticalScrollBar().setSingleStep(18)
+        self.download_list.horizontalScrollBar().setSingleStep(18)
+        self.download_list.setUniformItemSizes(True)
         self.download_list.setStyleSheet(
             "QListWidget#DownloadTaskList { background: transparent; border: 0; outline: 0; } "
             "QListWidget#DownloadTaskList::item { background: transparent; border: 0; padding: 0; }"
@@ -530,7 +560,9 @@ class ModelLibraryPage(QWidget):
             card.setMinimumWidth(300 if columns == 2 else 0)
             row, column = divmod(index, columns)
             self.installed_cards.addWidget(card, row, column)
-        self.installed_cards.setRowStretch((len(self._installed_card_rows) + columns - 1) // columns, 1)
+        # Do not stretch the last row to fill the viewport; cards keep a stable height.
+        for row_index in range((len(self._installed_card_rows) + columns - 1) // columns + 1):
+            self.installed_cards.setRowStretch(row_index, 0)
 
     def _manual_runtime_changed(self, *_args):
         is_vosk = self.manual_runtime_combo.currentData() == "vosk"
@@ -899,6 +931,8 @@ class ModelLibraryPage(QWidget):
             row = QFrame()
             row.setObjectName("DownloadTaskCard")
             row.setFrameShape(QFrame.NoFrame)
+            row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            row.setFixedHeight(236)
             row.setStyleSheet(
                 _card_frame_stylesheet("DownloadTaskCard", tokens, state_color, 12)
             )
@@ -987,7 +1021,9 @@ class ModelLibraryPage(QWidget):
             if job.get("error"):
                 error_label = QLabel(str(job["error"]))
                 error_label.setWordWrap(True)
+                error_label.setMaximumHeight(36)
                 error_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                error_label.setToolTip(str(job["error"]))
                 error_label.setStyleSheet(
                     f"color: {tokens['danger']}; background: {_rgba(tokens['danger'], 0.08)}; "
                     f"border: 1px solid {_rgba(tokens['danger'], 0.18)}; "
@@ -1455,11 +1491,12 @@ class ModelLibraryPage(QWidget):
 
     def _filter_installed_cards(self, *_args):
         needle = self.installed_search.text().strip().casefold()
-        runtime_filter = str(self.installed_runtime_filter.currentData() or "")
-        state_filter = str(self.installed_state_filter.currentData() or "")
+        runtime_filter_value = str(self.installed_runtime_filter.currentData() or "").strip()
+        runtime_filter = _installed_runtime_key(runtime_filter_value) if runtime_filter_value else ""
+        state_filter = str(self.installed_state_filter.currentData() or "").strip().casefold()
         for card, searchable, runtime, state in self._installed_card_rows:
             matches_query = not needle or needle in searchable
-            matches_runtime = not runtime_filter or runtime == runtime_filter
+            matches_runtime = not runtime_filter or _installed_runtime_key(runtime) == runtime_filter
             matches_state = not state_filter or state == state_filter
             card.setVisible(matches_query and matches_runtime and matches_state)
 
@@ -1485,7 +1522,7 @@ class ModelLibraryPage(QWidget):
         default_model = self.settings_store.settings.default_model
         wake_model_directory = str(self.settings_store.settings.wake_model_directory or "")
         for index, model in enumerate(installed):
-            runtime = str(model.get("runtime") or "faster-whisper")
+            runtime = _installed_runtime_key(model)
             is_vosk = runtime == "vosk"
             runtime_name = "VOSK / KALDI" if is_vosk else "FASTER-WHISPER"
             repo_id = str(model["repo_id"])
@@ -1506,6 +1543,8 @@ class ModelLibraryPage(QWidget):
             card = QFrame()
             card.setObjectName("InstalledModelCard")
             card.setMinimumWidth(300)
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            card.setFixedHeight(360)
             card.setStyleSheet(
                 _card_frame_stylesheet("InstalledModelCard", tokens, state_color, 13)
             )
