@@ -597,14 +597,14 @@ class ModelLibraryPage(QWidget):
         self.sort_combo.setVisible(not is_vosk)
         self.language_filter.setVisible(is_vosk)
         self.source_filter.setVisible(is_vosk)
-        self.curated_button.setText("Recommended Persian" if is_vosk else "Curated models")
+        self.curated_button.setText("Recommended models" if is_vosk else "Curated models")
         self.search_button.setText("Search Vosk" if is_vosk else "Search Hub")
         self.search_input.setPlaceholderText(
             "Search Vosk model name or language (Persian / Farsi / fa)…"
             if is_vosk else "Search model name or publisher on Hugging Face…"
         )
         self.discover_hint.setText(
-            "Vosk API / Kaldi models · filter by language and source. Hugging Face mirrors are pinned and checksum-verified."
+            "Vosk API / Kaldi · live official catalogue, with active lightweight models ranked by archive size. Filter by language or source; archived/obsolete entries are excluded from recommendations."
             if is_vosk else
             "Hugging Face Hub · CTranslate2 model, tokenizer, configuration and vocabulary files are checked."
         )
@@ -651,12 +651,23 @@ class ModelLibraryPage(QWidget):
 
     def load_curated(self):
         if self.provider_combo.currentData() == "vosk":
-            self.language_filter.setCurrentIndex(self.language_filter.findData("fa"))
             self.source_filter.setCurrentIndex(self.source_filter.findData(""))
             self.search_input.clear()
             self._clear_cards()
-            self.discover_hint.setText("Loading recommended Persian Vosk models from the official catalogue and Hugging Face…")
-            worker = FunctionWorker(lambda _emit: self.model_manager.curated_vosk("fa"))
+            selected_language = str(self.language_filter.currentData() or "")
+            scope = (
+                f" for {self.language_filter.currentText()}"
+                if selected_language else " across all available languages"
+            )
+            self.discover_hint.setText(
+                "Loading active Vosk catalogue entries"
+                + scope
+                + " · lightweight models first, then ascending archive size…"
+            )
+            worker = FunctionWorker(
+                lambda _emit, language=selected_language:
+                self.model_manager.curated_vosk(language)
+            )
             worker.signals.result.connect(self._show_search_results)
             worker.signals.error.connect(
                 lambda message: self.discover_hint.setText(f"Could not load Persian Vosk models: {message}")
