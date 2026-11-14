@@ -125,3 +125,23 @@ def test_vosk_resume_replaces_partial_when_server_ignores_range(tmp_path, monkey
 
     assert result == (len(archive), len(archive))
     assert partial.read_bytes() == archive
+
+
+
+def test_vosk_download_stops_before_writing_bytes_beyond_pinned_size(tmp_path, monkeypatch):
+    partial = tmp_path / "model.zip.partial"
+    response = FakeResponse(200, b"this-is-larger-than-the-pinned-size")
+
+    def opener(request, timeout):
+        return response
+
+    with pytest.raises(OSError, match="exceeded its expected size"):
+        _transfer(
+            partial,
+            monkeypatch,
+            opener,
+            downloaded=0,
+            total=5,
+        )
+
+    assert not partial.exists()
