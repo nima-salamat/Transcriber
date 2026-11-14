@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class Database:
@@ -68,6 +68,22 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_segments_transcript
                     ON transcript_segments(transcript_id, ordinal);
+                CREATE TABLE IF NOT EXISTS recordings (
+                    id TEXT PRIMARY KEY,
+                    file_path TEXT NOT NULL UNIQUE,
+                    filename TEXT NOT NULL,
+                    duration REAL NOT NULL DEFAULT 0,
+                    file_size INTEGER NOT NULL DEFAULT 0,
+                    format TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    device_id TEXT,
+                    device_name TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_recordings_recorded_at
+                    ON recordings(recorded_at DESC);
                 """
             )
             segment_columns = {

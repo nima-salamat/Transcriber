@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from platformdirs import user_cache_dir, user_config_dir, user_data_dir, user_log_dir
+from platformdirs import user_cache_dir, user_config_dir, user_data_dir, user_log_dir, user_music_dir
 
 APP_NAME = "transcriber"
 
@@ -35,18 +35,21 @@ class AppPaths:
             config, data, cache, logs = (
                 root / "config", root / "data", root / "cache", root / "logs"
             )
+            recordings = root / "recordings"
         else:
             config = Path(user_config_dir(app_name, appauthor=False))
             data = Path(user_data_dir(app_name, appauthor=False))
             cache = Path(user_cache_dir(app_name, appauthor=False))
             logs = Path(user_log_dir(app_name, appauthor=False))
+            music_directory = user_music_dir()
+            recordings = Path(music_directory or user_data_dir(app_name, appauthor=False)) / "Transcriber Recordings"
         return cls(
             config=config,
             data=data,
             cache=cache,
             logs=logs,
             models=data / "models",
-            recordings=data / "recordings",
+            recordings=recordings,
             database=data / "transcripts.sqlite3",
             settings=config / "settings.json",
             registry=config / "models.json",
