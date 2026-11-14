@@ -1,4 +1,4 @@
-"""Polished microphone recording workspace with OS-default device routing."""
+"""Recorder workspace with a live waveform, transport controls and take replacement."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -22,12 +21,23 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.audio.devices import audio_device_id
+from transcriber.audio.player import AudioPlayer
 from transcriber.audio.recorder import QtAudioRecorder
+from transcriber.ui.components.waveform import WaveformTimeline
+from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.widgets import Card, page_header
+
+
+def _clock(seconds: float) -> str:
+    value = max(0, int(float(seconds)))
+    hours, remainder = divmod(value, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02}:{minutes:02}:{seconds:02}" if hours else f"{minutes:02}:{seconds:02}"
 
 
 class RecordingPage(QWidget):
     audio_ready = Signal(str)
+    open_library = Signal()
     status_message = Signal(str)
 
     def __init__(self, paths, recording_history=None, settings_store=None, parent=None):
@@ -38,177 +48,200 @@ class RecordingPage(QWidget):
         self._auto_transcribe_after_save = True
         self._has_usable_input = False
         self._pulse_phase = False
+        self._preview_position = 0.0
+        self._preview_duration = 0.0
+        self._preview_loading = False
+        self._preview_path: Path | None = None
         self.recorder = QtAudioRecorder(self)
+        self.preview_player = AudioPlayer(self)
+        if settings_store is not None:
+            self.preview_player.set_output_device(settings_store.settings.audio_output_device_id)
         self.media_devices = QMediaDevices(self)
         self.recording_path: Path | None = None
-        self._elapsed = 0.0
 
         self.timer = QTimer(self)
         self.timer.setInterval(200)
         self.timer.timeout.connect(self._update_duration)
         self.pulse_timer = QTimer(self)
-        self.pulse_timer.setInterval(160)
+        self.pulse_timer.setInterval(180)
         self.pulse_timer.timeout.connect(self._pulse_record_button)
         self._device_refresh_timer = QTimer(self)
         self._device_refresh_timer.setSingleShot(True)
         self._device_refresh_timer.setInterval(350)
         self._device_refresh_timer.timeout.connect(self.refresh_devices)
+        self.icons = IconRegistry()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(16)
-        layout.addWidget(
-            page_header(
-                "Live recording",
-                "Record a clear local audio take, monitor the microphone and send it straight to transcription.",
-            )
-        )
+        layout.setSpacing(15)
 
-        # Device routing card
+        heading = QHBoxLayout()
+        heading.addWidget(page_header(
+            "Studio recorder",
+            "Capture, review and replace parts of a take before saving it to your local recordings.",
+        ), 1)
+        self.library_button = QPushButton("  Recordings")
+        self.library_button.setIcon(self.icons.icon("projects", size=18))
+        self.library_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
+        self.library_button.setMinimumHeight(40)
+        self.library_button.clicked.connect(self.open_library.emit)
+        heading.addWidget(self.library_button, 0, Qt.AlignTop)
+        layout.addLayout(heading)
+
+        # Input selection remains visible, but is no longer the visual focus.
         device_card = Card()
-        device_layout = QVBoxLayout(device_card)
-        device_layout.setContentsMargins(20, 16, 20, 16)
-        device_layout.setSpacing(10)
-
-        device_heading = QHBoxLayout()
-        device_title = QLabel("AUDIO INPUT")
-        device_title.setStyleSheet("font-size: 11px; font-weight: 750; letter-spacing: 1px;")
+        device_layout = QHBoxLayout(device_card)
+        device_layout.setContentsMargins(16, 12, 16, 12)
+        device_layout.setSpacing(12)
+        mic_icon = QLabel()
+        mic_icon.setPixmap(self.icons.icon("record", "#d65a68", 19).pixmap(19, 19))
+        device_layout.addWidget(mic_icon)
+        device_text = QVBoxLayout()
+        device_text.setSpacing(2)
+        device_title = QLabel("Microphone")
+        device_title.setStyleSheet("font-weight: 700;")
         self.device_hint = QLabel("Following the Windows default microphone")
         self.device_hint.setObjectName("Muted")
         self.device_hint.setWordWrap(True)
-        device_heading.addWidget(device_title)
-        device_heading.addStretch(1)
-        device_heading.addWidget(self.device_hint, 1)
-        device_layout.addLayout(device_heading)
-
-        device_row = QHBoxLayout()
+        device_text.addWidget(device_title)
+        device_text.addWidget(self.device_hint)
+        device_layout.addLayout(device_text, 1)
         self.device_combo = QComboBox()
-        self.device_combo.setMinimumWidth(260)
-        self.device_combo.setMinimumHeight(40)
+        self.device_combo.setMinimumWidth(230)
+        self.device_combo.setMinimumHeight(38)
         self.device_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.device_combo.setToolTip("Choose a microphone or follow the Windows default input device")
         self.device_combo.currentIndexChanged.connect(self._save_device_preference)
-        device_row.addWidget(self.device_combo, 1)
-
-        self.refresh_button = QPushButton("↻  Refresh devices")
-        self.refresh_button.setMinimumHeight(40)
+        device_layout.addWidget(self.device_combo, 2)
+        self.refresh_button = QPushButton("↻")
+        self.refresh_button.setToolTip("Refresh microphone devices")
+        self.refresh_button.setFixedSize(38, 38)
         self.refresh_button.clicked.connect(self.refresh_devices)
-        device_row.addWidget(self.refresh_button)
-        device_layout.addLayout(device_row)
+        device_layout.addWidget(self.refresh_button)
         layout.addWidget(device_card)
 
-        # Main recording console
-        hero = Card()
-        hero_layout = QVBoxLayout(hero)
-        hero_layout.setContentsMargins(26, 24, 26, 22)
-        hero_layout.setSpacing(18)
+        # Recorder console: time, waveform and familiar transport controls.
+        console = Card()
+        console_layout = QVBoxLayout(console)
+        console_layout.setContentsMargins(22, 20, 22, 18)
+        console_layout.setSpacing(14)
 
-        main_row = QHBoxLayout()
-        main_row.setSpacing(24)
-        details = QVBoxLayout()
-        details.setSpacing(8)
-
-        self.status_pill = QLabel("●  READY")
+        status_row = QHBoxLayout()
+        self.status_pill = QLabel("READY")
         self.status_pill.setObjectName("RecordingStatus")
         self.status_pill.setAlignment(Qt.AlignCenter)
-        self.status_pill.setMaximumWidth(132)
-        details.addWidget(self.status_pill, 0, Qt.AlignLeft)
+        self.status_pill.setMinimumWidth(92)
+        status_row.addWidget(self.status_pill)
+        self.state_label = QLabel("Ready when you are")
+        self.state_label.setObjectName("Muted")
+        status_row.addWidget(self.state_label)
+        status_row.addStretch(1)
+        self.input_badge = QLabel("WAV  ·  LOCAL")
+        self.input_badge.setObjectName("Muted")
+        self.input_badge.setStyleSheet("font-size: 10px; font-weight: 750; letter-spacing: 0.7px;")
+        status_row.addWidget(self.input_badge)
+        console_layout.addLayout(status_row)
 
-        self.state_label = QLabel("Ready to record")
-        self.state_label.setObjectName("PageTitle")
-        self.state_label.setStyleSheet("font-size: 23px; font-weight: 700;")
-        details.addWidget(self.state_label)
-
+        time_row = QHBoxLayout()
         self.duration_label = QLabel("00:00")
         self.duration_label.setObjectName("RecordingTimer")
         self.duration_label.setStyleSheet(
-            "font-size: 54px; font-weight: 750; letter-spacing: 2px; padding: 2px 0;"
+            "font-size: 42px; font-weight: 720; letter-spacing: 1px; padding: 0;"
         )
-        details.addWidget(self.duration_label)
+        time_row.addWidget(self.duration_label)
+        time_row.addStretch(1)
+        self.position_label = QLabel("00:00")
+        self.position_label.setObjectName("Muted")
+        self.position_label.setToolTip("Selected position")
+        self.total_label = QLabel(" / 00:00")
+        self.total_label.setObjectName("Muted")
+        time_row.addWidget(self.position_label)
+        time_row.addWidget(self.total_label)
+        console_layout.addLayout(time_row)
 
-        self.session_hint = QLabel("Your recording will be saved as a WAV file.")
-        self.session_hint.setObjectName("Muted")
-        self.session_hint.setWordWrap(True)
-        details.addWidget(self.session_hint)
-        details.addStretch(1)
-        main_row.addLayout(details, 1)
+        self.waveform = WaveformTimeline()
+        self.waveform.setObjectName("RecordingWaveform")
+        self.waveform.setMinimumHeight(142)
+        self.waveform.set_waveform([], 0.0)
+        self.waveform.set_interactive(False)
+        self.waveform.seek_requested.connect(self._seek_preview)
+        console_layout.addWidget(self.waveform)
 
-        action_column = QVBoxLayout()
-        action_column.setAlignment(Qt.AlignCenter)
-        action_column.setSpacing(10)
-        self.record_button = QPushButton("●")
-        self.record_button.setObjectName("RecordButton")
-        self.record_button.setFixedSize(126, 126)
-        self.record_button.setToolTip("Start microphone recording")
-        self.record_button.clicked.connect(self.start_recording)
-        action_column.addWidget(self.record_button, 0, Qt.AlignHCenter)
-        self.record_action_hint = QLabel("START RECORDING")
-        self.record_action_hint.setObjectName("Muted")
-        self.record_action_hint.setStyleSheet("font-size: 10px; font-weight: 750; letter-spacing: 1px;")
-        self.record_action_hint.setAlignment(Qt.AlignCenter)
-        action_column.addWidget(self.record_action_hint)
-        main_row.addLayout(action_column)
-        hero_layout.addLayout(main_row)
-
-        meter_header = QHBoxLayout()
-        meter_title = QLabel("MICROPHONE LEVEL")
-        meter_title.setStyleSheet("font-size: 10px; font-weight: 750; letter-spacing: 1px;")
+        level_header = QHBoxLayout()
+        level_title = QLabel("INPUT LEVEL")
+        level_title.setStyleSheet("font-size: 10px; font-weight: 750; letter-spacing: 0.9px;")
         self.level_value = QLabel("0%")
         self.level_value.setObjectName("Muted")
-        meter_header.addWidget(meter_title)
-        meter_header.addStretch(1)
-        meter_header.addWidget(self.level_value)
-        hero_layout.addLayout(meter_header)
+        level_header.addWidget(level_title)
+        level_header.addStretch(1)
+        level_header.addWidget(self.level_value)
+        console_layout.addLayout(level_header)
 
         self.level = QProgressBar()
         self.level.setObjectName("RecordingLevel")
         self.level.setRange(0, 100)
         self.level.setValue(0)
         self.level.setTextVisible(False)
-        self.level.setFixedHeight(12)
-        hero_layout.addWidget(self.level)
+        self.level.setFixedHeight(9)
+        console_layout.addWidget(self.level)
 
-        layout.addWidget(hero, 1)
+        controls = QHBoxLayout()
+        controls.setSpacing(10)
+        controls.addStretch(1)
+        self.play_preview_button = QPushButton()
+        self.play_preview_button.setIcon(self.icons.icon("play", size=18))
+        self.play_preview_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
+        self.play_preview_button.setToolTip("Listen to the paused recording")
+        self.play_preview_button.setFixedSize(46, 46)
+        self.play_preview_button.setEnabled(False)
+        self.play_preview_button.clicked.connect(self._toggle_preview)
+        controls.addWidget(self.play_preview_button)
 
-        # Transport controls
-        controls_card = Card()
-        controls_layout = QHBoxLayout(controls_card)
-        controls_layout.setContentsMargins(18, 14, 18, 14)
-        controls_layout.setSpacing(10)
+        self.record_button = QPushButton("  Start recording")
+        self.record_button.setObjectName("RecordPrimary")
+        self.record_button.setIcon(self.icons.icon("record", "#ffffff", 20))
+        self.record_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(20, 20))
+        self.record_button.setMinimumSize(190, 54)
+        self.record_button.clicked.connect(self._primary_action)
+        controls.addWidget(self.record_button)
 
-        controls_label = QLabel("CONTROLS")
-        controls_label.setStyleSheet("font-size: 10px; font-weight: 750; letter-spacing: 1px;")
-        controls_layout.addWidget(controls_label)
-        controls_layout.addStretch(1)
-
-        self.pause_button = QPushButton("Ⅱ  Pause")
-        self.resume_button = QPushButton("▶  Resume")
-        self.stop_button = QPushButton("■  Stop and save")
-        self.cancel_button = QPushButton("Discard")
-        self.stop_button.setObjectName("Primary")
-        self.cancel_button.setObjectName("Danger")
-        for button in (self.pause_button, self.resume_button, self.stop_button, self.cancel_button):
-            button.setMinimumHeight(40)
-            button.setEnabled(False)
-        self.pause_button.clicked.connect(self.pause_recording)
-        self.resume_button.clicked.connect(self.resume_recording)
+        self.stop_button = QPushButton()
+        self.stop_button.setObjectName("StopRecording")
+        self.stop_button.setIcon(self.icons.icon("stop", "#d65a68", 21))
+        self.stop_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(21, 21))
+        self.stop_button.setFixedSize(54, 54)
+        self.stop_button.setToolTip("Finish and save this recording")
+        self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self.stop_recording)
-        self.cancel_button.clicked.connect(self.cancel_recording)
-        controls_layout.addWidget(self.pause_button)
-        controls_layout.addWidget(self.resume_button)
-        controls_layout.addWidget(self.stop_button)
-        controls_layout.addWidget(self.cancel_button)
-        layout.addWidget(controls_card)
+        controls.addWidget(self.stop_button)
 
-        # Post-recording behaviour and privacy hint
+        self.cancel_button = QPushButton()
+        self.cancel_button.setIcon(self.icons.icon("discard", size=18))
+        self.cancel_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
+        self.cancel_button.setFixedSize(44, 44)
+        self.cancel_button.setToolTip("Discard this take")
+        self.cancel_button.setObjectName("Danger")
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_recording)
+        controls.addWidget(self.cancel_button)
+        controls.addStretch(1)
+        console_layout.addLayout(controls)
+
+        self.transport_hint = QLabel("Pause to review the waveform. Drag the playhead, then resume to replace the audio after that point.")
+        self.transport_hint.setObjectName("Muted")
+        self.transport_hint.setAlignment(Qt.AlignCenter)
+        self.transport_hint.setWordWrap(True)
+        console_layout.addWidget(self.transport_hint)
+        layout.addWidget(console, 1)
+
         options_card = Card()
         options_layout = QHBoxLayout(options_card)
-        options_layout.setContentsMargins(18, 12, 18, 12)
-        self.auto_transcribe = QCheckBox("Open transcription automatically after saving")
+        options_layout.setContentsMargins(16, 11, 16, 11)
+        self.auto_transcribe = QCheckBox("Transcribe automatically after saving")
         self.auto_transcribe.setChecked(True)
         options_layout.addWidget(self.auto_transcribe)
         options_layout.addStretch(1)
-        local_note = QLabel("●  LOCAL WAV · NO CLOUD UPLOAD")
+        local_note = QLabel("●  SAVED ON THIS DEVICE")
         local_note.setObjectName("Muted")
         local_note.setStyleSheet("font-size: 10px; font-weight: 700; letter-spacing: 0.5px;")
         options_layout.addWidget(local_note)
@@ -217,18 +250,22 @@ class RecordingPage(QWidget):
         self.recorder.state_changed.connect(self._state_changed)
         self.recorder.level_changed.connect(self._set_level)
         self.recorder.duration_changed.connect(self._set_duration)
+        self.recorder.waveform_changed.connect(self._set_waveform)
         self.recorder.error_occurred.connect(self._show_error)
         self.recorder.recording_saved.connect(self._register_saved_recording)
+        self.preview_player.position_changed.connect(self._preview_position_changed)
+        self.preview_player.playback_changed.connect(self._preview_playback_changed)
+        self.preview_player.error_occurred.connect(
+            lambda message: self.status_message.emit(f"Preview playback: {message}")
+        )
         self.media_devices.audioInputsChanged.connect(self._schedule_device_refresh)
 
+        self._style_status("ready")
         self._style_record_button("ready")
         self.refresh_devices()
 
     def _schedule_device_refresh(self, *_args):
-        # Windows may briefly publish an empty/partial device list while audio
-        # endpoints are being re-enumerated. Never terminate an active capture
-        # solely because this notification fired; QAudioSource reports capture
-        # errors independently and is the authoritative source for disconnection.
+        # A transient Windows endpoint refresh must never abort an active capture.
         self._device_refresh_timer.start()
 
     def _save_device_preference(self, _index: int = -1):
@@ -264,14 +301,11 @@ class RecordingPage(QWidget):
                 available_ids.add(current_id)
                 label = device.description()
                 if current_id == default_id and default_id:
-                    label += " · Windows default (pin device)"
+                    label += " · System default (pin device)"
                 self.device_combo.addItem(label, current_id)
 
             if selected_id and selected_id not in available_ids:
                 self.device_combo.addItem("Saved microphone · currently unavailable", selected_id)
-                self.device_combo.setItemData(
-                    self.device_combo.count() - 1, selected_id, Qt.ToolTipRole
-                )
             self.device_combo.setCurrentIndex(max(0, self.device_combo.findData(selected_id)))
         finally:
             self.device_combo.blockSignals(blocker)
@@ -280,24 +314,24 @@ class RecordingPage(QWidget):
             selected_id in available_ids if selected_id else not default_device.isNull()
         )
         if not devices and default_device.isNull():
-            hint = "No microphone detected. Connect a microphone or check Windows sound settings."
+            hint = "No microphone detected. Connect one or check Windows sound settings."
         elif selected_id and selected_id not in available_ids:
-            hint = "The saved microphone is unavailable. Select another device or follow the Windows default."
+            hint = "The saved microphone is unavailable. Choose another device or follow the system default."
         elif not selected_id:
-            hint = f"Following Windows default: {default_device.description()}"
+            hint = f"Following system default · {default_device.description()}"
         else:
-            match = next((d for d in devices if audio_device_id(d) == selected_id), None)
-            hint = f"Using saved microphone: {match.description()}" if match else "Saved microphone is unavailable."
+            match = next((item for item in devices if audio_device_id(item) == selected_id), None)
+            hint = f"Selected input · {match.description()}" if match else "Saved microphone is unavailable."
 
         self.device_hint.setText(hint)
-        self.device_combo.setEnabled(self.recorder._state == "idle")
-        self.refresh_button.setEnabled(self.recorder._state == "idle")
-        self.record_button.setEnabled(
-            self.recorder._state == "idle" and self._has_usable_input
-        )
-        if self.recorder._state in {"recording", "paused"} and not self._has_usable_input:
-            self.session_hint.setText(
-                "The input list changed while recording. Capture will continue unless Qt reports a real input error."
+        idle = self.recorder._state == "idle"
+        self.device_combo.setEnabled(idle)
+        self.refresh_button.setEnabled(idle)
+        if idle:
+            self.record_button.setEnabled(self._has_usable_input)
+        elif self.recorder._state in {"recording", "paused"} and not self._has_usable_input:
+            self.transport_hint.setText(
+                "Windows refreshed its input list. The current take will continue unless Qt reports a real capture error."
             )
 
     def _selected_input_device(self):
@@ -315,71 +349,125 @@ class RecordingPage(QWidget):
         )
 
     def start_recording(self):
-        # Resolve the endpoint again at the moment of capture. An empty
-        # preference deliberately follows Windows' current default device.
         device = self._selected_input_device()
         if device is None or device.isNull():
             QMessageBox.warning(
                 self,
                 "Microphone unavailable",
-                "The selected microphone is not available. Choose another input device or switch to the Windows default.",
+                "Choose an available microphone or switch to the Windows default input.",
             )
             self.refresh_devices()
             return
 
+        directory = Path(self.paths.recordings)
+        directory.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        default_path = self.paths.recordings / f"Recording-{stamp}.wav"
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save recording", str(default_path), "WAV audio (*.wav)"
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".wav"):
-            path += ".wav"
-        target = Path(path)
-        if target.exists():
-            answer = QMessageBox.question(
-                self,
-                "Replace recording?",
-                f"{target.name} already exists. Replace it?",
-                QMessageBox.Yes | QMessageBox.No,
-            )
-            if answer != QMessageBox.Yes:
-                return
+        target = directory / f"Recording-{stamp}.wav"
+        suffix = 1
+        while target.exists():
+            target = directory / f"Recording-{stamp}-{suffix:02d}.wav"
+            suffix += 1
 
-        self._auto_transcribe_after_save = self.auto_transcribe.isChecked()
+        self.preview_player.stop()
+        self.preview_player.clear_source()
+        self._preview_path = None
+        self._preview_position = 0.0
+        self._preview_duration = 0.0
         self.recording_path = None
-        self._elapsed = 0.0
+        self._auto_transcribe_after_save = self.auto_transcribe.isChecked()
+        self.waveform.set_waveform([], 0.0)
+        self.waveform.set_position(0.0)
         self.duration_label.setText("00:00")
-        self.session_hint.setText(f"Capturing from {device.description()} · WAV")
+        self.position_label.setText("00:00")
+        self.total_label.setText(" / 00:00")
+        self.session_hint = getattr(self, "session_hint", None)
+        self.transport_hint.setText(f"Recording from {device.description()} · Pause to review and replace a section.")
         try:
-            # Pass the freshly-resolved QAudioDevice object, not a stale combo
-            # item reference retained across Windows device refreshes.
-            self.recorder.start(Path(path), device)
+            self.recorder.start(target, device)
             self.timer.start()
-            self.status_message.emit(f"Recording from {device.description()}")
+            self.status_message.emit(f"Recording started · {device.description()}")
         except Exception as exc:
             self.timer.stop()
             self.state_label.setText("Could not start recording")
-            self.status_pill.setText("●  INPUT ERROR")
+            self.status_pill.setText("INPUT ERROR")
             self._style_status("error")
-            self.session_hint.setText(str(exc))
+            self.transport_hint.setText(str(exc))
             QMessageBox.critical(self, "Microphone error", str(exc))
             self.refresh_devices()
+
+    def _primary_action(self):
+        state = self.recorder._state
+        if state == "idle":
+            self.start_recording()
+        elif state == "recording":
+            self.pause_recording()
+        elif state == "paused":
+            self.resume_recording()
 
     def pause_recording(self):
         self.recorder.pause()
 
     def resume_recording(self):
-        self.recorder.resume()
+        position = self._preview_position if self._preview_duration else self.recorder.duration()
+        self.preview_player.stop()
+        self.preview_player.clear_source()
+        self._preview_path = None
+        self.waveform.set_interactive(False)
+        try:
+            self.recorder.resume_from(position)
+        except Exception as exc:
+            QMessageBox.warning(self, "Could not resume recording", str(exc))
 
     def stop_recording(self):
+        self.preview_player.stop()
+        self.preview_player.clear_source()
+        self._preview_path = None
+        self.waveform.set_interactive(False)
         saved = self.recorder.stop()
         self.timer.stop()
-        if not saved:
-            self.status_message.emit(
-                "No audio samples were captured; the empty recording was discarded"
-            )
+        if not saved and self.recording_path is None:
+            self.status_message.emit("No audio samples were captured; the empty take was discarded")
+
+    def _load_paused_preview(self):
+        preview = self.recorder.preview_snapshot()
+        self._preview_duration = self.recorder.duration()
+        self._preview_position = self._preview_duration
+        self.position_label.setText(_clock(self._preview_position))
+        self.total_label.setText(f" / {_clock(self._preview_duration)}")
+        self.waveform.set_position(self._preview_position)
+        self.waveform.set_duration(self._preview_duration)
+        self.waveform.set_interactive(True)
+        self.play_preview_button.setEnabled(bool(preview))
+        self.transport_hint.setText(
+            "Listen and drag the playhead to a position. Resume replaces everything after the selected point."
+        )
+        if preview:
+            self._preview_path = preview
+            self.preview_player.set_source(str(preview))
+
+    def _toggle_preview(self):
+        if self.recorder._state != "paused":
+            return
+        self.preview_player.play_pause()
+
+    def _seek_preview(self, seconds: float):
+        if self.recorder._state != "paused":
+            return
+        self._preview_position = max(0.0, min(self._preview_duration, float(seconds)))
+        self.preview_player.seek(int(self._preview_position * 1000))
+        self.position_label.setText(_clock(self._preview_position))
+
+    def _preview_position_changed(self, position_ms: int):
+        if self.recorder._state != "paused":
+            return
+        self._preview_position = max(0.0, min(self._preview_duration, position_ms / 1000.0))
+        self.waveform.set_position(self._preview_position)
+        self.position_label.setText(_clock(self._preview_position))
+
+    def _preview_playback_changed(self, playing: bool):
+        name = "pause" if playing else "play"
+        self.play_preview_button.setIcon(self.icons.icon(name, size=18))
+        self.play_preview_button.setToolTip("Pause preview" if playing else "Listen to the paused recording")
 
     def _register_saved_recording(self, raw_path: str):
         path = Path(raw_path).expanduser().resolve()
@@ -393,34 +481,50 @@ class RecordingPage(QWidget):
                     device_name=self.recorder.device_name,
                 )
                 self.status_message.emit(
-                    f"Recording saved to library: {record['filename']} · {record['duration']:.1f}s"
+                    f"Recording saved · {record['filename']} · {record['duration']:.1f}s"
                 )
             else:
-                self.status_message.emit(f"Recording saved: {path.name}")
+                self.status_message.emit(f"Recording saved · {path.name}")
         except Exception as exc:
             self.status_message.emit(
-                f"Recording file saved, but recording history could not be updated: {exc}"
+                f"The audio file was saved, but its library entry could not be updated: {exc}"
             )
 
+        self.timer.stop()
+        self._preview_duration = self.recorder.duration()
+        self._preview_position = self._preview_duration
+        self.waveform.set_duration(self._preview_duration)
+        self.waveform.set_interactive(False)
         self.state_label.setText("Recording saved")
-        self.status_pill.setText("●  SAVED")
+        self.status_pill.setText("SAVED")
         self._style_status("saved")
-        self.session_hint.setText(f"{path.name} · Ready to open in transcription")
+        self.duration_label.setText(_clock(self._preview_duration))
+        self.position_label.setText(_clock(self._preview_duration))
+        self.total_label.setText(f" / {_clock(self._preview_duration)}")
+        self.transport_hint.setText(f"Saved to your recordings · {path.name}")
+        self.play_preview_button.setEnabled(False)
         if self._auto_transcribe_after_save:
             self.audio_ready.emit(str(path))
         self._auto_transcribe_after_save = True
 
     def cancel_recording(self):
         self.timer.stop()
+        self.preview_player.stop()
+        self.preview_player.clear_source()
+        self._preview_path = None
         self.recorder.cancel()
         self.recording_path = None
         self.duration_label.setText("00:00")
+        self.position_label.setText("00:00")
+        self.total_label.setText(" / 00:00")
         self.level.setValue(0)
         self.level_value.setText("0%")
-        self.state_label.setText("Recording discarded")
-        self.status_pill.setText("●  DISCARDED")
+        self.waveform.set_waveform([], 0.0)
+        self.waveform.set_interactive(False)
+        self.state_label.setText("Take discarded")
+        self.status_pill.setText("DISCARDED")
         self._style_status("idle")
-        self.session_hint.setText("The temporary audio file was removed.")
+        self.transport_hint.setText("The temporary audio was removed.")
         self.status_message.emit("Recording discarded")
 
     def _state_changed(self, state: str):
@@ -428,48 +532,58 @@ class RecordingPage(QWidget):
         paused = state == "paused"
         active = recording or paused
 
-        self.pause_button.setEnabled(recording)
-        self.resume_button.setEnabled(paused)
         self.stop_button.setEnabled(active)
         self.cancel_button.setEnabled(active)
         self.auto_transcribe.setEnabled(not active)
         self.device_combo.setEnabled(not active)
         self.refresh_button.setEnabled(not active)
-        self.record_button.setEnabled(not active and self._has_usable_input)
+        self.library_button.setEnabled(not active)
+        self.play_preview_button.setEnabled(paused and bool(self._preview_path))
+        self.record_button.setEnabled(
+            recording or paused or (state == "idle" and self._has_usable_input)
+        )
 
         if recording:
-            self.status_pill.setText("●  RECORDING")
+            self.status_pill.setText("RECORDING")
             self._style_status("recording")
             self.state_label.setText("Recording in progress")
-            self.record_button.setText("●")
-            self.record_button.setToolTip("Recording is active")
-            self.record_action_hint.setText("CAPTURING AUDIO")
+            self.record_button.setText("  Pause")
+            self.record_button.setIcon(self.icons.icon("pause", "#ffffff", 20))
+            self.record_button.setToolTip("Pause this take and review the waveform")
+            self.record_action_hint = "pause"
             self.pulse_timer.start()
             self._style_record_button("recording")
+            self.waveform.set_interactive(False)
+            self.play_preview_button.setEnabled(False)
         elif paused:
-            self.status_pill.setText("Ⅱ  PAUSED")
+            self.status_pill.setText("PAUSED")
             self._style_status("paused")
-            self.state_label.setText("Recording paused")
-            self.record_button.setText("Ⅱ")
-            self.record_button.setToolTip("Recording is paused")
-            self.record_action_hint.setText("RECORDING PAUSED")
+            self.state_label.setText("Review your take")
+            self.record_button.setText("  Resume from here")
+            self.record_button.setIcon(self.icons.icon("play", "#ffffff", 20))
+            self.record_button.setToolTip("Continue recording from the selected waveform position")
             self.pulse_timer.stop()
             self._style_record_button("paused")
+            QTimer.singleShot(0, self._load_paused_preview)
         else:
             self.pulse_timer.stop()
             self._pulse_phase = False
-            self.record_button.setText("●")
-            self.record_button.setToolTip("Start microphone recording")
-            self.record_action_hint.setText("START RECORDING")
+            self.record_button.setText("  Start recording")
+            self.record_button.setIcon(self.icons.icon("record", "#ffffff", 20))
+            self.record_button.setToolTip("Start a new microphone recording")
             self._style_record_button("ready")
+            self.stop_button.setEnabled(False)
+            self.cancel_button.setEnabled(False)
+            self.play_preview_button.setEnabled(False)
             if state == "cancelled":
-                self.status_pill.setText("●  DISCARDED")
+                self.status_pill.setText("DISCARDED")
                 self._style_status("idle")
-                self.state_label.setText("Recording discarded")
+                self.state_label.setText("Take discarded")
             elif state == "idle" and self.recording_path is None:
-                self.status_pill.setText("●  READY")
+                self.status_pill.setText("READY")
                 self._style_status("ready")
-                self.state_label.setText("Ready to record")
+                self.state_label.setText("Ready when you are")
+                self.waveform.set_interactive(False)
 
     def _style_status(self, state: str):
         styles = {
@@ -483,28 +597,38 @@ class RecordingPage(QWidget):
         self.status_pill.setStyleSheet(
             "QLabel#RecordingStatus { "
             + styles.get(state, styles["ready"])
-            + " border-radius: 11px; padding: 6px 10px; font-size: 10px; font-weight: 800; }"
+            + " border-radius: 10px; padding: 6px 11px; font-size: 10px; font-weight: 800; }"
         )
 
     def _style_record_button(self, state: str):
         if state == "recording":
-            background, ring = "#cf4355", "rgba(225, 75, 91, 0.25)"
+            background = "#cf4355"
         elif state == "paused":
-            background, ring = "#bd8a35", "rgba(226, 169, 69, 0.22)"
+            background = "#bd8a35"
         else:
-            background, ring = "#df5364", "rgba(223, 83, 100, 0.20)"
-        width = 10 if self._pulse_phase and state == "recording" else 7
+            background = "#d94c5d"
         self.record_button.setStyleSheet(
-            "QPushButton#RecordButton { "
-            f"border-radius: 63px; background: {background}; color: white; "
-            f"font-size: 42px; font-weight: 500; border: {width}px solid {ring}; }}"
-            "QPushButton#RecordButton:hover { background: #c63f50; }"
-            "QPushButton#RecordButton:disabled { color: rgba(255,255,255,0.85); }"
+            "QPushButton#RecordPrimary { "
+            f"border-radius: 13px; background: {background}; color: white; "
+            "font-size: 14px; font-weight: 750; padding: 0 18px; border: none; }"
+            "QPushButton#RecordPrimary:hover { background: #bd3e50; }"
+            "QPushButton#RecordPrimary:disabled { background: #8993a1; color: white; }"
+        )
+        self.stop_button.setStyleSheet(
+            "QPushButton#StopRecording { border-radius: 27px; background: rgba(214,90,104,0.10); "
+            "border: 1px solid rgba(214,90,104,0.35); }"
+            "QPushButton#StopRecording:hover { background: rgba(214,90,104,0.20); }"
+            "QPushButton#StopRecording:disabled { opacity: 0.4; }"
         )
 
     def _pulse_record_button(self):
         self._pulse_phase = not self._pulse_phase
-        self._style_record_button("recording")
+        border = "3px solid rgba(225,75,91,0.30)" if self._pulse_phase else "1px solid rgba(225,75,91,0.10)"
+        self.record_button.setStyleSheet(
+            "QPushButton#RecordPrimary { "
+            f"border-radius: 13px; background: #cf4355; color: white; border: {border}; "
+            "font-size: 14px; font-weight: 750; padding: 0 18px; }"
+        )
 
     def _set_level(self, value: int):
         level = max(0, min(100, int(value)))
@@ -512,20 +636,36 @@ class RecordingPage(QWidget):
         self.level_value.setText(f"{level}%")
 
     def _set_duration(self, seconds: float):
-        self._elapsed = max(0.0, float(seconds))
-        self._update_duration()
+        duration = max(0.0, float(seconds))
+        self.duration_label.setText(_clock(duration))
+        self.total_label.setText(f" / {_clock(duration)}")
+        if self.recorder._state == "recording":
+            self._preview_duration = duration
+            self._preview_position = duration
+            self.position_label.setText(_clock(duration))
+            self.waveform.set_duration(duration)
+            self.waveform.set_position(duration)
+        elif self.recorder._state == "paused":
+            self._preview_duration = duration
+            self.waveform.set_duration(duration)
+
+    def _set_waveform(self, peaks):
+        duration = self.recorder.duration()
+        self.waveform.set_waveform(peaks, duration)
+        if self.recorder._state == "recording":
+            self.waveform.set_position(duration)
 
     def _update_duration(self):
-        seconds = int(self.recorder.duration())
-        minutes, seconds = divmod(seconds, 60)
-        self.duration_label.setText(f"{minutes:02}:{seconds:02}")
+        self._set_duration(self.recorder.duration())
 
     def _show_error(self, message: str):
         self.timer.stop()
-        self.status_pill.setText("●  AUDIO ERROR")
+        self.preview_player.stop()
+        self.preview_player.clear_source()
+        self.status_pill.setText("AUDIO ERROR")
         self._style_status("error")
         self.state_label.setText("Microphone capture stopped")
-        self.session_hint.setText(str(message))
+        self.transport_hint.setText(str(message))
         self.status_message.emit(str(message))
         QMessageBox.warning(self, "Recording interrupted", str(message))
 
@@ -533,4 +673,5 @@ class RecordingPage(QWidget):
         self.timer.stop()
         self.pulse_timer.stop()
         self._device_refresh_timer.stop()
+        self.preview_player.shutdown()
         self.recorder.shutdown()
