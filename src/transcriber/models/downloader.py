@@ -215,13 +215,7 @@ class ModelDownloader:
             self._pause_events[repo_id] = pause_event
             self._stop_events[repo_id] = stop_event
             self._job_ids[repo_id] = task_id
-        if self.job_repository:
-            self.job_repository.enqueue(
-                task_id, repo_id, revision,
-                str(self.registry.root / self.registry.directory_name(repo_id)),
-                metadata or {},
-            )
-        self._enter_download_slot(repo_id, cancel_event, pause_event, stop_event)
+
         staging = self.registry.root / ".staging" / f"{self.registry.directory_name(repo_id)}-{task_id}"
         target = self.registry.root / self.registry.directory_name(repo_id)
         started = time.monotonic()
@@ -237,7 +231,9 @@ class ModelDownloader:
             if progress:
                 elapsed = max(0.001, time.monotonic() - started)
                 progress(DownloadProgress(
-                    state=state, downloaded_bytes=downloaded, total_bytes=total,
+                    state=state,
+                    downloaded_bytes=downloaded,
+                    total_bytes=total,
                     speed_bytes_per_second=downloaded / elapsed if downloaded else None,
                     message=message,
                 ))
@@ -261,6 +257,13 @@ class ModelDownloader:
                     last_saved_state = state
 
         try:
+            self._enter_download_slot(repo_id, cancel_event, pause_event, stop_event)
+            if self.job_repository:
+                self.job_repository.enqueue(
+                    task_id, repo_id, revision,
+                    str(target),
+                    job_metadata,
+                )
             emit("Inspecting", message="Reading repository metadata from Hugging Face")
             inspected = self.hub.inspect(repo_id, revision=revision)
             if not inspected.revision:
@@ -288,6 +291,10 @@ class ModelDownloader:
                 raise OSError("Not enough free disk space for this model and staging overhead")
             if cancel_event.is_set():
                 raise DownloadCancelled("Download cancelled before transfer")
+            if pause_event.is_set():
+                raise DownloadPaused("Download paused before transfer")
+            if stop_event.is_set():
+                raise DownloadStopped("Download stopped before transfer")
             staging.mkdir(parents=True, exist_ok=False)
             emit("Downloading", total=total, message="Downloading pinned model files")
 
@@ -295,7 +302,9 @@ class ModelDownloader:
                 from huggingface_hub import hf_hub_download
                 from tqdm.auto import tqdm
             except ImportError as exc:
-                raise RuntimeError("Install Faster-Whisper with pip install 'transcriber-desktop[asr]'") from exc
+                raise RuntimeError(
+                    "Install Faster-Whisper with pip install 'transcriber-desktop[asr]'"
+                ) from exc
 
             class ProgressTqdm(tqdm):
                 def update(self, n=1):
@@ -311,7 +320,9 @@ class ModelDownloader:
                     emit("Downloading", total=total)
                     return result
 
-            # Use Hub's cache/resume mechanism; local_dir provides a staged working tree.
+            # hf_hub_download keeps reusable partial/completed files in the shared
+            # cache. Staging is disposable; rerunning the same pinned revision
+            # reuses cache entries without deleting another job's shared cache.
             for filename in chosen:
                 if pause_event.is_set():
                     raise DownloadPaused("Download paused by user")
@@ -320,32 +331,50 @@ class ModelDownloader:
                 if cancel_event.is_set():
                     raise DownloadCancelled("Download cancelled by user")
                 hf_hub_download(
-                    repo_id=repo_id, filename=filename, revision=inspected.revision,
-                    cache_dir=str(self.cache_dir), local_dir=str(staging),
+                    repo_id=repo_id,
+                    filename=filename,
+                    revision=inspected.revision,
+                    cache_dir=str(self.cache_dir),
+                    local_dir=str(staging),
                     tqdm_class=ProgressTqdm,
                 )
+            if pause_event.is_set():
+                raise DownloadPaused("Download paused by user")
+            if stop_event.is_set():
+                raise DownloadStopped("Download stopped by user")
             if cancel_event.is_set():
                 raise DownloadCancelled("Download cancelled by user")
             emit("Validating", total=total, message="Checking required model artefacts")
-            installed_files = [item.relative_to(staging).as_posix() for item in staging.rglob("*") if item.is_file()]
+            installed_files = [
+                item.relative_to(staging).as_posix()
+                for item in staging.rglob("*")
+                if item.is_file()
+            ]
             final_report = require_faster_whisper_compatible(installed_files)
             manifest = {
-                "repo_id": repo_id, "revision": inspected.revision,
-                "engine": "faster-whisper", "files": list(final_report.included_files),
+                "repo_id": repo_id,
+                "revision": inspected.revision,
+                "engine": "faster-whisper",
+                "files": list(final_report.included_files),
                 "license": inspected.license,
             }
             (staging / ".transcriber-model.json").write_text(
                 json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             emit("Installing", total=total, message="Atomically registering the validated model")
-            backup = self.registry.root / ".staging" / f"{self.registry.directory_name(repo_id)}-previous-{task_id}"
+            backup = self.registry.root / ".staging" / (
+                f"{self.registry.directory_name(repo_id)}-previous-{task_id}"
+            )
             if target.exists():
                 target.rename(backup)
             try:
                 staging.rename(target)
                 self.registry.register(
-                    repo_id, target, revision=inspected.revision,
-                    files=list(final_report.included_files), license_name=inspected.license,
+                    repo_id,
+                    target,
+                    revision=inspected.revision,
+                    files=list(final_report.included_files),
+                    license_name=inspected.license,
                 )
             except Exception:
                 if target.exists():
@@ -374,13 +403,18 @@ class ModelDownloader:
         except ModelCompatibilityError:
             emit("Failed", message="Repository is not compatible with Faster-Whisper")
             if self.job_repository:
-                self.job_repository.update(task_id, state="failed", revision=pinned_revision, error="Repository is not compatible with Faster-Whisper")
+                self.job_repository.update(
+                    task_id, state="failed", revision=pinned_revision,
+                    error="Repository is not compatible with Faster-Whisper",
+                )
             raise
         except Exception as exc:
             logger.exception("Model download failed for %s", repo_id)
             emit("Failed", message=str(exc))
             if self.job_repository:
-                self.job_repository.update(task_id, state="failed", revision=pinned_revision, error=str(exc))
+                self.job_repository.update(
+                    task_id, state="failed", revision=pinned_revision, error=str(exc),
+                )
             raise
         finally:
             shutil.rmtree(staging, ignore_errors=True)

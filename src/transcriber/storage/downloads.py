@@ -18,11 +18,11 @@ def _safe_error(message: str | None) -> str | None:
         return None
     value = str(message)[:1000]
     value = re.sub(
-        r"(?i)(authorization|access[_-]?token|api[_-]?key|password)\\s*[:=]\\s*[^,;\\s]+",
+        r"(?i)(authorization|access[_-]?token|api[_-]?key|password)\s*[:=]\s*[^,;\s]+",
         r"\1=[redacted]",
         value,
     )
-    value = re.sub(r"(?i)(token=)[^&\\s]+", r"\1[redacted]", value)
+    value = re.sub(r"(?i)(token=)[^&\s]+", r"\1[redacted]", value)
     return value
 
 
@@ -130,7 +130,7 @@ class DownloadRepository:
                 SET state='stopped',
                     error='Application exited before this download finished. Resume it explicitly.',
                     updated_at=?
-                WHERE state IN ('queued','inspecting','downloading','validating','installing')
+                WHERE state IN ('queued','inspecting','downloading','validating','installing','pausing','stopping','cancelling')
                 """,
                 (now,),
             )
