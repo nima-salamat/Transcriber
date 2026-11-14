@@ -324,17 +324,28 @@ def _download_vosk_archive(
                 raise OSError(f"Vosk archive server returned unexpected HTTP status {status}")
 
             mode = "ab" if append else "wb"
+            exceeded_expected_size = False
             with partial.open(mode) as stream:
                 while True:
                     check_events()
                     chunk = response.read(_CHUNK_SIZE)
                     if not chunk:
                         break
+                    if total is not None and downloaded + len(chunk) > total:
+                        exceeded_expected_size = True
+                        break
                     stream.write(chunk)
                     downloaded += len(chunk)
                     progress(downloaded, total, "Receiving Vosk model archive")
                 stream.flush()
                 os.fsync(stream.fileno())
+
+            if exceeded_expected_size:
+                partial.unlink(missing_ok=True)
+                raise OSError(
+                    f"Vosk archive exceeded its expected size of {total:,} bytes; "
+                    "the source may be pointing to a different model"
+                )
 
         return downloaded, total
 
