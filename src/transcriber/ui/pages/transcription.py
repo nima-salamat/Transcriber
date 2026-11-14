@@ -84,13 +84,21 @@ class TranscriptionPage(QWidget):
         self.file_name.setObjectName("Muted")
         self.open_button = QPushButton("Choose audio file")
         self.open_button.clicked.connect(self.choose_audio)
+        self.close_audio_button = QPushButton("×")
+        self.close_audio_button.setFixedSize(34, 34)
+        self.close_audio_button.setToolTip("Close the loaded audio file")
+        self.close_audio_button.setAccessibleName("Close audio")
+        self.close_audio_button.setEnabled(False)
+        self.close_audio_button.clicked.connect(self.close_audio)
         self.engine_combo = QComboBox()
         self.engine_combo.addItem("Faster-Whisper · Local", "faster-whisper")
+        self.engine_combo.addItem("Vosk / Kaldi · Offline", "vosk")
         self.engine_combo.addItem("Google Cloud STT V2 · Online", "google-cloud")
         self.engine_combo.setCurrentIndex(max(0, self.engine_combo.findData(self.settings_store.settings.default_engine)))
         self.engine_combo.currentIndexChanged.connect(self._update_engine_controls)
         source_layout.addWidget(self.open_button)
         source_layout.addWidget(self.file_name, 1)
+        source_layout.addWidget(self.close_audio_button)
         source_layout.addWidget(QLabel("Engine"))
         source_layout.addWidget(self.engine_combo)
 
@@ -259,22 +267,33 @@ class TranscriptionPage(QWidget):
         self._update_engine_controls()
 
     def _update_engine_controls(self, *_args):
-        cloud_selected = self.engine_combo.currentData() == "google-cloud"
+        engine_id = self.engine_combo.currentData()
+        cloud_selected = engine_id == "google-cloud"
+        vosk_selected = engine_id == "vosk"
+        if hasattr(self, "model_combo"):
+            self.refresh_models()
         self.model_combo.setEnabled(not cloud_selected)
         if hasattr(self, "default_model_button"):
+            self.default_model_button.setVisible(not cloud_selected and not vosk_selected)
             self._update_default_model_control()
-        self.beam_spin.setEnabled(not cloud_selected)
-        self.vad_check.setEnabled(not cloud_selected)
-        self.task_combo.setEnabled(not cloud_selected)
-        self.initial_prompt.setEnabled(not cloud_selected)
-        if cloud_selected and self.task_combo.currentData() != "transcribe":
+        self.beam_spin.setEnabled(not cloud_selected and not vosk_selected)
+        self.vad_check.setEnabled(not cloud_selected and not vosk_selected)
+        self.task_combo.setEnabled(not cloud_selected and not vosk_selected)
+        self.initial_prompt.setEnabled(not cloud_selected and not vosk_selected)
+        if (cloud_selected or vosk_selected) and self.task_combo.currentData() != "transcribe":
             self.task_combo.setCurrentIndex(self.task_combo.findData("transcribe"))
         if hasattr(self, "start_button"):
-            self.start_button.setText("Send audio to Google Cloud" if cloud_selected else "Start offline transcription")
+            self.start_button.setText(
+                "Send audio to Google Cloud" if cloud_selected
+                else "Start Vosk transcription" if vosk_selected
+                else "Start offline transcription"
+            )
         self.engine_privacy_hint.setText(
             "Online processing: audio is sent to Google Cloud Speech-to-Text V2. A project ID, "
             "Application Default Credentials and explicit Cloud consent are required. Choose a specific language."
             if cloud_selected else
+            "Local processing: Vosk / Kaldi runs offline using the selected Vosk model. No audio is uploaded."
+            if vosk_selected else
             "Local processing: Faster-Whisper runs on this device. Audio is not uploaded by this engine."
         )
 
@@ -288,33 +307,54 @@ class TranscriptionPage(QWidget):
 
     def refresh_models(self, *, select_default: bool = False):
         selected = self.model_combo.currentData() if hasattr(self, "model_combo") else None
+        selected_engine = (
+            self.engine_combo.currentData() if hasattr(self, "engine_combo") else "faster-whisper"
+        )
         self.model_combo.blockSignals(True)
         self.model_combo.clear()
         installed = self.model_manager.installed(include_sizes=False)
+        target_runtime = "vosk" if selected_engine == "vosk" else "faster-whisper"
         models = sorted(
-            (item for item in installed if item.get("compatible")),
+            (
+                item for item in installed
+                if item.get("compatible")
+                and str(item.get("runtime") or "faster-whisper") == target_runtime
+            ),
             key=lambda item: str(item["repo_id"]).casefold(),
         )
-        preferred = self.settings_store.settings.default_model
-        preferred_is_installed = any(item["repo_id"] == preferred for item in models)
-        if preferred_is_installed:
-            models.sort(key=lambda item: (item["repo_id"] != preferred, str(item["repo_id"]).casefold()))
+        preferred = (
+            self.settings_store.settings.vosk_default_model
+            if target_runtime == "vosk"
+            else self.settings_store.settings.default_model
+        )
+        if preferred:
+            models.sort(key=lambda item: (
+                item["repo_id"] != preferred,
+                str(item["repo_id"]).casefold(),
+            ))
 
         for model in models:
             repo_id = model["repo_id"]
-            label = f"★  {repo_id}  ·  DEFAULT" if repo_id == preferred else repo_id
+            if target_runtime == "vosk":
+                language = str(model.get("language_name") or model.get("language_code") or "Unknown language")
+                label = f"Vosk · {language} · {repo_id}"
+                if repo_id == preferred:
+                    label = f"★  {label} · DEFAULT"
+                tooltip = f"{repo_id} — Vosk / Kaldi · {language}"
+            else:
+                label = f"★  {repo_id}  ·  DEFAULT" if repo_id == preferred else repo_id
+                tooltip = f"{repo_id} — {'Default model' if repo_id == preferred else 'Installed Faster-Whisper model'}"
             self.model_combo.addItem(label, repo_id)
-            self.model_combo.setItemData(
-                self.model_combo.count() - 1,
-                f"{repo_id} — {'Default model' if repo_id == preferred else 'Installed Faster-Whisper model'}",
-                Qt.ToolTipRole,
-            )
+            self.model_combo.setItemData(self.model_combo.count() - 1, tooltip, Qt.ToolTipRole)
 
         if not models:
-            self.model_combo.addItem("No compatible models installed", None)
-            self.model_combo.setItemData(
-                0, "Install or import a Faster-Whisper model from Model Library.", Qt.ToolTipRole
+            description = (
+                "No compatible Vosk models installed. Open Model Library → Discover → Vosk."
+                if target_runtime == "vosk"
+                else "Install or import a Faster-Whisper model from Model Library."
             )
+            self.model_combo.addItem("No compatible models installed", None)
+            self.model_combo.setItemData(0, description, Qt.ToolTipRole)
         else:
             target = preferred if select_default or selected not in {item["repo_id"] for item in models} else selected
             index = self.model_combo.findData(target)
@@ -326,11 +366,20 @@ class TranscriptionPage(QWidget):
         if not hasattr(self, "default_model_button"):
             return
         selected = self.model_combo.currentData()
-        configured_default = self.settings_store.settings.default_model
+        selected_engine = self.engine_combo.currentData()
+        configured_default = (
+            self.settings_store.settings.vosk_default_model
+            if selected_engine == "vosk"
+            else self.settings_store.settings.default_model
+        )
         is_default = bool(selected and selected == configured_default)
-        cloud_selected = self.engine_combo.currentData() == "google-cloud"
+        cloud_selected = selected_engine == "google-cloud"
+        vosk_selected = selected_engine == "vosk"
+        self.default_model_button.setVisible(not cloud_selected and not vosk_selected)
         self.default_model_button.setText("★  Default model" if is_default else "Set as default")
-        self.default_model_button.setEnabled(bool(selected) and not is_default and not cloud_selected)
+        self.default_model_button.setEnabled(
+            bool(selected) and not is_default and not cloud_selected and not vosk_selected
+        )
         self.default_model_button.setToolTip(
             f"{selected} is the default model." if is_default
             else "Set the selected installed Faster-Whisper model as the default for future jobs."
@@ -340,9 +389,14 @@ class TranscriptionPage(QWidget):
         repo_id = self.model_combo.currentData()
         if not repo_id:
             return
-        self.settings_store.update(default_model=repo_id)
+        if self.engine_combo.currentData() == "vosk":
+            self.settings_store.update(vosk_default_model=repo_id)
+            engine_name = "Vosk"
+        else:
+            self.settings_store.update(default_model=repo_id)
+            engine_name = "Faster-Whisper"
         self.refresh_models(select_default=True)
-        self.status_message.emit(f"Default Faster-Whisper model set to {repo_id}")
+        self.status_message.emit(f"Default {engine_name} model set to {repo_id}")
 
     def choose_audio(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -372,11 +426,37 @@ class TranscriptionPage(QWidget):
             self._rebuild_segment_ranges()
             self._update_word_count()
         self.audio_path = audio
+        self.close_audio_button.setEnabled(True)
         self.file_name.setText(audio.name)
         self.file_name.setToolTip(str(audio))
         self.player.set_source(str(audio))
         self.progress_label.setText("Audio ready")
         self.audio_changed.emit(str(audio))
+
+    def close_audio(self):
+        """Unload the current media source while preserving the transcript text and edits."""
+        if self.cancel_event is not None and not self.cancel_event.is_set():
+            QMessageBox.information(
+                self, "Transcription in progress",
+                "Cancel or finish the active transcription before closing its audio source.",
+            )
+            return
+        self._autosave()
+        self.player.stop()
+        self.player.clear_source()
+        self.audio_path = None
+        self._audio_duration_ms = 0
+        self.file_name.setText("No audio selected")
+        self.file_name.setToolTip("")
+        self.close_audio_button.setEnabled(False)
+        self.player_status.setText("No audio loaded")
+        self.play_button.setEnabled(False)
+        self.seek_slider.setRange(0, 0)
+        self.seek_slider.setValue(0)
+        self.time_label.setText("00:00 / 00:00")
+        self.audio_changed.emit("")
+        self.progress_label.setText("Audio closed · transcript preserved")
+        self.status_message.emit("Audio closed; transcript and edits were kept.")
 
     def start_transcription(self):
         if self.audio_path is None:
@@ -387,8 +467,12 @@ class TranscriptionPage(QWidget):
         repo_id = self.model_combo.currentData()
         configured = self.settings_store.settings
         cloud_selected = engine_id == "google-cloud"
+        vosk_selected = engine_id == "vosk"
         if not cloud_selected and not repo_id:
-            QMessageBox.information(self, "Model required", "Install a compatible Faster-Whisper model in Model Library first.")
+            QMessageBox.information(
+                self, "Model required",
+                "Install a compatible Vosk or Faster-Whisper model for the selected engine in Model Library first.",
+            )
             return
         if cloud_selected:
             if configured.local_only or not configured.cloud_consent:
@@ -412,14 +496,14 @@ class TranscriptionPage(QWidget):
             }.get(language, language)
         options = TranscriptionOptions(
             language=language,
-            task="transcribe" if cloud_selected else self.task_combo.currentData(),
+            task="transcribe" if cloud_selected or vosk_selected else self.task_combo.currentData(),
             beam_size=self.beam_spin.value(),
             vad_filter=self.vad_check.isChecked(),
             word_timestamps=self.word_timestamps.isChecked(),
-            initial_prompt=self.initial_prompt.text().strip() or None,
+            initial_prompt=None if cloud_selected or vosk_selected else self.initial_prompt.text().strip() or None,
         )
         changes = {"word_timestamps": self.word_timestamps.isChecked()}
-        if not cloud_selected:
+        if not cloud_selected and not vosk_selected:
             # Picking a model for this one job must not silently change the
             # separately configured default model.
             changes.update(beam_size=self.beam_spin.value(), vad_filter=self.vad_check.isChecked())
@@ -429,6 +513,8 @@ class TranscriptionPage(QWidget):
         self.cancel_event = cancel_event
         self._job_engine_id = engine_id
         self.start_button.setEnabled(False)
+        self.open_button.setEnabled(False)
+        self.close_audio_button.setEnabled(False)
         self.cancel_button.setVisible(True)
         self.progress.setValue(0)
         self.progress.setVisible(True)
@@ -508,7 +594,7 @@ class TranscriptionPage(QWidget):
             "title": self.audio_path.stem if self.audio_path else "Transcript",
             "source_path": str(self.audio_path) if self.audio_path else None,
             "engine": self.engine.engine_id if self.engine else "unknown",
-            "model_id": self.model_combo.currentData() if self.engine and self.engine.engine_id == "faster-whisper" else None,
+            "model_id": self.model_combo.currentData() if self.engine and self.engine.engine_id in {"faster-whisper", "vosk"} else None,
             "language": result.language,
             "duration": result.duration,
             "original_text": transcript_text,
@@ -554,6 +640,8 @@ class TranscriptionPage(QWidget):
     def _finish_worker(self):
         self._update_engine_controls()
         self.start_button.setEnabled(True)
+        self.open_button.setEnabled(True)
+        self.close_audio_button.setEnabled(self.audio_path is not None)
         self.cancel_button.setVisible(False)
         self.cancel_button.setEnabled(True)
         self.progress.setVisible(False)
@@ -706,11 +794,13 @@ class TranscriptionPage(QWidget):
         self.player.player.stop()
         self._audio_duration_ms = 0
         if self.audio_path and self.audio_path.is_file():
+            self.close_audio_button.setEnabled(True)
             self.file_name.setText(self.audio_path.name)
             self.file_name.setToolTip(str(self.audio_path))
             self.player.set_source(str(self.audio_path))
             self.audio_changed.emit(str(self.audio_path))
         else:
+            self.close_audio_button.setEnabled(False)
             self.file_name.setText("Source audio is unavailable")
             self.file_name.setToolTip(str(self.audio_path) if self.audio_path else "")
             self.player.clear_source()
