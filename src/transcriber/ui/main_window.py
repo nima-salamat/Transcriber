@@ -1051,6 +1051,9 @@ class MainWindow(QMainWindow):
         self.assistant_panel.shutdown()
         if self.ipc_server:
             self.ipc_server.close()
+        # Stop accepting Agent work and cancel operations that have not started.
+        # A handler already running is allowed to finish; it is never force-killed.
+        self.operation_manager.shutdown(wait=False)
         for cancel_event in self.model_page._downloads.values():
             cancel_event.set()
         self.model_manager.downloader.cancel_all()
