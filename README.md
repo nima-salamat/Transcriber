@@ -156,6 +156,7 @@ See [Architecture](docs/ARCHITECTURE.md), [Model manager](docs/MODEL_MANAGER.md)
 
 - **No local model appears:** open Model Library and inspect a CTranslate2 model. PyTorch-only Whisper repositories are intentionally rejected.
 - **CUDA load failure:** use Automatic or CPU/INT8 first. CUDA support depends on a compatible CTranslate2 wheel and CUDA/cuDNN runtime; install the combination supported by Faster-Whisper/CTranslate2 for your system.
+- **`open() got an unexpected keyword argument 'metadata_errors'`:** the current Faster-Whisper release calls a PyAV API parameter removed in PyAV 19. The project pins PyAV to `av>=11,<19`; repair an existing environment with `python -m pip install --upgrade "av>=11,<19"` and restart Transcriber.
 - **Model download interrupted:** retry the same repository. Hub cache/download facilities are used to reuse completed artefacts where possible; the incomplete staging installation is not marked installed.
 - **Gated model access:** accept the repository terms on Hugging Face and provide a `HF_TOKEN` environment variable. Transcriber does not bypass access restrictions.
 - **Microphone unavailable:** verify OS privacy permissions, connect an input device, and refresh the device list. Some devices do not support the selected PCM16 format; choose a different input.
