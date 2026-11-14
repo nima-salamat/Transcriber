@@ -159,7 +159,7 @@ class CommandPalettePopup(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         self.search_input = QLineEdit(self)
-        self.search_input.setPlaceholderText("Type a command or page…")
+        self.search_input.setPlaceholderText("Search pages, settings and actions…")
         self.search_input.textChanged.connect(self._filter)
         self.search_input.installEventFilter(self)
         layout.addWidget(self.search_input)
@@ -192,20 +192,48 @@ class CommandPalettePopup(QFrame):
 
     def _filter(self, query):
         normalized = str(query or "").casefold().strip()
-        commands = [
-            item for item in self._commands
-            if not normalized or normalized in item["title"].casefold()
-            or normalized in item["category"].casefold()
-        ]
+        tokens = normalized.split()
+        matches = []
+        for index, command in enumerate(self._commands):
+            searchable = " ".join(
+                str(command.get(key) or "")
+                for key in ("title", "category", "keywords", "description", "shortcut")
+            ).casefold()
+            if not tokens or all(token in searchable for token in tokens):
+                title = str(command.get("title") or "")
+                category = str(command.get("category") or "")
+                title_folded = title.casefold()
+                if not normalized:
+                    score = 0
+                elif title_folded == normalized:
+                    score = 0
+                elif title_folded.startswith(normalized):
+                    score = 1
+                elif normalized in title_folded:
+                    score = 2
+                elif normalized in category.casefold():
+                    score = 3
+                else:
+                    score = 4
+                matches.append((score, index, command))
+
+        matches.sort(key=lambda item: (item[0], item[1]))
+        commands = [item[2] for item in matches]
         self.list_widget.clear()
         for command in commands:
             shortcut = f"   [{command['shortcut']}]" if command.get("shortcut") else ""
-            item = QListWidgetItem(f"{command['title']}{shortcut}   ·   {command['category']}")
+            item = QListWidgetItem(
+                f"{command.get('title', 'Untitled')}{shortcut}   ·   {command.get('category', 'Command')}"
+            )
+            item.setToolTip(str(command.get("keywords") or command.get("description") or ""))
             item.setData(Qt.UserRole, command)
             self.list_widget.addItem(item)
         if self.list_widget.count():
             self.list_widget.setCurrentRow(0)
-        self.hint.setText("↑ ↓ Navigate   Enter Run   Esc Close" if commands else "No matching commands")
+        self.hint.setText(
+            f"{len(commands)} result(s) · ↑ ↓ Navigate · Enter Run · Esc Close"
+            if commands else "No matching pages, settings or actions"
+        )
 
     def _activate_item(self, item):
         command = item.data(Qt.UserRole)
