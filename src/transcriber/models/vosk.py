@@ -66,6 +66,12 @@ class VoskModelInfo:
     version: str
     obsolete: bool = False
     runtime: str = "vosk"
+    source: str = "official"
+    source_repo: str | None = None
+    source_file: str | None = None
+    source_revision: str | None = None
+    sha256: str | None = None
+    license_name: str | None = None
     provider: str = "Vosk"
     task: str = "automatic-speech-recognition"
     author: str = "AlphaCephei"
@@ -76,13 +82,26 @@ class VoskModelInfo:
         return (VoskArchiveFile(f"{self.name}.zip", self.size_bytes),)
 
     @property
-    def revision(self) -> str:
-        return self.md5
+    def checksum(self) -> str:
+        return self.sha256 or self.md5
 
     @property
-    def license(self) -> None:
-        # The official machine-readable catalogue does not publish license metadata.
-        return None
+    def checksum_algorithm(self) -> str:
+        return "sha256" if self.sha256 else "md5"
+
+    @property
+    def revision(self) -> str:
+        return self.checksum
+
+    @property
+    def license(self) -> str | None:
+        return self.license_name
+
+    @property
+    def source_label(self) -> str:
+        if self.source == "huggingface":
+            return f"Hugging Face · {self.source_repo}"
+        return "Official Vosk catalogue"
 
     @property
     def downloads(self) -> None:
@@ -111,10 +130,18 @@ class VoskModelInfo:
             "size_bytes": self.size_bytes,
             "size_text": self.size_text,
             "md5": self.md5,
+            "sha256": self.sha256,
+            "checksum": self.checksum,
+            "checksum_algorithm": self.checksum_algorithm,
             "url": self.url,
             "download_url": self.download_url,
             "version": self.version,
-            "catalogue": MODEL_LIST_URL,
+            "source": self.source,
+            "source_repo": self.source_repo,
+            "source_file": self.source_file,
+            "source_revision": self.source_revision,
+            "license_name": self.license_name,
+            "catalogue": MODEL_LIST_URL if self.source == "official" else None,
         }
 
 
@@ -191,6 +218,7 @@ def _parse_catalogue_entry(raw: object) -> VoskModelInfo | None:
             version=version,
             obsolete=obsolete,
             description=description,
+            license_name="Apache-2.0" if language == "fa" else None,
         )
     except (TypeError, ValueError, OverflowError):
         return None
@@ -205,6 +233,7 @@ class VoskModelCatalog:
         self._lock = threading.RLock()
         self._cached_at = 0.0
         self._models: tuple[VoskModelInfo, ...] = ()
+        self._hub_models: tuple[VoskModelInfo, ...] | None = None
 
     def list_models(self, *, include_obsolete: bool = False, refresh: bool = False) -> list[VoskModelInfo]:
         with self._lock:
@@ -251,46 +280,132 @@ class VoskModelCatalog:
             return models
         return [item for item in models if not item.obsolete]
 
-    def search(self, query: str = "", *, limit: int = 50) -> list[VoskModelInfo]:
-        models = self.list_models()
+    @staticmethod
+    def _huggingface_curated_models() -> tuple[VoskModelInfo, ...]:
+        """Pinned Vosk ZIP mirrors whose files are validated after extraction."""
+        return (
+            VoskModelInfo(
+                repo_id="vosk-hf/localstack-vosk-model-small-fa-0.42",
+                name="vosk-model-small-fa-0.42",
+                language="fa",
+                language_name="Farsi / Persian",
+                model_type="small",
+                size_bytes=0,
+                size_text="53.4 MB",
+                md5="",
+                url=(
+                    "https://huggingface.co/localstack/vosk-models/blob/134b459/"
+                    "vosk-model-small-fa-0.42.zip"
+                ),
+                download_url=(
+                    "https://huggingface.co/localstack/vosk-models/resolve/134b459/"
+                    "vosk-model-small-fa-0.42.zip"
+                ),
+                version="0.42",
+                source="huggingface",
+                source_repo="localstack/vosk-models",
+                source_file="vosk-model-small-fa-0.42.zip",
+                source_revision="134b459",
+                sha256="977cb5faa538f3a835ccfd35f5f6d8284b5c450b89c700b9bd4736b66536ad46",
+                license_name="Apache-2.0 (upstream Vosk model)",
+                author="LocalStack",
+                description=(
+                    "Persian / Farsi · lightweight Vosk / Kaldi model · 53.4 MB · "
+                    "Hugging Face ZIP mirror. The archive is SHA-256 checked and its "
+                    "internal model layout is validated before installation."
+                ),
+            ),
+        )
+
+    def list_all_models(
+        self, *, include_obsolete: bool = False, include_huggingface: bool = True,
+        refresh: bool = False,
+    ) -> list[VoskModelInfo]:
+        models = self.list_models(include_obsolete=include_obsolete, refresh=refresh)
+        if include_huggingface:
+            with self._lock:
+                if self._hub_models is None:
+                    self._hub_models = self._huggingface_curated_models()
+                mirrors = self._hub_models
+            models.extend(mirrors)
+        return models
+
+    def search(
+        self,
+        query: str = "",
+        *,
+        limit: int = 50,
+        language: str | None = None,
+        source: str | None = None,
+    ) -> list[VoskModelInfo]:
+        models = self.list_all_models()
+        selected_language = str(language or "").strip().casefold()
+        if selected_language and selected_language not in {"all", "*"}:
+            aliases = {
+                "persian": "fa", "farsi": "fa", "فارسی": "fa", "ایرانی": "fa",
+                "english": "en", "german": "de", "french": "fr", "spanish": "es",
+                "arabic": "ar", "russian": "ru", "chinese": "cn", "hindi": "hi",
+                "italian": "it", "turkish": "tr",
+            }
+            selected_language = aliases.get(selected_language, selected_language)
+            models = [item for item in models if item.language.casefold().startswith(selected_language)]
+        selected_source = str(source or "").strip().casefold()
+        if selected_source in {"official", "huggingface"}:
+            models = [item for item in models if item.source == selected_source]
+
         normalised = " ".join(str(query or "").casefold().split())
         if normalised:
             tokens = normalised.split()
             aliases = {
-                "persian": "fa",
-                "فارسی": "fa",
-                "farsi": "fa",
-                "فرسی": "fa",
-                "english": "en",
+                "persian": "fa", "farsi": "fa", "فارسی": "fa", "ایرانی": "fa",
+                "english": "en", "german": "de", "french": "fr",
+                "spanish": "es", "vosk": "", "model": "", "مدل": "",
+                "speech": "", "recognition": "", "asr": "",
             }
             tokens = [aliases.get(token, token) for token in tokens]
+            tokens = [token for token in tokens if token]
             models = [
                 model for model in models
                 if all(
                     token in " ".join((
-                        model.name, model.language, model.language_name,
-                        model.model_type, model.description,
+                        model.name, model.repo_id, model.language, model.language_name,
+                        model.model_type, model.description, model.source_repo or "",
                     )).casefold()
                     for token in tokens
                 )
             ]
+        models.sort(key=lambda item: (
+            item.language != "fa",
+            item.source != "official",
+            item.model_type != "small",
+            item.size_bytes if item.size_bytes else 10**18,
+            item.name.casefold(),
+        ))
         return models[:max(1, min(int(limit), 200))]
 
+    def curated(self, language: str = "fa") -> list[VoskModelInfo]:
+        """Small, language-filtered shortlist for the Model Library."""
+        models = self.search(language=language, limit=100)
+        models.sort(key=lambda item: (
+            item.model_type != "small",
+            item.size_bytes if item.size_bytes else 10**18,
+            item.source != "official",
+            item.name.casefold(),
+        ))
+        return models
+
     def inspect(self, model_id: str) -> tuple[VoskModelInfo, VoskCompatibilityReport]:
-        name = _normalise_model_name(model_id)
-        model = next(
-            (item for item in self.list_models(include_obsolete=True) if item.name == name),
-            None,
-        )
-        if model is None:
-            raise KeyError(f"Vosk model is not present in the official catalogue: {name}")
+        model = self.by_name(model_id, include_obsolete=True)
         report = VoskCompatibilityReport(
             compatible=not model.obsolete,
             missing_files=("This model is marked obsolete in the official catalogue",) if model.obsolete else (),
-            included_files=("official Vosk API catalogue entry", "HTTPS archive URL", "MD5 checksum"),
+            included_files=(
+                "official Vosk API catalogue entry" if model.source == "official"
+                else f"Hugging Face archive · {model.source_repo}"
+            , "HTTPS ZIP source", f"{model.checksum_algorithm.upper()} checksum"),
             reason=(
-                "Listed by the official Vosk API catalogue. The downloaded ZIP's checksum and "
-                "Vosk model directory layout will be verified before installation."
+                f"Listed by {model.source_label}. The ZIP checksum and Vosk model directory "
+                "layout will be verified before installation."
                 if not model.obsolete else
                 "The official catalogue marks this model as obsolete. It can be inspected but not installed."
             ),
@@ -298,99 +413,20 @@ class VoskModelCatalog:
         return model, report
 
     def by_name(self, model_id: str, *, include_obsolete: bool = True) -> VoskModelInfo:
-        name = _normalise_model_name(model_id)
-        model = next(
+        lookup = str(model_id or "").strip()
+        models = self.list_all_models(include_obsolete=include_obsolete)
+        found = next(
             (
-                item for item in self.list_models(include_obsolete=include_obsolete)
-                if item.name == name
+                item for item in models
+                if lookup in {item.repo_id, item.name}
+                or lookup == f"vosk/{item.name}"
             ),
             None,
         )
-        if model is None:
-            raise KeyError(f"Vosk model is not available: {name}")
-        return model
+        if found is None:
+            raise KeyError(f"Vosk model is not available: {lookup}")
+        return found
 
-
-def validate_vosk_model_directory(path: str | Path) -> VoskCompatibilityReport:
-    """Check the layout loaded by Vosk's Model constructor without loading weights into RAM."""
-    root = Path(path).expanduser()
-    if root.is_symlink() or not root.is_dir():
-        return VoskCompatibilityReport(
-            compatible=False, missing_files=("model directory",),
-            reason="Vosk model path must be a real directory, not a symbolic link.",
-        )
-    root = root.resolve()
-
-    def safe_file(relative: str) -> bool:
-        candidate = root / relative
-        try:
-            return (
-                not candidate.is_symlink()
-                and candidate.is_file()
-                and candidate.resolve().is_relative_to(root)
-            )
-        except (OSError, RuntimeError, ValueError):
-            return False
-
-    missing: list[str] = []
-    v2 = safe_file("am/final.mdl") and safe_file("conf/model.conf")
-    if v2:
-        included = ["am/final.mdl", "conf/model.conf"]
-        features = [name for name in ("conf/mfcc.conf", "conf/fbank.conf") if safe_file(name)]
-        if not features:
-            missing.append("conf/mfcc.conf or conf/fbank.conf")
-        else:
-            included.extend(features)
-        graph_files = [
-            name for name in ("graph/HCLG.fst", "graph/HCLr.fst", "graph/Gr.fst", "graph/words.txt")
-            if safe_file(name)
-        ]
-        has_main_graph = safe_file("graph/HCLG.fst") or (
-            safe_file("graph/HCLr.fst") and safe_file("graph/Gr.fst")
-        )
-        if not has_main_graph:
-            missing.append("graph/HCLG.fst or graph/HCLr.fst + graph/Gr.fst")
-        if not safe_file("graph/words.txt"):
-            missing.append("graph/words.txt")
-        included.extend(graph_files)
-        layout = "Vosk v2 (am/conf/graph)"
-    else:
-        included = []
-        if not safe_file("final.mdl"):
-            missing.append("final.mdl or am/final.mdl")
-        else:
-            included.append("final.mdl")
-        if not safe_file("mfcc.conf"):
-            missing.append("mfcc.conf or conf/model.conf")
-        else:
-            included.append("mfcc.conf")
-        has_main_graph = safe_file("HCLG.fst") or (
-            safe_file("HCLr.fst") and safe_file("Gr.fst")
-        )
-        if not has_main_graph:
-            missing.append("HCLG.fst or HCLr.fst + Gr.fst")
-        if not safe_file("words.txt"):
-            missing.append("words.txt")
-        included.extend(
-            name for name in ("HCLG.fst", "HCLr.fst", "Gr.fst", "words.txt")
-            if safe_file(name)
-        )
-        layout = "Vosk v1 (legacy root-level)"
-
-    if missing:
-        return VoskCompatibilityReport(
-            compatible=False, missing_files=tuple(missing),
-            included_files=tuple(sorted(set(included))),
-            reason=(
-                "The directory does not contain the acoustic model, feature configuration and "
-                "decoding graph expected by the Vosk API."
-            ),
-        )
-    return VoskCompatibilityReport(
-        compatible=True,
-        included_files=tuple(sorted(set(included))),
-        reason=f"Required files found for {layout}. Model weights are validated without loading them into RAM.",
-    )
 
 
 class VoskModelDownloader:
@@ -493,6 +529,16 @@ class VoskModelDownloader:
     ) -> Path:
         model = self.catalog.by_name(model_id, include_obsolete=False)
         model_id = model.repo_id
+        if metadata:
+            expected = str(
+                metadata.get("checksum") or metadata.get("sha256")
+                or metadata.get("md5") or metadata.get("revision") or ""
+            ).strip().casefold()
+            if expected and expected != model.revision.casefold():
+                raise RuntimeError(
+                    "The Vosk catalogue revision/checksum changed since this download was created. "
+                    "Start a fresh install after inspecting the updated entry."
+                )
         task_id = str(task_id or uuid.uuid4().hex)
         cancel_event = cancel_event or threading.Event()
         pause_event = threading.Event()
@@ -508,11 +554,13 @@ class VoskModelDownloader:
         staging_root = self.registry.root / ".staging"
         cache_root = staging_root / "vosk-download-cache"
         cache_root.mkdir(parents=True, exist_ok=True)
-        cache_key = hashlib.sha256((model.name + model.md5).encode("utf-8")).hexdigest()
+        cache_key = hashlib.sha256(
+            (model.repo_id + model.checksum_algorithm + model.revision).encode("utf-8")
+        ).hexdigest()
         partial = cache_root / f"{cache_key}.zip.partial"
         staging = staging_root / f"vosk-{cache_key}-{task_id}"
         target = self.registry.root / self.registry.directory_name(model.repo_id)
-        total = model.size_bytes
+        total = model.size_bytes or None
         downloaded = 0
         started = time.monotonic()
         job_metadata = {**model.metadata, **(metadata or {}), "runtime": "vosk"}
@@ -532,7 +580,7 @@ class VoskModelDownloader:
                 self.job_repository.update(
                     task_id,
                     state=state.casefold(),
-                    revision=model.md5,
+                    revision=model.revision,
                     downloaded_bytes=downloaded,
                     total_bytes=total,
                     metadata=job_metadata,
@@ -549,9 +597,9 @@ class VoskModelDownloader:
         try:
             if self.job_repository:
                 self.job_repository.enqueue(
-                    task_id, model.repo_id, model.md5, str(target), job_metadata,
+                    task_id, model.repo_id, model.revision, str(target), job_metadata,
                 )
-            emit("Queued", "Waiting for a model download slot")
+            emit("Queued", f"Waiting for a model download slot · {model.source_label}")
             self._enter_slot(model_id, cancel_event, pause_event, stop_event)
             check_events()
 
@@ -570,7 +618,7 @@ class VoskModelDownloader:
             if downloaded > total:
                 partial.unlink()
                 downloaded = 0
-            emit("Downloading", "Downloading official Vosk model archive")
+            emit("Downloading", f"Downloading Vosk model archive from {model.source_label}")
 
             request_headers = {"User-Agent": "Transcriber-Desktop/2.1", "Accept": "application/zip"}
             if downloaded:
@@ -595,12 +643,17 @@ class VoskModelDownloader:
                     os.fsync(stream.fileno())
 
             check_events()
-            if downloaded != total:
+            if total is not None and downloaded != total:
                 raise OSError(
                     f"Vosk archive size mismatch: expected {total:,} bytes, received {downloaded:,} bytes"
                 )
-            emit("Validating", "Verifying the official MD5 checksum")
-            digest = hashlib.md5()
+            if total is None:
+                total = downloaded
+            emit(
+                "Validating",
+                f"Verifying {model.checksum_algorithm.upper()} checksum from {model.source_label}",
+            )
+            digest = hashlib.new(model.checksum_algorithm)
             with partial.open("rb") as archive_stream:
                 while True:
                     check_events()
@@ -608,9 +661,11 @@ class VoskModelDownloader:
                     if not block:
                         break
                     digest.update(block)
-            if digest.hexdigest().casefold() != model.md5:
+            if digest.hexdigest().casefold() != model.checksum.casefold():
                 partial.unlink(missing_ok=True)
-                raise ValueError("Vosk archive checksum does not match the official catalogue")
+                raise ValueError(
+                    f"Vosk archive {model.checksum_algorithm.upper()} checksum does not match its trusted catalogue entry"
+                )
 
             extract_root = staging / "extracted"
             extract_root.mkdir()
@@ -689,7 +744,7 @@ class VoskModelDownloader:
             model_root.rename(final_model)
             manifest = {
                 "repo_id": model.repo_id,
-                "revision": model.md5,
+                "revision": model.revision,
                 "engine": "vosk",
                 "runtime": "vosk",
                 "files": files,
@@ -698,9 +753,15 @@ class VoskModelDownloader:
                 "model_name": model.name,
                 "model_type": model.model_type,
                 "license": None,
-                "source": "official-vosk-catalogue",
-                "catalogue_url": MODEL_LIST_URL,
-                "archive_md5": model.md5,
+                "source": model.source,
+                "source_repo": model.source_repo,
+                "source_file": model.source_file,
+                "source_revision": model.source_revision,
+                "catalogue_url": MODEL_LIST_URL if model.source == "official" else model.url,
+                "archive_checksum": model.checksum,
+                "archive_checksum_algorithm": model.checksum_algorithm,
+                "archive_md5": model.md5 or None,
+                "archive_sha256": model.sha256,
             }
             (final_model / ".transcriber-model.json").write_text(
                 json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -717,7 +778,7 @@ class VoskModelDownloader:
                 self.registry.register(
                     model.repo_id,
                     target,
-                    revision=model.md5,
+                    revision=model.revision,
                     files=files,
                     license_name=None,
                     runtime="vosk",
@@ -726,8 +787,12 @@ class VoskModelDownloader:
                         "language_name": model.language_name,
                         "model_name": model.name,
                         "model_type": model.model_type,
-                        "archive_md5": model.md5,
-                        "source": "official-vosk-catalogue",
+                        "archive_checksum": model.checksum,
+                        "archive_checksum_algorithm": model.checksum_algorithm,
+                        "archive_md5": model.md5 or None,
+                        "archive_sha256": model.sha256,
+                        "source": model.source,
+                        "source_repo": model.source_repo,
                     },
                 )
             except Exception:
@@ -747,7 +812,7 @@ class VoskModelDownloader:
             emit(state, str(exc))
             if self.job_repository:
                 self.job_repository.update(
-                    task_id, state=state.casefold(), revision=model.md5,
+                    task_id, state=state.casefold(), revision=model.revision,
                     downloaded_bytes=downloaded, total_bytes=total, metadata=job_metadata,
                 )
             raise
@@ -756,7 +821,7 @@ class VoskModelDownloader:
             emit("Failed", message)
             if self.job_repository:
                 self.job_repository.update(
-                    task_id, state="failed", revision=model.md5,
+                    task_id, state="failed", revision=model.revision,
                     downloaded_bytes=downloaded, total_bytes=total,
                     metadata=job_metadata, error=message,
                 )
