@@ -15,8 +15,8 @@ from transcriber.models.hub_client import HuggingFaceHubClient
 from transcriber.models.manager import ModelManager
 from transcriber.models.registry import ModelRegistry
 from transcriber.storage.database import Database
-from transcriber.storage.history import HistoryRepository
 from transcriber.storage.downloads import DownloadRepository
+from transcriber.storage.history import HistoryRepository
 from transcriber.storage.recordings import RecordingRepository
 
 
