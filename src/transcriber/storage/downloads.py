@@ -120,6 +120,28 @@ class DownloadRepository:
             ).fetchall()
         return [self._decode(row) for row in rows]
 
+    def delete(self, task_id: str) -> bool:
+        """Remove a terminal task from download history without touching model/cache files."""
+        terminal_states = {"failed", "cancelled", "paused", "stopped", "installed", "completed"}
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT state FROM model_download_jobs WHERE task_id=?",
+                (str(task_id),),
+            ).fetchone()
+            if row is None:
+                return False
+            state = str(row["state"] or "").casefold()
+            if state not in terminal_states:
+                raise RuntimeError(
+                    f"Cannot remove a download while it is {state or 'active'}. "
+                    "Cancel or stop it first."
+                )
+            cursor = connection.execute(
+                "DELETE FROM model_download_jobs WHERE task_id=? AND state=?",
+                (str(task_id), state),
+            )
+        return bool(cursor.rowcount)
+
     def mark_interrupted(self) -> int:
         """Convert volatile in-flight states into explicit recoverable Stopped jobs."""
         now = _now()
