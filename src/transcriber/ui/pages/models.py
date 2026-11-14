@@ -9,6 +9,8 @@ from PySide6.QtCore import QTimer, QUrl, Signal, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -246,10 +248,112 @@ class ModelLibraryPage(QWidget):
         refresh.clicked.connect(self.refresh_installed)
         installed_layout.addWidget(refresh)
         self.tabs.addTab(installed, "Installed")
+
+        import_tab = QWidget()
+        import_layout = QVBoxLayout(import_tab)
+        import_layout.setContentsMargins(18, 18, 18, 18)
+        import_layout.setSpacing(12)
+        self.import_repo_id = QLineEdit("local/imported-model")
+        self.import_repo_id.setPlaceholderText("local/model-name (owner/model-name format)")
+        form = QFormLayout()
+        form.addRow("Local model ID", self.import_repo_id)
+        import_layout.addLayout(form)
+        requirements = QLabel(
+            "Import accepts a local directory or ZIP containing root-level CTranslate2 Faster-Whisper "
+            "artifacts: model.bin, config.json, tokenizer.json and a vocabulary file. "
+            "PyTorch/Transformers checkpoints are not Faster-Whisper models."
+        )
+        requirements.setObjectName("Muted")
+        requirements.setWordWrap(True)
+        import_layout.addWidget(requirements)
+        import_actions = QHBoxLayout()
+        self.import_directory_button = QPushButton("Import directory…")
+        self.import_directory_button.clicked.connect(self._choose_import_directory)
+        self.import_zip_button = QPushButton("Import ZIP…")
+        self.import_zip_button.clicked.connect(self._choose_import_zip)
+        import_actions.addWidget(self.import_directory_button)
+        import_actions.addWidget(self.import_zip_button)
+        import_actions.addStretch(1)
+        import_layout.addLayout(import_actions)
+        self.import_progress = QProgressBar()
+        self.import_progress.setRange(0, 0)
+        self.import_progress.setVisible(False)
+        import_layout.addWidget(self.import_progress)
+        self.import_status = QLabel(
+            "Imported models are copied into managed storage and registered only after validation."
+        )
+        self.import_status.setObjectName("Muted")
+        self.import_status.setWordWrap(True)
+        import_layout.addWidget(self.import_status)
+        import_layout.addStretch(1)
+        self.tabs.addTab(import_tab, "Import")
+
         layout.addWidget(self.tabs, 1)
         self.discover_hint.setText("Choose Curated models or search the Hub to fetch live repository metadata.")
         self.refresh_installed()
         self.refresh_downloads()
+
+    def _choose_import_directory(self):
+        source = QFileDialog.getExistingDirectory(
+            self, "Import Faster-Whisper model directory", str(self.model_manager.registry.root)
+        )
+        if source:
+            self._start_local_import(source, archive=False)
+
+    def _choose_import_zip(self):
+        source, _selected = QFileDialog.getOpenFileName(
+            self, "Import model ZIP archive", str(self.model_manager.registry.root),
+            "ZIP archives (*.zip)",
+        )
+        if source:
+            self._start_local_import(source, archive=True)
+
+    def _start_local_import(self, source: str, *, archive: bool):
+        from transcriber.models.compatibility import validate_repo_id
+
+        try:
+            repo_id = validate_repo_id(self.import_repo_id.text())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid local model ID", str(exc))
+            return
+        if repo_id in self._downloads:
+            QMessageBox.information(self, "Model operation active", f"A download for {repo_id} is already active.")
+            return
+        self.import_directory_button.setEnabled(False)
+        self.import_zip_button.setEnabled(False)
+        self.import_progress.setVisible(True)
+        self.import_status.setText(
+            f"Validating and importing {source} as {repo_id}…"
+        )
+
+        def import_model(_emit):
+            if archive:
+                return self.model_manager.import_zip(source, repo_id)
+            return self.model_manager.import_directory(source, repo_id)
+
+        worker = FunctionWorker(import_model)
+        worker.signals.result.connect(
+            lambda target, rid=repo_id: self._local_import_complete(rid, target)
+        )
+        worker.signals.error.connect(self._local_import_failed)
+        worker.signals.finished.connect(self._local_import_finished)
+        self.thread_pool.start(worker)
+
+    def _local_import_complete(self, repo_id, target):
+        self.import_status.setText(
+            f"Imported and validated {repo_id}. Managed files: {target}"
+        )
+        self.refresh_installed()
+        self.status_message.emit(f"Local model imported: {repo_id}")
+
+    def _local_import_failed(self, message):
+        self.import_status.setText(f"Import failed: {message}")
+        self.status_message.emit(f"Model import failed: {message}")
+
+    def _local_import_finished(self):
+        self.import_progress.setVisible(False)
+        self.import_directory_button.setEnabled(True)
+        self.import_zip_button.setEnabled(True)
 
     def _clear_cards(self):
         while self.discover_cards.count() > 0:
