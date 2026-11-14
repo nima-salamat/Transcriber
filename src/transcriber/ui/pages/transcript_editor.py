@@ -36,12 +36,13 @@ class TranscriptEditorPage(QWidget):
     document_changed = Signal(object)
     seek_requested = Signal(float)
 
-    def __init__(self, parent=None, *, document=None, history=None):
+    def __init__(self, parent=None, *, document=None, history=None, before_history_action=None):
         super().__init__(parent)
         self.document = document or TranscriptDocument()
         self.history = history or CommandHistory(self.document)
         if self.history.document is not self.document:
             raise ValueError("TranscriptEditorPage and CommandHistory must share the same TranscriptDocument")
+        self.before_history_action = before_history_action
         self._busy_refresh = False
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -228,10 +229,14 @@ class TranscriptEditorPage(QWidget):
         self.status_message.emit(description)
 
     def undo(self):
+        if self.before_history_action:
+            self.before_history_action()
         if self.history.undo():
             self._finish_change("Undo completed")
 
     def redo(self):
+        if self.before_history_action:
+            self.before_history_action()
         if self.history.redo():
             self._finish_change("Redo completed")
 

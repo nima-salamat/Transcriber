@@ -249,7 +249,11 @@ class MainWindow(QMainWindow):
         self.audio_cleanup_page = AudioCleanupPage(self.paths, self.thread_pool)
         self.settings_page = SettingsPage(self.paths, self.settings_store, self.database, self.thread_pool, self.model_manager)
         self.batch_page = BatchProcessingPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool)
-        self.editor_page = TranscriptEditorPage(document=self.transcript_document, history=self.transcript_history)
+        self.editor_page = TranscriptEditorPage(
+            document=self.transcript_document,
+            history=self.transcript_history,
+            before_history_action=self.transcription_page._commit_pending_text_edit,
+        )
         self.subtitle_page = SubtitleStudioPage()
         self.pages = {
             "home": ("Home", self.home_page),
