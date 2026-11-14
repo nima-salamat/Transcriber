@@ -24,6 +24,9 @@ from transcriber.ui.main_window import MainWindow
 
 
 def make_window(tmp_path, monkeypatch):
+    # These editor tests do not exercise IPC; avoid starting an accept thread
+    # for every temporary MainWindow created by pytest-qt.
+    monkeypatch.setattr(MainWindow, "_start_local_ipc", lambda self: setattr(self, "ipc_server", None))
     monkeypatch.setenv("TRANSCRIBER_HOME", str(tmp_path / "app-data"))
     paths = AppPaths.discover().ensure()
     settings = SettingsStore(paths.settings)
