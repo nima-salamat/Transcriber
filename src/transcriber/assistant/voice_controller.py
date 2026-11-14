@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from enum import StrEnum
 from queue import Empty, Full, Queue
-from threading import Event, RLock, Thread
+from threading import Event, RLock, Thread, current_thread
 from time import monotonic
 
 
@@ -243,7 +244,7 @@ class VoskWakeWordDetector:
             finally:
                 stream.close()
         worker = self._worker
-        if worker and worker is not __import__("threading").current_thread():
+        if worker and worker.ident is not None and worker is not current_thread():
             worker.join(timeout=5.0)
             if worker.is_alive():
                 self._report_error("Vosk wake detector is still shutting down.")

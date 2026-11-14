@@ -317,7 +317,7 @@ class VoskVoiceAgent:
                         self.on_error(str(exc))
                     except Exception:
                         pass
-        if worker and worker is not threading.current_thread():
+        if worker and worker.ident is not None and worker is not current_thread():
             worker.join(timeout=5.0)
             if worker.is_alive():
                 message = "Voice recognition is still shutting down; microphone capture has been closed."
