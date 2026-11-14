@@ -235,6 +235,7 @@ class ModelCard(Card):
 class ModelLibraryPage(QWidget):
     status_message = Signal(str)
     default_model_changed = Signal(str)
+    installed_models_changed = Signal()
     vosk_model_selected = Signal(str)
 
     def __init__(self, model_manager, settings_store, thread_pool, release_active_model, parent=None):
@@ -560,6 +561,7 @@ class ModelLibraryPage(QWidget):
             f"Imported and validated {repo_id}. Managed files: {target}"
         )
         self.refresh_installed()
+        self.installed_models_changed.emit()
         self.status_message.emit(f"Local model imported: {repo_id}")
 
     def _local_import_failed(self, message):
@@ -1119,6 +1121,7 @@ class ModelLibraryPage(QWidget):
             card.install_button.setText("Installed")
             card.install_button.setEnabled(False)
         self.refresh_installed()
+        self.installed_models_changed.emit()
         self.status_message.emit(f"Model installed: {repo_id}")
 
     def _download_failed(self, repo_id, task_id, message):
@@ -1253,9 +1256,13 @@ class ModelLibraryPage(QWidget):
             size_label = _human_size(model.get("size_bytes"))
             if is_vosk:
                 language = str(model.get("language_name") or model.get("language_code") or "Unknown language")
+                checksum_label = str(
+                    model.get("archive_checksum_algorithm") or "revision"
+                ).upper()
                 info_text = (
                     f"Vosk / Kaldi · {language} · {size_label}\n"
-                    f"Model: {model.get('model_name') or model['repo_id']} · MD5: {revision[:16]}"
+                    f"Model: {model.get('model_name') or model['repo_id']} · "
+                    f"{checksum_label}: {revision[:16]}"
                 )
             else:
                 info_text = (
@@ -1350,7 +1357,7 @@ class ModelLibraryPage(QWidget):
         if not model or model.get("runtime") != "vosk" or not model.get("compatible"):
             return
         model_path = str(Path(model["path"]).resolve())
-        self.settings_store.update(wake_model_directory=model_path)
+        self.settings_store.update(wake_model_directory=model_path, vosk_default_model=repo_id)
         self.vosk_model_selected.emit(model_path)
         self.refresh_installed()
         self.status_message.emit(
@@ -1384,6 +1391,7 @@ class ModelLibraryPage(QWidget):
                 self.release_active_model()
             self.model_manager.delete(repo_id)
             self.refresh_installed()
+            self.installed_models_changed.emit()
             self.status_message.emit(f"Model deleted: {repo_id}")
         except Exception as exc:
             QMessageBox.warning(self, "Cannot delete model", str(exc))
