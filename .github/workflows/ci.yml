@@ -39,6 +39,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,documents]"
+      - name: Prepare safe Ruff autofix patch
+        run: |
+          python -m ruff check --fix src tests || true
+          mkdir -p "$RUNNER_TEMP/ruff-fix"
+          git diff --binary -- src tests > "$RUNNER_TEMP/ruff-fix/ruff-autofix.patch"
+          wc -l "$RUNNER_TEMP/ruff-fix/ruff-autofix.patch"
+      - name: Upload Ruff autofix patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-autofix-preview
+          path: ${{ runner.temp }}/ruff-fix/ruff-autofix.patch
+          if-no-files-found: error
       - name: Ruff lint
         run: python -m ruff check src tests
       - name: Ruff format check
