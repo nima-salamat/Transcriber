@@ -146,7 +146,7 @@ class RecordingPage(QWidget):
                     self.device_combo.setCurrentIndex(index)
                     break
         if self.recorder._state in {"recording", "paused"}:
-            active_device = getattr(self.recorder, "_device_id", None)
+            active_device = self.recorder.device_id
             available_ids = {device.id() for device in devices}
             if active_device and active_device not in available_ids:
                 self.recorder.device_disconnected()
