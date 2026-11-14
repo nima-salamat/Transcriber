@@ -79,7 +79,7 @@ class QtAudioRecorder(QObject):
         self._path = temporary
         self._target_path = target
         self._format = audio_format
-        self.device_id = str(selected.id())
+        self.device_id = bytes(selected.id()).decode("utf-8", "replace")
         self.device_name = str(selected.description())
         self._data_bytes = 0
         self._elapsed_before_pause = 0.0
