@@ -57,6 +57,10 @@ class ModelManager:
         self.downloader.set_max_concurrent(value)
         self.vosk_downloader.set_max_concurrent(value)
 
+    @staticmethod
+    def _is_vosk_id(model_id: str) -> bool:
+        return str(model_id).startswith(("vosk/", "vosk-hf/"))
+
     @property
     def job_repository(self):
         return self.downloader.job_repository
@@ -70,14 +74,14 @@ class ModelManager:
     def pause_download(self, model_id: str) -> bool:
         return (
             self.vosk_downloader.pause(model_id)
-            if str(model_id).startswith("vosk/")
+            if self._is_vosk_id(model_id)
             else self.downloader.pause(model_id)
         )
 
     def stop_download(self, model_id: str) -> bool:
         return (
             self.vosk_downloader.stop(model_id)
-            if str(model_id).startswith("vosk/")
+            if self._is_vosk_id(model_id)
             else self.downloader.stop(model_id)
         )
 
@@ -114,14 +118,22 @@ class ModelManager:
     def search(self, query: str = "", *, sort: str = "downloads", limit: int = 30) -> list[HubModel]:
         return self.hub.search(query, sort=sort, limit=limit)
 
-    def search_vosk(self, query: str = "", *, limit: int = 50):
-        return self.vosk_catalog.search(query, limit=limit)
+    def search_vosk(
+        self, query: str = "", *, limit: int = 50,
+        language: str | None = None, source: str | None = None,
+    ):
+        return self.vosk_catalog.search(
+            query, limit=limit, language=language, source=source,
+        )
+
+    def curated_vosk(self, language: str = "fa"):
+        return self.vosk_catalog.curated(language)
 
     def inspect_vosk(self, model_id: str):
         return self.vosk_catalog.inspect(model_id)
 
     def inspect(self, repo_id: str):
-        if str(repo_id).startswith("vosk/"):
+        if self._is_vosk_id(repo_id):
             return self.inspect_vosk(repo_id)
         model = self.hub.inspect(validate_repo_id(repo_id))
         report = validate_faster_whisper_files(item.name for item in model.files)
@@ -153,7 +165,7 @@ class ModelManager:
         task_id: str | None = None, metadata: dict | None = None,
     ) -> Path:
         model_id = str(model_id)
-        if not model_id.startswith("vosk/"):
+        if not self._is_vosk_id(model_id):
             model_id = "vosk/" + model_id
         with self._lock:
             if model_id == self._active_model_id:
@@ -181,7 +193,7 @@ class ModelManager:
         if job is None:
             raise KeyError(task_id)
         metadata = job.get("metadata") or {}
-        if metadata.get("runtime") == "vosk" or str(job["repo_id"]).startswith("vosk/"):
+        if metadata.get("runtime") == "vosk" or self._is_vosk_id(job["repo_id"]):
             return self.install_vosk(
                 job["repo_id"],
                 cancel_event=cancel_event,
