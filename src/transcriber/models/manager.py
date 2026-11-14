@@ -57,8 +57,11 @@ class ModelManager:
         report = validate_faster_whisper_files(item.name for item in model.files)
         return model, report
 
-    def install(self, repo_id: str, *, revision: str | None = None,
-                cancel_event=None, progress=None) -> Path:
+    def install(
+        self, repo_id: str, *, revision: str | None = None,
+        cancel_event=None, progress=None, task_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> Path:
         repo_id = validate_repo_id(repo_id)
         with self._lock:
             if repo_id == self._active_model_id:
@@ -67,11 +70,24 @@ class ModelManager:
                 raise RuntimeError(f"A download for {repo_id} is already active")
             self._installing.add(repo_id)
         try:
-            return self.downloader.download(repo_id, revision=revision,
-                                            cancel_event=cancel_event, progress=progress)
+            return self.downloader.download(
+                repo_id, revision=revision, cancel_event=cancel_event,
+                progress=progress, task_id=task_id, metadata=metadata,
+            )
         finally:
             with self._lock:
                 self._installing.discard(repo_id)
+
+    def resume_download(self, task_id: str, *, cancel_event=None, progress=None) -> Path:
+        if self.downloader.job_repository is None:
+            raise RuntimeError("Persistent download history is unavailable.")
+        job = self.downloader.job_repository.get(task_id)
+        if job is None:
+            raise KeyError(task_id)
+        return self.install(
+            job["repo_id"], revision=job.get("revision"), cancel_event=cancel_event,
+            progress=progress, task_id=job["task_id"], metadata=job.get("metadata") or {},
+        )
 
     def get_engine(self, repo_id: str, settings=None) -> FasterWhisperEngine:
         repo_id = validate_repo_id(repo_id)
