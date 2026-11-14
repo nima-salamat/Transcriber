@@ -407,7 +407,7 @@ class SettingsPage(QWidget):
             self.audio_output_device.addItem(default_output_label, "")
             output_ids = set()
             for device in outputs:
-                device_id = self._device_id(device)
+                device_id = audio_device_id(device)
                 output_ids.add(device_id)
                 label = device.description()
                 if device_id == default_output_id and default_output_id:
