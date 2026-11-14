@@ -124,36 +124,47 @@ class HuggingFaceHubClient:
         normalized_query = str(query or "").strip()
         result_limit = max(1, min(int(limit), 100))
 
-        # When searching by text, do not filter at the API boundary by a single
-        # pipeline tag: many converted CTranslate2 repositories have incomplete
-        # or non-standard Hub metadata. Candidates are filtered locally below.
-        models = self.api.list_models(
-            search=normalized_query or None,
-            pipeline_tag=None if normalized_query else "automatic-speech-recognition",
-            sort=sort_key,
-            limit=result_limit,
-            full=True,
-            cardData=True,
+        # The empty search explores Whisper names, Faster-Whisper conversions,
+        # and the standard ASR task catalogue. A typed search uses the broad
+        # Hub search without an API-level pipeline filter so models with
+        # incomplete CTranslate2 metadata are not hidden before Inspect.
+        requests = (
+            [(normalized_query, None)]
+            if normalized_query
+            else [
+                ("faster-whisper", None),
+                ("whisper", None),
+                (None, "automatic-speech-recognition"),
+            ]
         )
         results: list[HubModel] = []
         seen: set[str] = set()
-        for model in models:
-            model_id = getattr(model, "id", None)
-            if not model_id:
-                continue
-            try:
-                validate_repo_id(model_id)
-            except ValueError:
-                continue
-            if not self._is_asr_candidate(model, normalized_query):
-                continue
-            normalized_id = str(model_id).casefold()
-            if normalized_id in seen:
-                continue
-            seen.add(normalized_id)
-            results.append(self._metadata(model))
-            if len(results) >= result_limit:
-                break
+        for search_term, pipeline_tag in requests:
+            models = self.api.list_models(
+                search=search_term,
+                pipeline_tag=pipeline_tag,
+                sort=sort_key,
+                limit=result_limit,
+                full=True,
+                cardData=True,
+            )
+            for model in models:
+                model_id = getattr(model, "id", None)
+                if not model_id:
+                    continue
+                try:
+                    validate_repo_id(model_id)
+                except ValueError:
+                    continue
+                if not self._is_asr_candidate(model, normalized_query):
+                    continue
+                normalized_id = str(model_id).casefold()
+                if normalized_id in seen:
+                    continue
+                seen.add(normalized_id)
+                results.append(self._metadata(model))
+                if len(results) >= result_limit:
+                    return results
         return results
 
     def inspect(self, repo_id: str, revision: str | None = None) -> HubModel:

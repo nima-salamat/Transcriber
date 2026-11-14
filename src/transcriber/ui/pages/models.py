@@ -420,22 +420,30 @@ class ModelLibraryPage(QWidget):
         card = self.cards.get(repo_id)
         if card:
             card.inspect_button.setEnabled(False)
+            card.report = None
+            card.install_button.setEnabled(False)
             card.compatibility.setText("Inspecting repository files…")
         worker = FunctionWorker(lambda _emit: self.model_manager.inspect(repo_id))
-        worker.signals.result.connect(lambda result, rid=repo_id: self._inspection_result(rid, result))
-        worker.signals.error.connect(lambda message, rid=repo_id: self._inspection_error(rid, message))
+        worker.signals.result.connect(
+            lambda result, rid=repo_id, owner=card: self._inspection_result(rid, result, owner)
+        )
+        worker.signals.error.connect(
+            lambda message, rid=repo_id, owner=card: self._inspection_error(rid, message, owner)
+        )
         self.thread_pool.start(worker)
 
-    def _inspection_result(self, repo_id, result):
+    def _inspection_result(self, repo_id, result, owner=None):
         card = self.cards.get(repo_id)
-        if card:
+        if card and (owner is None or card is owner):
             card.inspect_button.setEnabled(True)
             card.set_inspection(*result)
 
-    def _inspection_error(self, repo_id, message):
+    def _inspection_error(self, repo_id, message, owner=None):
         card = self.cards.get(repo_id)
-        if card:
+        if card and (owner is None or card is owner):
+            card.report = None
             card.inspect_button.setEnabled(True)
+            card.install_button.setEnabled(False)
             card.compatibility.setText("Inspection failed")
             card.detail_label.setText(message)
 
@@ -536,6 +544,12 @@ class ModelLibraryPage(QWidget):
 
         recoverable = sum(state in {"paused", "stopped", "failed"} for state in rows)
         active = any(state in active_states for state in rows)
+        downloads_index = self.tabs.indexOf(self.download_tab)
+        if downloads_index >= 0:
+            self.tabs.setTabText(
+                downloads_index,
+                f"Downloads · {recoverable} ready" if recoverable else "Downloads",
+            )
         if not jobs:
             self.downloads_hint.setText(
                 "No download tasks yet. Inspect a compatible Hub repository and choose Install model."
