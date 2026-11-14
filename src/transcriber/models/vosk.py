@@ -894,6 +894,54 @@ class VoskModelDownloader:
             if (item.get("metadata") or {}).get("runtime") == "vosk"
         ]
 
+    def remove_download_artifacts(self, job: dict) -> int:
+        """Delete only the matching Vosk archive partial and its task staging folder."""
+        model_id = str(job.get("repo_id") or "").strip()
+        task_id = str(job.get("task_id") or "").strip()
+        metadata = job.get("metadata") or {}
+        if not model_id or not task_id:
+            raise ValueError("Vosk download task is missing its model or task identifier.")
+
+        with self._condition:
+            if model_id in self._cancel_events or model_id in self._active:
+                raise RuntimeError(f"Cannot delete files while {model_id} is downloading.")
+
+        checksum = str(
+            metadata.get("checksum") or metadata.get("sha256")
+            or metadata.get("md5") or job.get("revision") or ""
+        ).strip().casefold()
+        algorithm = str(metadata.get("checksum_algorithm") or "").strip().casefold()
+        if not algorithm:
+            algorithm = "sha256" if len(checksum) == 64 else "md5"
+        if algorithm not in {"md5", "sha256"} or not checksum:
+            raise RuntimeError(
+                "The Vosk task does not contain enough checksum metadata to safely identify "
+                "its partial archive. Keep the history entry and inspect the model again."
+            )
+
+        cache_key = hashlib.sha256(
+            (model_id + algorithm + checksum).encode("utf-8")
+        ).hexdigest()
+        staging_root = self.registry.root / ".staging"
+        cache_root = staging_root / "vosk-download-cache"
+        partial = cache_root / f"{cache_key}.zip.partial"
+        staging = staging_root / f"vosk-{cache_key}-{task_id}"
+        removed = 0
+
+        if partial.parent == cache_root and partial.exists():
+            if partial.is_symlink() or partial.is_file():
+                partial.unlink()
+                removed += 1
+        if staging.parent == staging_root and staging.exists():
+            if staging.is_symlink():
+                staging.unlink()
+            elif staging.is_dir():
+                shutil.rmtree(staging)
+            else:
+                staging.unlink()
+            removed += 1
+        return removed
+
     def _signal(self, model_id: str, kind: str) -> bool:
         with self._condition:
             events = {
