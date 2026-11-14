@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QUrl, Qt, QTimer, Signal
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -766,7 +767,7 @@ class TranscriptionPage(QWidget):
         if current:
             cursor = self.editor.textCursor()
             cursor.setPosition(current[0])
-            cursor.setPosition(current[1], cursor.KeepAnchor)
+            cursor.setPosition(current[1], QTextCursor.MoveMode.KeepAnchor)
             self.editor.setTextCursor(cursor)
             self.editor.ensureCursorVisible()
 
@@ -781,7 +782,7 @@ class TranscriptionPage(QWidget):
             return
         if not self.editor.find(query):
             cursor = self.editor.textCursor()
-            cursor.movePosition(cursor.Start)
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
             self.editor.setTextCursor(cursor)
             self.editor.find(query)
 
