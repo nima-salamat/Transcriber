@@ -18,6 +18,12 @@ class IconRegistry:
         "activity": "list-checks.svg",
         "models": "layers.svg",
         "controls": "sliders-horizontal.svg",
+        "pause": "pause.svg",
+        "play": "play.svg",
+        "stop": "square.svg",
+        "discard": "trash-2.svg",
+        "skip_back": "skip-back.svg",
+        "skip_forward": "skip-forward.svg",
     }
 
     def __init__(self, asset_dir: Path | None = None):
