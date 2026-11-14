@@ -128,10 +128,12 @@ class QtAudioRecorder(QObject):
         if error == QtAudio.Error.NoError:
             return
         self._state_watchdog.stop()
-        self.error_occurred.emit(f"Microphone capture failed: {error}")
         # Save complete PCM frames already received; do not leave a dead
         # QAudioSource attached to a UI that still claims to be recording.
+        # Emit the error after the idle-state notification so the UI does not
+        # immediately overwrite the diagnostic with "Ready to record".
         self._finish_recording(publish=True)
+        self.error_occurred.emit(f"Microphone capture failed: {error}")
 
     def _read_audio(self) -> None:
         if not self._io or not self._stream:
@@ -156,8 +158,8 @@ class QtAudioRecorder(QObject):
                 self._last_duration_emit = now
                 self.duration_changed.emit(self.duration())
         except (OSError, RuntimeError, ValueError) as exc:
-            self.error_occurred.emit(f"Could not write microphone audio: {exc}")
             self._finish_recording(publish=False)
+            self.error_occurred.emit(f"Could not write microphone audio: {exc}")
 
     def duration(self) -> float:
         current = time.monotonic() - self._started if self._state == "recording" else 0.0
@@ -260,8 +262,8 @@ class QtAudioRecorder(QObject):
         self.state_changed.emit("cancelled")
 
     def device_disconnected(self) -> None:
-        self.error_occurred.emit("The selected microphone was disconnected")
         self.stop()
+        self.error_occurred.emit("The selected microphone was disconnected")
 
     def shutdown(self) -> None:
         self.cancel()
