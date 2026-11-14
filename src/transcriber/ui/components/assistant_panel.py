@@ -219,8 +219,14 @@ class AssistantPanel(QWidget):
     def _on_voice_error(self, message):
         agent, self.voice_agent = self.voice_agent, None
         if agent:
-            # A failed start is already stopped in its worker; a stop failure
-            # is reported here without changing ACP's connection state.
+            # A runtime recognition failure must release the audio device too.
+            worker = FunctionWorker(lambda _emit: agent.stop())
+            worker.signals.error.connect(
+                lambda cleanup_message: self.status_message.emit(
+                    f"Voice input cleanup failed: {cleanup_message}"
+                )
+            )
+            self.thread_pool.start(worker)
             self._append(f"Voice input cleanup: {message}")
         self.wake_button.setText("Enable local wake")
         self.wake_button.setEnabled(True)
@@ -240,7 +246,20 @@ class AssistantPanel(QWidget):
     def _on_voice_transcript(self, text):
         self.prompt.setPlainText(text)
         self.prompt.setFocus()
-        self._append("Recognized locally; review and edit the command before sending it to OpenCode.")
+        settings = self.settings_store.settings if self.settings_store else None
+        auto_submit = bool(settings and settings.voice_auto_submit)
+        connected = bool(self.client and self.client.connected)
+        if auto_submit and connected and not self._worker_active:
+            self._append("Recognized locally · automatic submission is enabled.")
+            self.send_prompt()
+        else:
+            self._append(
+                "Recognized locally; review and edit the command before sending it to OpenCode."
+            )
+            if auto_submit and not connected:
+                self.status_message.emit(
+                    "Voice command recognized but not sent: OpenCode is disconnected."
+                )
 
     def choose_project(self):
         path = QFileDialog.getExistingDirectory(self, "Choose OpenCode project", str(self.project_dir))
@@ -435,8 +454,9 @@ class AssistantPanel(QWidget):
 
     def shutdown(self):
         if self.voice_agent:
-            self.voice_agent.stop()
-            self.voice_agent = None
+            agent, self.voice_agent = self.voice_agent, None
+            worker = FunctionWorker(lambda _emit: agent.stop())
+            self.thread_pool.start(worker)
         if self.client:
             self.client.close()
             self.client = None

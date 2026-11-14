@@ -221,6 +221,14 @@ class SettingsPage(QWidget):
         self.wake_model = self._path_row(
             "Vosk model directory", current.wake_model_directory or "", agent_layout,
         )
+        self.voice_auto_submit = QCheckBox(
+            "Automatically send recognized voice commands to the connected OpenCode session"
+        )
+        self.voice_auto_submit.setChecked(current.voice_auto_submit)
+        self.voice_auto_submit.toggled.connect(
+            lambda enabled: self._save(voice_auto_submit=enabled)
+        )
+        agent_layout.addWidget(self.voice_auto_submit)
         agent_buttons = QHBoxLayout()
         save_agent = QPushButton("Save Agent settings")
         save_agent.clicked.connect(self._save_agent_settings)

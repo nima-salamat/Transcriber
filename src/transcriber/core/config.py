@@ -46,6 +46,7 @@ class AppSettings:
     wake_phrase: str = "transcriber"
     wake_model_directory: str | None = None
     wake_enabled: bool = False
+    voice_auto_submit: bool = False
     voice_auto_sleep_seconds: int = 30
     max_active_models: int = 2
     ram_budget_mb: int = 8192
@@ -90,6 +91,7 @@ class AppSettings:
         self.inspector_visible = as_bool(self.inspector_visible, True)
         self.timeline_visible = as_bool(self.timeline_visible, True)
         self.wake_enabled = as_bool(self.wake_enabled, False)
+        self.voice_auto_submit = as_bool(self.voice_auto_submit, False)
         try:
             self.voice_auto_sleep_seconds = int(self.voice_auto_sleep_seconds)
         except (TypeError, ValueError):
