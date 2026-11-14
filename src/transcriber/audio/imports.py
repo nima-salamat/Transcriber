@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from transcriber.audio.decoder import validate_audio_file
+from transcriber.audio.decoder import SUPPORTED_AUDIO_SUFFIXES, validate_audio_file
 
 
 @dataclass(frozen=True, slots=True)
