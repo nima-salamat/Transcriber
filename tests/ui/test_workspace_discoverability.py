@@ -1,0 +1,112 @@
+"""Regression tests for discoverable workspace panel visibility controls.
+
+The native QDockWidget close button must never leave a panel unreachable.  The
+View menu is the single, discoverable source of truth for dock visibility.
+"""
+from __future__ import annotations
+
+import os
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+pytest.importorskip("PySide6")
+pytest.importorskip("pytestqt")
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
+
+from transcriber.core.config import SettingsStore
+from transcriber.core.paths import AppPaths
+from transcriber.models.downloader import ModelDownloader
+from transcriber.models.hub_client import HuggingFaceHubClient
+from transcriber.models.manager import ModelManager
+from transcriber.models.registry import ModelRegistry
+from transcriber.storage.database import Database
+from transcriber.storage.history import HistoryRepository
+from transcriber.ui.main_window import MainWindow
+
+
+def make_window(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRANSCRIBER_HOME", str(tmp_path / "app-data"))
+    paths = AppPaths.discover().ensure()
+    settings = SettingsStore(paths.settings)
+    settings.load()
+    database = Database(paths.database)
+    history = HistoryRepository(database)
+    hub = HuggingFaceHubClient()
+    registry = ModelRegistry(paths.models, paths.registry)
+    downloader = ModelDownloader(hub, registry, paths.cache / "hub")
+    manager = ModelManager(registry, hub, downloader)
+    return MainWindow(paths, settings, history, database, manager), settings
+
+
+def _menu_actions(menu):
+    return {
+        action.text().replace("&", "").strip(): action
+        for action in menu.actions()
+        if not action.isSeparator() and action.text().strip()
+    }
+
+
+def _view_menu(window):
+    for action in window.menuBar().actions():
+        if action.menu() and action.text().replace("&", "").strip().casefold() == "view":
+            return action.menu()
+    pytest.fail("MainWindow has no View menu; closed workspace panels cannot be rediscovered.")
+
+
+def test_view_menu_can_reopen_each_closeable_workspace_dock(qtbot, tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window, _settings = make_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(30)
+
+    actions = _menu_actions(_view_menu(window))
+    expected = {
+        "Inspector / AI Assistant": window.assistant_dock,
+        "Audio Timeline": window.timeline_dock,
+    }
+    for title, dock in expected.items():
+        assert title in actions, f"View menu is missing a toggle for {title}"
+        action = actions[title]
+        assert action.isCheckable(), f"{title} visibility action must be checkable"
+        assert dock.isVisible()
+        dock.close()
+        qtbot.wait(10)
+        assert not dock.isVisible()
+        assert not action.isChecked()
+        action.trigger()
+        qtbot.wait(10)
+        assert dock.isVisible(), f"{title} could not be restored from View menu"
+        assert action.isChecked()
+
+    window.close()
+
+
+def test_restore_default_layout_restores_the_workspace_docks(qtbot, tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    window, _settings = make_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(30)
+
+    actions = _menu_actions(_view_menu(window))
+    restore = actions.get("Restore Default Layout")
+    assert restore is not None, "View menu needs a Restore Default Layout action"
+
+    window.assistant_dock.close()
+    window.timeline_dock.close()
+    qtbot.wait(10)
+    assert not window.assistant_dock.isVisible()
+    assert not window.timeline_dock.isVisible()
+
+    restore.trigger()
+    qtbot.wait(20)
+    assert window.assistant_dock.isVisible()
+    assert window.timeline_dock.isVisible()
+    assert window.dockWidgetArea(window.assistant_dock) == Qt.DockWidgetArea.RightDockWidgetArea
+    assert window.dockWidgetArea(window.timeline_dock) == Qt.DockWidgetArea.BottomDockWidgetArea
+
+    window.close()
