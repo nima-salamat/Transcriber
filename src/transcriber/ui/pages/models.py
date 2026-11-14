@@ -223,6 +223,7 @@ class ModelCard(Card):
 class ModelLibraryPage(QWidget):
     status_message = Signal(str)
     default_model_changed = Signal(str)
+    vosk_model_selected = Signal(str)
 
     def __init__(self, model_manager, settings_store, thread_pool, release_active_model, parent=None):
         super().__init__(parent)
@@ -950,7 +951,11 @@ class ModelLibraryPage(QWidget):
             return
 
         default_model = self.settings_store.settings.default_model
+        wake_model_directory = str(self.settings_store.settings.wake_model_directory or "")
         for index, model in enumerate(installed):
+            runtime = str(model.get("runtime") or "faster-whisper")
+            is_vosk = runtime == "vosk"
+            runtime_name = "VOSK / KALDI" if is_vosk else "FASTER-WHISPER / CTR"
             card = Card()
             card.setMinimumWidth(300)
             layout = QVBoxLayout(card)
@@ -976,8 +981,8 @@ class ModelLibraryPage(QWidget):
             top.addWidget(state_label, 0, Qt.AlignTop)
             layout.addLayout(top)
 
-            if model["repo_id"] == default_model:
-                default_label = QLabel("★  DEFAULT FOR NEW TRANSCRIPTIONS")
+            if not is_vosk and model["repo_id"] == default_model:
+                default_label = QLabel("★  DEFAULT FOR FASTER-WHISPER TRANSCRIPTIONS")
                 default_label.setStyleSheet(
                     "font-size: 9px; font-weight: 700; color: #75a7ff; "
                     "padding: 4px 7px; border-radius: 6px; "
@@ -986,10 +991,19 @@ class ModelLibraryPage(QWidget):
                 layout.addWidget(default_label)
 
             revision = str(model.get("revision") or "Unknown")
-            info = QLabel(
-                f"Faster-Whisper / CTranslate2  ·  {_human_size(model.get('size_bytes'))}\n"
-                f"Revision: {revision[:16]}{'…' if len(revision) > 16 else ''}"
-            )
+            size_label = _human_size(model.get("size_bytes"))
+            if is_vosk:
+                language = str(model.get("language_name") or model.get("language_code") or "Unknown language")
+                info_text = (
+                    f"Vosk / Kaldi · {language} · {size_label}\n"
+                    f"Model: {model.get('model_name') or model['repo_id']} · MD5: {revision[:16]}"
+                )
+            else:
+                info_text = (
+                    f"Faster-Whisper / CTranslate2 · {size_label}\n"
+                    f"Revision: {revision[:16]}{'…' if len(revision) > 16 else ''}"
+                )
+            info = QLabel(info_text)
             info.setObjectName("Muted")
             info.setWordWrap(True)
             layout.addWidget(info)
@@ -1015,6 +1029,7 @@ class ModelLibraryPage(QWidget):
                 lambda _=False, p=model["path"]: QDesktopServices.openUrl(QUrl.fromLocalFile(p))
             )
             default_button = QPushButton("★ Default" if model["repo_id"] == default_model else "Set default")
+            default_button.setVisible(not is_vosk)
             default_button.setEnabled(model["compatible"] and model["repo_id"] != default_model)
             default_button.clicked.connect(
                 lambda _=False, rid=model["repo_id"]: self.set_default_model(rid)
@@ -1033,6 +1048,17 @@ class ModelLibraryPage(QWidget):
             )
             actions.addWidget(open_button)
             actions.addWidget(default_button)
+            if is_vosk:
+                voice_button = QPushButton(
+                    "✓ Voice model selected"
+                    if str(Path(wake_model_directory).resolve()) == str(Path(model["path"]).resolve())
+                    else "Use for voice assistant"
+                )
+                voice_button.setEnabled(model["compatible"])
+                voice_button.clicked.connect(
+                    lambda _=False, rid=model["repo_id"]: self.set_vosk_voice_model(rid)
+                )
+                actions.addWidget(voice_button)
             actions.addWidget(load_button)
             actions.addStretch(1)
             actions.addWidget(delete_button)
@@ -1041,8 +1067,9 @@ class ModelLibraryPage(QWidget):
             row, column = divmod(index, 2)
             self.installed_cards.addWidget(card, row, column)
             searchable = " ".join((
-                model["repo_id"], str(model.get("revision") or ""),
-                str(model.get("path") or ""),
+                model["repo_id"], str(model.get("runtime") or ""),
+                str(model.get("language_name") or model.get("language_code") or ""),
+                str(model.get("revision") or ""), str(model.get("path") or ""),
             )).casefold()
             self._installed_card_rows.append((card, searchable))
 
@@ -1058,6 +1085,18 @@ class ModelLibraryPage(QWidget):
         label.setObjectName("Muted")
         label.setWordWrap(True)
         self.installed_cards.addWidget(label, 0, 0, 1, 2)
+
+    def set_vosk_voice_model(self, repo_id: str):
+        model = self._installed_by_id.get(repo_id)
+        if not model or model.get("runtime") != "vosk" or not model.get("compatible"):
+            return
+        model_path = str(Path(model["path"]).resolve())
+        self.settings_store.update(wake_model_directory=model_path)
+        self.vosk_model_selected.emit(model_path)
+        self.refresh_installed()
+        self.status_message.emit(
+            f"Vosk voice model selected: {model.get('language_name') or repo_id}"
+        )
 
     def set_default_model(self, repo_id: str):
         self.settings_store.update(default_model=repo_id)
