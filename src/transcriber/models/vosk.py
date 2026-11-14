@@ -202,6 +202,135 @@ def _validate_archive_source(model: VoskModelInfo) -> str:
         return model.download_url
     raise ValueError(f"Unsupported Vosk download source: {model.source!r}")
 
+def _download_vosk_archive(
+    url: str,
+    partial: Path,
+    *,
+    timeout: float,
+    downloaded: int,
+    total: int | None,
+    check_events: Callable[[], None],
+    progress: Callable[[int, int | None, str], None],
+) -> tuple[int, int | None]:
+    """Download a Vosk ZIP with safe resume and recovery from stale HTTP Range state."""
+    if downloaded and total is not None and downloaded == total and partial.is_file():
+        # The previous attempt may have completed the archive but failed before validation.
+        return downloaded, total
+
+    for attempt in range(2):
+        check_events()
+        headers = {
+            "User-Agent": "Transcriber-Desktop/2.1",
+            "Accept": "application/zip",
+        }
+        if downloaded:
+            headers["Range"] = f"bytes={downloaded}-"
+        request = urllib.request.Request(url, headers=headers)
+
+        try:
+            response = urllib.request.urlopen(request, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 416 or not downloaded:
+                raise
+            content_range = str(exc.headers.get("Content-Range", "") if exc.headers else "")
+            match = re.fullmatch(r"bytes\\s+\\*/(\\d+)", content_range.strip(), re.IGNORECASE)
+            remote_size = int(match.group(1)) if match else None
+            exc.close()
+
+            if (
+                remote_size is not None
+                and remote_size == downloaded
+                and (total is None or total == remote_size)
+                and partial.is_file()
+            ):
+                return downloaded, total if total is not None else remote_size
+
+            # A stale/oversized partial file is not resumable. Discard it and retry once
+            # without Range so the server sends a clean full response.
+            partial.unlink(missing_ok=True)
+            downloaded = 0
+            progress(downloaded, total, "The saved partial download was rejected; restarting from the beginning")
+            continue
+
+        with response:
+            status = int(getattr(response, "status", getattr(response, "code", 200)) or 200)
+            response_headers = getattr(response, "headers", None)
+            content_range = str(
+                response_headers.get("Content-Range", "") if response_headers else ""
+            )
+            append = False
+
+            if status == 206:
+                match = re.fullmatch(
+                    r"bytes\\s+(\\d+)-(\\d+)/(\\d+|\\*)",
+                    content_range.strip(),
+                    re.IGNORECASE,
+                )
+                range_start = int(match.group(1)) if match else None
+                range_total = (
+                    int(match.group(3))
+                    if match and match.group(3) != "*"
+                    else None
+                )
+                if range_start != downloaded:
+                    if attempt == 0:
+                        partial.unlink(missing_ok=True)
+                        downloaded = 0
+                        progress(
+                            downloaded, total,
+                            "The server returned an inconsistent byte range; restarting the download",
+                        )
+                        continue
+                    raise OSError("Vosk server returned an invalid Content-Range response")
+                append = downloaded > 0
+                if range_total is not None:
+                    if total is not None and total != range_total:
+                        raise OSError(
+                            f"Vosk archive size changed at source: expected {total:,} bytes, "
+                            f"server reports {range_total:,} bytes"
+                        )
+                    total = range_total if total is None else total
+            elif status == 200:
+                if downloaded:
+                    # Some hosts ignore Range and return the entire archive. Never append
+                    # a full response to an old partial file.
+                    partial.unlink(missing_ok=True)
+                    downloaded = 0
+                raw_length = (
+                    response_headers.get("Content-Length")
+                    if response_headers else None
+                )
+                try:
+                    response_length = int(raw_length) if raw_length is not None else None
+                except (TypeError, ValueError):
+                    response_length = None
+                if response_length is not None and response_length >= 0:
+                    if total is not None and total != response_length:
+                        raise OSError(
+                            f"Vosk archive size changed at source: expected {total:,} bytes, "
+                            f"server reports {response_length:,} bytes"
+                        )
+                    total = response_length if total is None else total
+            else:
+                raise OSError(f"Vosk archive server returned unexpected HTTP status {status}")
+
+            mode = "ab" if append else "wb"
+            with partial.open(mode) as stream:
+                while True:
+                    check_events()
+                    chunk = response.read(_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    stream.write(chunk)
+                    downloaded += len(chunk)
+                    progress(downloaded, total, "Receiving Vosk model archive")
+                stream.flush()
+                os.fsync(stream.fileno())
+
+        return downloaded, total
+
+    raise OSError("Vosk archive could not be resumed; retry the download")
+
 
 def _parse_catalogue_entry(raw: object) -> VoskModelInfo | None:
     if not isinstance(raw, dict):
@@ -755,27 +884,22 @@ class VoskModelDownloader:
                 downloaded = 0
             emit("Downloading", f"Downloading Vosk model archive from {model.source_label}")
 
-            request_headers = {"User-Agent": "Transcriber-Desktop/2.1", "Accept": "application/zip"}
-            if downloaded:
-                request_headers["Range"] = f"bytes={downloaded}-"
-            request = urllib.request.Request(archive_url, headers=request_headers)
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                status = getattr(response, "status", 200)
-                if downloaded and status != 206:
-                    downloaded = 0
-                    partial.unlink(missing_ok=True)
-                mode = "ab" if downloaded else "wb"
-                with partial.open(mode) as stream:
-                    while True:
-                        check_events()
-                        chunk = response.read(_CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        stream.write(chunk)
-                        downloaded += len(chunk)
-                        emit("Downloading", "Receiving Vosk model archive")
-                    stream.flush()
-                    os.fsync(stream.fileno())
+            def report_transfer(current: int, current_total: int | None, message: str) -> None:
+                nonlocal downloaded, total
+                downloaded = current
+                if current_total is not None:
+                    total = current_total
+                emit("Downloading", message)
+
+            downloaded, total = _download_vosk_archive(
+                archive_url,
+                partial,
+                timeout=self.timeout,
+                downloaded=downloaded,
+                total=total,
+                check_events=check_events,
+                progress=report_transfer,
+            )
 
             check_events()
             if total is not None and downloaded != total:
