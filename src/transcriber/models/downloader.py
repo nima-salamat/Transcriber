@@ -64,6 +64,7 @@ class ModelDownloader:
         self._pause_events: dict[str, threading.Event] = {}
         self._stop_events: dict[str, threading.Event] = {}
         self._job_ids: dict[str, str] = {}
+        self._cancel_events: dict[str, threading.Event] = {}
         self._max_concurrent = max(1, min(int(max_concurrent), 8))
 
     def set_max_concurrent(self, value: int) -> None:
@@ -74,7 +75,7 @@ class ModelDownloader:
     def cancel(self, repo_id: str) -> bool:
         with self._condition:
             key = validate_repo_id(repo_id)
-            event = self._active.get(key) or self._pending.get(key)
+            event = self._cancel_events.get(key) or self._active.get(key) or self._pending.get(key)
             if event is None:
                 return False
             event.set()
@@ -133,7 +134,7 @@ class ModelDownloader:
     def cancel_all(self) -> int:
         """Request cancellation for active and queued downloads."""
         with self._condition:
-            tasks = list(self._active.values()) + list(self._pending.values())
+            tasks = list({id(event): event for event in self._cancel_events.values()}.values())
             for event in tasks:
                 event.set()
             self._condition.notify_all()
@@ -192,7 +193,7 @@ class ModelDownloader:
     def clear_cache(self) -> None:
         """Clear the shared Hub cache while preventing queued/new transfers from starting."""
         with self._condition:
-            if self._active or self._pending:
+            if self._active or self._pending or self._cancel_events:
                 raise RuntimeError("Cannot clear the Hugging Face cache while downloads are queued or active")
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             shutil.rmtree(self.cache_dir, ignore_errors=False)
@@ -210,10 +211,11 @@ class ModelDownloader:
         pause_event = threading.Event()
         stop_event = threading.Event()
         with self._condition:
-            if repo_id in self._active or repo_id in self._pending:
+            if repo_id in self._pause_events or repo_id in self._active or repo_id in self._pending:
                 raise RuntimeError(f"A download for {repo_id} is already queued or active")
             self._pause_events[repo_id] = pause_event
             self._stop_events[repo_id] = stop_event
+            self._cancel_events[repo_id] = cancel_event
             self._job_ids[repo_id] = task_id
 
         staging = self.registry.root / ".staging" / f"{self.registry.directory_name(repo_id)}-{task_id}"
@@ -257,13 +259,15 @@ class ModelDownloader:
                     last_saved_state = state
 
         try:
-            self._enter_download_slot(repo_id, cancel_event, pause_event, stop_event)
+            # Persist the job before waiting for a concurrency slot so a queued
+            # download survives restart and can be explicitly resumed.
             if self.job_repository:
                 self.job_repository.enqueue(
-                    task_id, repo_id, revision,
-                    str(target),
-                    job_metadata,
+                    task_id, repo_id, revision, str(target), job_metadata,
                 )
+            emit("Queued", message="Waiting for an available download slot")
+            self._enter_download_slot(repo_id, cancel_event, pause_event, stop_event)
+
             emit("Inspecting", message="Reading repository metadata from Hugging Face")
             inspected = self.hub.inspect(repo_id, revision=revision)
             if not inspected.revision:
@@ -279,6 +283,13 @@ class ModelDownloader:
                 self.job_repository.update(
                     task_id, state="inspecting", revision=pinned_revision, metadata=job_metadata,
                 )
+            if cancel_event.is_set():
+                raise DownloadCancelled("Download cancelled during inspection")
+            if pause_event.is_set():
+                raise DownloadPaused("Download paused after inspection")
+            if stop_event.is_set():
+                raise DownloadStopped("Download stopped after inspection")
+
             file_names = [item.name for item in inspected.files]
             report = require_faster_whisper_compatible(file_names)
             chosen = list(report.included_files)
@@ -287,7 +298,8 @@ class ModelDownloader:
             total = sum(value for value in known_sizes if value is not None) if all(
                 value is not None for value in known_sizes
             ) else None
-            if shutil.disk_usage(self.registry.root).free < (total or 0) + 64 * 1024 * 1024:
+            required_space = (total or 0) + 64 * 1024 * 1024
+            if shutil.disk_usage(self.registry.root).free < required_space:
                 raise OSError("Not enough free disk space for this model and staging overhead")
             if cancel_event.is_set():
                 raise DownloadCancelled("Download cancelled before transfer")
@@ -295,9 +307,9 @@ class ModelDownloader:
                 raise DownloadPaused("Download paused before transfer")
             if stop_event.is_set():
                 raise DownloadStopped("Download stopped before transfer")
+
             staging.mkdir(parents=True, exist_ok=False)
             emit("Downloading", total=total, message="Downloading pinned model files")
-
             try:
                 from huggingface_hub import hf_hub_download
                 from tqdm.auto import tqdm
@@ -320,9 +332,8 @@ class ModelDownloader:
                     emit("Downloading", total=total)
                     return result
 
-            # hf_hub_download keeps reusable partial/completed files in the shared
-            # cache. Staging is disposable; rerunning the same pinned revision
-            # reuses cache entries without deleting another job's shared cache.
+            # The Hub cache is shared and revision-pinned. The disposable staging
+            # directory is rebuilt on resume while cached file blobs are reused.
             for filename in chosen:
                 if pause_event.is_set():
                     raise DownloadPaused("Download paused by user")
@@ -339,11 +350,12 @@ class ModelDownloader:
                     tqdm_class=ProgressTqdm,
                 )
             if pause_event.is_set():
-                raise DownloadPaused("Download paused by user")
+                raise DownloadPaused("Download paused before validation")
             if stop_event.is_set():
-                raise DownloadStopped("Download stopped by user")
+                raise DownloadStopped("Download stopped before validation")
             if cancel_event.is_set():
-                raise DownloadCancelled("Download cancelled by user")
+                raise DownloadCancelled("Download cancelled before validation")
+
             emit("Validating", total=total, message="Checking required model artefacts")
             installed_files = [
                 item.relative_to(staging).as_posix()
@@ -423,5 +435,6 @@ class ModelDownloader:
                 self._pending.pop(repo_id, None)
                 self._pause_events.pop(repo_id, None)
                 self._stop_events.pop(repo_id, None)
+                self._cancel_events.pop(repo_id, None)
                 self._job_ids.pop(repo_id, None)
                 self._condition.notify_all()
