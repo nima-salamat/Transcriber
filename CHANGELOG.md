@@ -14,3 +14,20 @@
 - Added a deterministic core test suite and development packaging metadata.
 
 This release is an initial modernization foundation. Incremental live Whisper streaming, waveform rendering, diarization, batch transcription, advanced audio restoration, and full segment-level editing are not represented as implemented features; see `docs/KNOWN_LIMITATIONS.md`.
+
+## 2.1.0 — Professional workspace and Agent foundations
+
+- Added a native workspace shell with collapsible navigation, global search/command navigation, resizable inspector and waveform/timeline docks, persisted layout state and keyboard shortcuts.
+- Added centralized semantic design tokens and a selected, offline Lucide SVG icon subset with the upstream license. SVG assets are included in the installable Python package.
+- Added segment-aware document operations, stable segment IDs, word-timing edits, split/merge/delete, speaker labels, bookmarks, comments, locking/review flags, snapshot undo/redo, regex search/replace, cleanup preview and evidence-based quality reporting.
+- Added SQLite persistence for editor metadata and original-versus-edited transcript comparison.
+- Added SRT/WebVTT/ASS/SSA import/export and subtitle timing transforms and validation.
+- Added cached waveform generation, segment/playhead timeline rendering and non-destructive FFmpeg Audio Cleanup output.
+- Added sequential Batch UI with per-file status, pause-after-current, retry, cancel-current and stop-queue controls.
+- Added a generic resource-aware model runtime with RAM/VRAM estimates, configurable 1–10 loaded-model ceiling, lazy load, pinning, LRU eviction, active-inference protection and a priority job scheduler. The Faster-Whisper app manager remains single-active until a future migration.
+- Added optional local Vosk wake/voice capture, configurable Agent permission levels and a persistent OpenCode ACP stdio session client.
+- Added standalone MCP stdio entry point and compact action-discovery/execution tools over authenticated local IPC. Destructive actions require permission and an explicit GUI approval.
+- Added tests for editor integrity, subtitles, cleanup atomicity, runtime concurrency/eviction, priority scheduling, IPC authentication, ACP session/prompt/cancel, quality reports, settings permissions and packaged icon assets.
+- Updated feature extraction, architecture, README and known-limitations documentation.
+
+This remains an alpha development snapshot. Live partial ASR, automatic diarization, integrated multi-engine/multi-model runtime, automatic ACP recovery, automatic voice prompt submission, TTS, video preview and PySide6 desktop smoke validation remain incomplete.

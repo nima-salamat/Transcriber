@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+import uuid
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass(slots=True)
@@ -27,6 +28,14 @@ class TranscriptSegment:
     text: str
     speaker: str | None = None
     words: list[TranscriptWord] | None = None
+    id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    language: str | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+    is_edited: bool = False
+    comment: str | None = None
+    bookmarked: bool = False
+    locked: bool = False
+    reviewed: bool = False
 
     def __post_init__(self) -> None:
         self.start = max(0.0, float(self.start))
@@ -36,6 +45,13 @@ class TranscriptSegment:
             item if isinstance(item, TranscriptWord) else TranscriptWord(**item)
             for item in (self.words or [])
         ]
+        self.id = str(self.id or uuid.uuid4().hex)
+        self.language = str(self.language) if self.language else None
+        self.metadata = dict(self.metadata or {})
+        self.is_edited = bool(self.is_edited)
+        self.bookmarked = bool(self.bookmarked)
+        self.locked = bool(self.locked)
+        self.reviewed = bool(self.reviewed)
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -125,5 +141,6 @@ def reconcile_segments(
             segment,
             text=replacement,
             words=[] if changed else list(segment.words or []),
+            is_edited=segment.is_edited or changed,
         ))
     return output

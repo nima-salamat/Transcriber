@@ -56,13 +56,16 @@ class HistoryRepository:
                     "DELETE FROM transcript_segments WHERE transcript_id=?", (transcript_id,)
                 )
                 connection.executemany(
-                    "INSERT INTO transcript_segments(transcript_id,ordinal,start,end,text,speaker,words_json) "
-                    "VALUES(?,?,?,?,?,?,?)",
+                    "INSERT INTO transcript_segments("
+                    "transcript_id,ordinal,start,end,text,speaker,words_json,uid,language,metadata_json,"
+                    "is_edited,comment,bookmarked,locked,reviewed) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     [(transcript_id, i, s.start, s.end, s.text, s.speaker,
                       json.dumps([word.__dict__ if hasattr(word, "__dict__") else {
                           "start": word.start, "end": word.end, "text": word.text,
                           "probability": word.probability,
-                      } for word in (s.words or [])], ensure_ascii=False))
+                      } for word in (s.words or [])], ensure_ascii=False),
+                      s.id, s.language, json.dumps(s.metadata, ensure_ascii=False), int(s.is_edited),
+                      s.comment, int(s.bookmarked), int(s.locked), int(s.reviewed))
                      for i, s in enumerate(segments)],
                 )
         return transcript_id
@@ -75,7 +78,8 @@ class HistoryRepository:
             result = dict(row)
             result["tags"] = json.loads(result.pop("tags_json"))
             segment_rows = connection.execute(
-                "SELECT start,end,text,speaker,words_json FROM transcript_segments "
+                "SELECT start,end,text,speaker,words_json,uid AS id,language,metadata_json,"
+                "is_edited,comment,bookmarked,locked,reviewed FROM transcript_segments "
                 "WHERE transcript_id=? ORDER BY ordinal", (transcript_id,)
             ).fetchall()
             result["segments"] = []
@@ -86,6 +90,17 @@ class HistoryRepository:
                 except (TypeError, ValueError):
                     segment["words"] = []
                     segment.pop("words_json", None)
+                try:
+                    segment["metadata"] = json.loads(segment.pop("metadata_json") or "{}")
+                except (TypeError, ValueError):
+                    segment["metadata"] = {}
+                    segment.pop("metadata_json", None)
+                segment["is_edited"] = bool(segment.get("is_edited", 0))
+                segment["bookmarked"] = bool(segment.get("bookmarked", 0))
+                segment["locked"] = bool(segment.get("locked", 0))
+                segment["reviewed"] = bool(segment.get("reviewed", 0))
+                if not segment.get("id"):
+                    segment.pop("id", None)
                 result["segments"].append(segment)
             return result
 

@@ -47,9 +47,10 @@ def test_native_shell_navigation_theme_and_geometry(qtbot, tmp_path):
 
     assert not (window.windowFlags() & Qt.WindowType.FramelessWindowHint)
     assert window.minimumWidth() >= 700
-    assert window.stack.count() == 7
+    assert window.stack.count() == len(window.pages) == 11
     assert set(window.pages) == {
-        "home", "transcription", "recording", "history", "models", "audio", "settings"
+        "home", "transcription", "recording", "batch", "history", "editor",
+        "subtitles", "models", "audio", "cleanup", "settings",
     }
 
     for page_id in window.pages:

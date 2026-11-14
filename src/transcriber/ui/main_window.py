@@ -2,33 +2,84 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QThreadPool, QTimer
+from concurrent.futures import Future
+from pathlib import Path
+
+from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Qt, Signal
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QPushButton, QStackedWidget, QStatusBar, QVBoxLayout, QWidget,
+    QApplication, QDockWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+    QMessageBox, QPushButton, QStackedWidget, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
+    QInputDialog,
 )
 
+from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
+from transcriber.assistant.permissions import AgentPermission, PermissionDenied
+from transcriber.audio.waveform import build_waveform
+from transcriber.ipc.server import LocalIPCServer
+from transcriber.ui.components.assistant_panel import AssistantPanel
+from transcriber.ui.components.waveform import WaveformTimeline
+from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.pages.audio_library import AudioLibraryPage
+from transcriber.ui.pages.audio_cleanup import AudioCleanupPage
+from transcriber.ui.pages.batch_processing import BatchProcessingPage
 from transcriber.ui.pages.history import HistoryPage
 from transcriber.ui.pages.home import HomePage
 from transcriber.ui.pages.models import ModelLibraryPage
 from transcriber.ui.pages.recording import RecordingPage
 from transcriber.ui.pages.settings import SettingsPage
 from transcriber.ui.pages.transcription import TranscriptionPage
+from transcriber.ui.pages.transcript_editor import TranscriptEditorPage
+from transcriber.ui.pages.subtitle_studio import SubtitleStudioPage
 from transcriber.ui.theme import stylesheet
 from transcriber.ui.workers import FunctionWorker
 
 
+class MainThreadDispatcher(QObject):
+    """Serialize Agent/MCP requests onto the Qt GUI thread without touching widgets remotely."""
+
+    invoke = Signal(object, object, object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.invoke.connect(self._execute, Qt.QueuedConnection)
+
+    def __call__(self, handler, arguments):
+        if QThread.currentThread() == self.thread():
+            return handler(arguments)
+        future = Future()
+        self.invoke.emit(handler, arguments, future)
+        try:
+            return future.result(timeout=20)
+        except TimeoutError:
+            # A delayed GUI callback must not execute after the caller has
+            # already received a timeout and retried the operation.
+            future.cancel()
+            raise
+
+    @staticmethod
+    def _execute(handler, arguments, future):
+        if future.cancelled():
+            return
+        try:
+            future.set_result(handler(arguments))
+        except Exception as exc:
+            future.set_exception(exc)
+
+
 class MainWindow(QMainWindow):
     NAVIGATION = [
-        ("home", "⌂", "Home"),
-        ("transcription", "＋", "New transcription"),
-        ("recording", "◉", "Live recording"),
-        ("history", "◷", "History"),
-        ("models", "▦", "Model library"),
-        ("audio", "♫", "Audio library"),
-        ("settings", "⚙", "Settings"),
+        ("home", "home", "Home"),
+        ("transcription", "projects", "New transcription"),
+        ("recording", "record", "Live recording"),
+        ("batch", "activity", "Batch processing"),
+        ("history", "projects", "Projects / Transcripts"),
+        ("editor", "controls", "Transcript editor"),
+        ("subtitles", "activity", "Subtitle studio"),
+        ("models", "models", "Model library"),
+        ("audio", "projects", "Audio library"),
+        ("cleanup", "controls", "Audio cleanup"),
+        ("settings", "settings", "Settings"),
     ]
 
     def __init__(self, paths, settings_store, history, database, model_manager):
@@ -38,15 +89,33 @@ class MainWindow(QMainWindow):
         self.history = history
         self.database = database
         self.model_manager = model_manager
+        self._sidebar_collapsed = False
         self.thread_pool = QThreadPool(self)
+        self.icon_registry = IconRegistry()
+        self.dispatcher = MainThreadDispatcher(self)
+        configured_permissions = set()
+        for value in settings_store.settings.agent_permissions or []:
+            try:
+                configured_permissions.add(AgentPermission(value))
+            except ValueError:
+                continue
+        self.action_registry = ActionRegistry(
+            permissions=configured_permissions,
+            dispatcher=self.dispatcher, approval=self._approve_agent_action,
+        )
+        self._waveform_generation = 0
         self.thread_pool.setMaxThreadCount(max(2, min(8, settings_store.settings.download_concurrency + 2)))
         self.setWindowTitle("Transcriber")
         self.setMinimumSize(720, 500)
         self.setAcceptDrops(True)
         self._build_ui()
         self._connect_pages()
+        self._register_agent_actions()
+        self._start_local_ipc()
         self._restore_geometry()
         self.apply_theme(settings_store.settings.theme)
+        if settings_store.settings.sidebar_collapsed:
+            self.toggle_sidebar()
         self.navigate(settings_store.settings.last_page)
         self._shortcuts()
 
@@ -65,35 +134,44 @@ class MainWindow(QMainWindow):
         side_layout.setContentsMargins(15, 22, 15, 16)
         side_layout.setSpacing(6)
         brand = QHBoxLayout()
-        mark = QLabel("◉")
-        mark.setStyleSheet("font-size: 25px; color: #75a7ff; font-weight: 700;")
-        brand_name = QLabel("Transcriber")
-        brand_name.setStyleSheet("font-size: 18px; font-weight: 700;")
+        mark = QLabel("T")
+        mark.setStyleSheet("font-size: 22px; color: #75a7ff; font-weight: 800;")
+        self.brand_name = QLabel("Transcriber")
+        self.brand_name.setStyleSheet("font-size: 18px; font-weight: 700;")
         brand.addWidget(mark)
-        brand.addWidget(brand_name)
+        brand.addWidget(self.brand_name)
         brand.addStretch(1)
         side_layout.addLayout(brand)
-        tagline = QLabel("VOICE  /  TEXT  /  LOCAL AI")
-        tagline.setObjectName("Muted")
-        tagline.setStyleSheet("font-size: 9px; letter-spacing: 1px; margin: 2px 0 18px 3px;")
-        side_layout.addWidget(tagline)
+        self.tagline = QLabel("VOICE  /  TEXT  /  LOCAL AI")
+        self.tagline.setObjectName("Muted")
+        self.tagline.setStyleSheet("font-size: 9px; letter-spacing: 1px; margin: 2px 0 18px 3px;")
+        side_layout.addWidget(self.tagline)
         self.nav_buttons: dict[str, QPushButton] = {}
-        for key, glyph, title in self.NAVIGATION:
-            button = QPushButton(f"{glyph}    {title}")
+        for key, icon_name, title in self.NAVIGATION:
+            button = QPushButton(title)
             button.setObjectName("Nav")
+            button.setIcon(self.icon_registry.icon(icon_name, size=18))
+            button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
+            button.setToolTip(title)
             button.setCheckable(True)
             button.setMinimumHeight(40)
             button.clicked.connect(lambda _checked=False, page=key: self.navigate(page))
             self.nav_buttons[key] = button
             side_layout.addWidget(button)
         side_layout.addStretch(1)
+        self.sidebar_toggle = QPushButton("Collapse sidebar")
+        self.sidebar_toggle.setObjectName("Nav")
+        self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
+        side_layout.addWidget(self.sidebar_toggle)
         local_status = QLabel("●  LOCAL-FIRST")
         local_status.setStyleSheet("color: #43b68b; font-size: 10px; font-weight: 700; margin: 4px;")
         side_layout.addWidget(local_status)
-        version = QLabel("Version 2.0.0")
+        self.local_status = local_status
+        version = QLabel("Version 2.1.0")
         version.setObjectName("Muted")
         version.setStyleSheet("font-size: 10px; margin: 4px;")
         side_layout.addWidget(version)
+        self.sidebar = sidebar
         root_layout.addWidget(sidebar)
 
         content = QWidget()
@@ -108,11 +186,22 @@ class MainWindow(QMainWindow):
         self.page_title.setStyleSheet("font-size: 16px; font-weight: 650;")
         self.top_status = QLabel("● Local mode")
         self.top_status.setObjectName("Muted")
+        self.global_search = QLineEdit()
+        self.global_search.setPlaceholderText("Search projects and transcripts…")
+        self.global_search.setMaximumWidth(250)
+        self.global_search.returnPressed.connect(self._search_library)
+        self.command_button = QPushButton("⌘K  Commands")
+        self.command_button.clicked.connect(self.show_command_palette)
+        self.assistant_button = QPushButton("AI Assistant")
+        self.assistant_button.clicked.connect(lambda: self.assistant_dock.show())
         new_button = QPushButton("＋  New transcription")
         new_button.setObjectName("Primary")
         new_button.clicked.connect(lambda: self.navigate("transcription"))
         toolbar_layout.addWidget(self.page_title)
         toolbar_layout.addStretch(1)
+        toolbar_layout.addWidget(self.global_search)
+        toolbar_layout.addWidget(self.command_button)
+        toolbar_layout.addWidget(self.assistant_button)
         toolbar_layout.addWidget(self.top_status)
         toolbar_layout.addWidget(new_button)
         content_layout.addWidget(toolbar)
@@ -126,14 +215,22 @@ class MainWindow(QMainWindow):
             model_manager, settings_store, self.thread_pool, self.release_active_model
         )
         self.audio_page = AudioLibraryPage(paths, history, self.thread_pool)
+        self.audio_cleanup_page = AudioCleanupPage(paths, self.thread_pool)
         self.settings_page = SettingsPage(paths, settings_store, database, self.thread_pool, model_manager)
+        self.batch_page = BatchProcessingPage(paths, settings_store, history, model_manager, self.thread_pool)
+        self.editor_page = TranscriptEditorPage()
+        self.subtitle_page = SubtitleStudioPage()
         self.pages = {
             "home": ("Home", self.home_page),
             "transcription": ("New transcription", self.transcription_page),
             "recording": ("Live recording", self.recording_page),
-            "history": ("History", self.history_page),
+            "batch": ("Batch processing", self.batch_page),
+            "history": ("Projects / Transcripts", self.history_page),
+            "editor": ("Transcript editor", self.editor_page),
+            "subtitles": ("Subtitle studio", self.subtitle_page),
             "models": ("Model library", self.model_page),
             "audio": ("Audio library", self.audio_page),
+            "cleanup": ("Audio cleanup", self.audio_cleanup_page),
             "settings": ("Settings", self.settings_page),
         }
         for _, page in self.pages.values():
@@ -141,6 +238,36 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.stack, 1)
         root_layout.addWidget(content, 1)
         self.setCentralWidget(root)
+
+        self.assistant_dock = QDockWidget("Inspector / AI Assistant", self)
+        self.assistant_dock.setObjectName("AssistantDock")
+        self.assistant_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        inspector_tabs = QTabWidget()
+        properties = QWidget()
+        properties_layout = QVBoxLayout(properties)
+        properties_layout.setContentsMargins(14, 12, 14, 12)
+        self.inspector_title = QLabel("No active document")
+        self.inspector_title.setStyleSheet("font-weight: 650; font-size: 15px;")
+        self.inspector_details = QLabel("Open an audio file or transcript to inspect its properties.")
+        self.inspector_details.setWordWrap(True)
+        self.inspector_details.setObjectName("Muted")
+        properties_layout.addWidget(self.inspector_title)
+        properties_layout.addWidget(self.inspector_details)
+        properties_layout.addStretch(1)
+        self.assistant_panel = AssistantPanel(paths, self.thread_pool, settings_store)
+        self.assistant_panel.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
+        inspector_tabs.addTab(properties, "Properties")
+        inspector_tabs.addTab(self.assistant_panel, "AI Assistant")
+        self.assistant_dock.setWidget(inspector_tabs)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.assistant_dock)
+
+        self.timeline_dock = QDockWidget("Audio Timeline", self)
+        self.timeline_dock.setObjectName("TimelineDock")
+        self.timeline_dock.setAllowedAreas(Qt.BottomDockWidgetArea)
+        self.timeline = WaveformTimeline()
+        self.timeline.seek_requested.connect(lambda value: self.transcription_page.player.seek(int(value * 1000)))
+        self.timeline_dock.setWidget(self.timeline)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
 
         status = QStatusBar()
         status.showMessage("Ready · Local-first recognition")
@@ -153,13 +280,315 @@ class MainWindow(QMainWindow):
         self.history_page.open_transcript.connect(self.open_transcript)
         self.recording_page.audio_ready.connect(self.open_recording_in_transcriber)
         self.audio_page.open_audio.connect(self.open_audio_library_file)
+        self.audio_cleanup_page.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
+        self.transcription_page.audio_changed.connect(self._load_waveform)
+        self.transcription_page.transcript_changed.connect(self._on_transcript_changed)
+        self.transcription_page.player.position_changed.connect(lambda value: self.timeline.set_position(value / 1000.0))
+        self.transcription_page.player.duration_changed.connect(self._on_audio_duration_changed)
+        self.editor_page.document_changed.connect(self._sync_editor_document)
+        self.editor_page.seek_requested.connect(lambda seconds: self.transcription_page.player.seek(int(seconds * 1000)))
+        self.subtitle_page.segments_changed.connect(self._sync_subtitle_document)
+        self.batch_page.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
+        self.editor_page.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
+        self.subtitle_page.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
         for page in (self.transcription_page, self.recording_page, self.history_page,
-                     self.model_page, self.settings_page):
+                     self.model_page, self.settings_page, self.batch_page, self.audio_cleanup_page):
             if hasattr(page, "status_message"):
                 page.status_message.connect(self.status_bar.showMessage)
         self.settings_page.theme_changed.connect(self.apply_theme)
         self.settings_page.concurrency_changed.connect(self._update_worker_limit)
+        self.settings_page.permission_changed.connect(
+            lambda permission, enabled: self.action_registry.set_permission(AgentPermission(permission), enabled)
+        )
+        self.settings_page.agent_settings_saved.connect(self.assistant_panel.sync_settings)
         self.model_page.default_model_changed.connect(lambda _repo_id: self.transcription_page.refresh_models())
+
+    def _start_local_ipc(self):
+        self.ipc_server = LocalIPCServer(self.paths.config / "transcriber-ipc.json", self._handle_ipc)
+        try:
+            self.ipc_server.start()
+        except OSError as exc:
+            self.ipc_server = None
+            self.status_bar.showMessage(f"Local Agent IPC unavailable: {exc}", 8000)
+
+    def _register_agent_actions(self):
+        register = self.action_registry.register
+        register(ActionSpec("app.navigate", "Navigate to an available Transcriber page.",
+                            AgentPermission.READ_ONLY, lambda args: self.navigate(args["page"]), required=("page",)))
+        register(ActionSpec("app.get_state", "Read current page, media, transcript and model state.",
+                            AgentPermission.READ_ONLY, lambda _args: self._app_state()))
+        register(ActionSpec("editor.get_segments", "Read the current transcript segments and timestamps.",
+                            AgentPermission.READ_ONLY, lambda _args: [item.to_dict() for item in self.transcription_page.segments]))
+        register(ActionSpec("editor.update_segment", "Update text, times, speaker or review metadata for one segment.",
+                            AgentPermission.EDIT_CONTENT, self._agent_update_segment,
+                            required=("segment_id", "changes")))
+        register(ActionSpec("editor.undo", "Undo the last segment-editor operation.",
+                            AgentPermission.EDIT_CONTENT, lambda _args: self.editor_page.undo()))
+        register(ActionSpec("editor.redo", "Redo the last undone segment-editor operation.",
+                            AgentPermission.EDIT_CONTENT, lambda _args: self.editor_page.redo()))
+        register(ActionSpec("editor.split_segment", "Split a segment at an existing word-time boundary, or at a supplied character/time pair.",
+                            AgentPermission.EDIT_CONTENT, self._agent_split_segment,
+                            required=("segment_id", "split_at")))
+        register(ActionSpec("editor.merge_segments", "Merge two selected transcript segments.",
+                            AgentPermission.EDIT_CONTENT, self._agent_merge_segments,
+                            required=("first_id", "second_id")))
+        register(ActionSpec("editor.delete_segment", "Delete one transcript segment after explicit GUI approval.",
+                            AgentPermission.EDIT_CONTENT, self._agent_delete_segment,
+                            required=("segment_id",), destructive=True))
+        register(ActionSpec("editor.set_speaker", "Assign a speaker label to one or more segments.",
+                            AgentPermission.EDIT_CONTENT, self._agent_set_speaker,
+                            required=("segment_ids", "speaker")))
+        register(ActionSpec("editor.search", "Search the current transcript using literal or regular-expression matching.",
+                            AgentPermission.READ_ONLY, self._agent_search, required=("query",)))
+        register(ActionSpec("editor.replace", "Replace matching segment text; regex mode is optional and locked segments are skipped.",
+                            AgentPermission.EDIT_CONTENT, self._agent_replace,
+                            required=("query", "replacement")))
+        register(ActionSpec("subtitle.validate", "Validate current subtitle timings, overlaps and reading speed.",
+                            AgentPermission.READ_ONLY, lambda _args: [
+                                {"code": item.code, "severity": item.severity, "segment_ids": list(item.segment_ids), "message": item.message}
+                                for item in __import__("transcriber.subtitles.timing", fromlist=["validate_subtitles"]).validate_subtitles(self.transcription_page.segments)
+                            ]))
+        register(ActionSpec("audio.get_status", "Read current audio playback and media path.",
+                            AgentPermission.READ_ONLY, lambda _args: {
+                                "path": str(self.transcription_page.audio_path) if self.transcription_page.audio_path else None,
+                                "position_ms": self.transcription_page.player.player.position(),
+                                "duration_ms": self.transcription_page.player.player.duration(),
+                                "playing": self.transcription_page.player.player.playbackState().value == 1,
+                            }))
+        register(ActionSpec("audio.seek", "Seek the current audio file to a time in seconds.",
+                            AgentPermission.READ_ONLY, self._agent_audio_seek, required=("seconds",)))
+        register(ActionSpec("audio.play", "Start playback of the current media file.",
+                            AgentPermission.READ_ONLY, lambda _args: self.transcription_page.player.player.play()))
+        register(ActionSpec("audio.stop", "Stop current media playback.",
+                            AgentPermission.READ_ONLY, lambda _args: self.transcription_page.player.player.stop()))
+        register(ActionSpec("subtitle.export", "Export current subtitle cues to an application-managed output file.",
+                            AgentPermission.FILE_EXPORT, self._agent_subtitle_export,
+                            required=("format",)))
+        register(ActionSpec("transcription.start", "Start transcription for the currently selected audio file.",
+                            AgentPermission.EDIT_CONTENT, lambda _args: self.transcription_page.start_transcription()))
+        register(ActionSpec("transcription.cancel", "Cancel the current transcription job.",
+                            AgentPermission.EDIT_CONTENT, lambda _args: self.transcription_page.cancel_transcription()))
+        register(ActionSpec("transcription.get_quality_report", "Calculate transcript quality metrics from real segment timing and any engine-provided word confidence.",
+                            AgentPermission.READ_ONLY, self._agent_quality_report))
+
+    def _handle_ipc(self, method, params):
+        if method in {"app.get_state", "app.list_actions"}:
+            if AgentPermission.READ_ONLY not in self.action_registry.permissions:
+                raise PermissionDenied("Read-only Agent permission is disabled")
+            if method == "app.get_state":
+                return self._app_state()
+            return self.action_registry.describe()
+        if method == "app.execute_action":
+            return self.action_registry.execute(str(params.get("name", "")), params.get("arguments") or {})
+        raise KeyError(f"Unknown IPC method: {method}")
+
+    def _app_state(self):
+        return {
+            "available": True, "application": "Transcriber", "page": next(
+                (key for key, (_title, page) in self.pages.items() if page is self.stack.currentWidget()), "home"
+            ),
+            "audio_path": str(self.transcription_page.audio_path) if self.transcription_page.audio_path else None,
+            "transcript_id": self.transcription_page.transcript_id,
+            "segment_count": len(self.transcription_page.segments),
+            "model_id": self.model_manager.active_model_id,
+            "opencode_connected": bool(self.assistant_panel.client and self.assistant_panel.client.connected),
+            "voice_active": self.assistant_panel.voice_agent is not None,
+            "permissions": sorted(item.value for item in self.action_registry.permissions),
+        }
+
+    def _agent_update_segment(self, args):
+        self.editor_page.history.execute(self.editor_page.document.update_segment,
+                                         args["segment_id"], **dict(args["changes"]))
+        self.editor_page._finish_change("Segment updated by Agent")
+        return self.editor_page.document.get(args["segment_id"]).to_dict()
+
+    def _agent_split_segment(self, args):
+        segment_id = str(args["segment_id"])
+        split_at = float(args["split_at"])
+        if args.get("character_index") is not None:
+            result = self.editor_page.history.execute(
+                self.editor_page.document.split_segment_at_text,
+                segment_id, int(args["character_index"]), split_at,
+            )
+        else:
+            result = self.editor_page.history.execute(
+                self.editor_page.document.split_segment, segment_id, split_at,
+            )
+        self.editor_page._finish_change("Segment split by Agent")
+        return [item.to_dict() for item in result]
+
+    def _agent_merge_segments(self, args):
+        result = self.editor_page.history.execute(
+            self.editor_page.document.merge_segments,
+            str(args["first_id"]), str(args["second_id"]),
+        )
+        self.editor_page._finish_change("Segments merged by Agent")
+        return result.to_dict()
+
+    def _agent_delete_segment(self, args):
+        segment_id = str(args["segment_id"])
+        self.editor_page.history.execute(self.editor_page.document.delete_segment, segment_id)
+        self.editor_page._finish_change("Segment deleted by Agent")
+        return {"deleted": True, "segment_id": segment_id}
+
+    def _agent_set_speaker(self, args):
+        segment_ids = [str(value) for value in args["segment_ids"]]
+        speaker = str(args["speaker"]).strip() or None
+        self.editor_page.history.execute(self.editor_page.document.set_speaker, segment_ids, speaker)
+        self.editor_page._finish_change("Speaker updated by Agent")
+        return {"updated": segment_ids, "speaker": speaker}
+
+    def _agent_search(self, args):
+        from transcriber.editor.search import search
+        matches = search(self.editor_page.document, str(args["query"]), regex=bool(args.get("regex", False)))
+        return [{"segment_id": item.segment_id, "start": item.start, "end": item.end, "text": item.text} for item in matches]
+
+    def _agent_replace(self, args):
+        from transcriber.editor.search import replace
+        count = self.editor_page.history.execute(
+            replace, self.editor_page.document, str(args["query"]),
+            str(args["replacement"]), regex=bool(args.get("regex", False)),
+        )
+        if count:
+            self.editor_page._finish_change(f"Agent replaced text in {count} segment(s)")
+        return {"replacements": count}
+
+    def _agent_subtitle_export(self, args):
+        from uuid import uuid4
+        from transcriber.subtitles.formats import export_subtitles
+        fmt = str(args["format"]).casefold().lstrip(".")
+        if fmt not in {"srt", "vtt", "ass", "ssa"}:
+            raise ValueError("Subtitle format must be one of: srt, vtt, ass, ssa")
+        segments = self.editor_page.snapshot_segments()
+        if not segments:
+            raise ValueError("There is no transcript to export")
+        output_dir = self.paths.data / "agent-exports"
+        filename = f"transcript-{uuid4().hex[:10]}.{fmt}"
+        target = output_dir / filename
+        result = export_subtitles(target, segments, format=fmt, title="Transcriber Agent export")
+        return {"exported": True, "path": str(result), "format": fmt, "segment_count": len(segments)}
+
+    def _agent_quality_report(self, _args):
+        from transcriber.transcription.quality_report import build_quality_report
+        result = build_quality_report(
+            segments=self.transcription_page.segments,
+            language=self.transcription_page._record_metadata.get("language") if self.transcription_page._record_metadata else None,
+            duration=self._audio_duration_seconds(),
+        )
+        return result.to_dict()
+
+    def _agent_audio_seek(self, args):
+        seconds = max(0.0, float(args["seconds"]))
+        self.transcription_page.player.seek(int(seconds * 1000))
+        return {"position_ms": self.transcription_page.player.player.position()}
+
+    def _approve_agent_action(self, spec, args):
+        answer = QMessageBox.question(
+            self, "Agent permission required",
+            f"Allow OpenCode to run: {spec.name}?\n\n{spec.description}\n\nArguments: {args}",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        return answer == QMessageBox.Yes
+
+    def toggle_sidebar(self):
+        self._sidebar_collapsed = not getattr(self, "_sidebar_collapsed", False)
+        width = 76 if self._sidebar_collapsed else 210
+        self.sidebar.setMinimumWidth(width)
+        self.sidebar.setMaximumWidth(width)
+        self.brand_name.setVisible(not self._sidebar_collapsed)
+        self.tagline.setVisible(not self._sidebar_collapsed)
+        self.sidebar_toggle.setText("Expand sidebar" if self._sidebar_collapsed else "Collapse sidebar")
+        for key, _icon, title in self.NAVIGATION:
+            button = self.nav_buttons[key]
+            button.setText("" if self._sidebar_collapsed else title)
+            button.setToolTip(title)
+        self.settings_store.update(sidebar_collapsed=self._sidebar_collapsed)
+
+    def show_command_palette(self):
+        options = [f"{title}  ·  {key}" for key, _icon, title in self.NAVIGATION]
+        chosen, accepted = QInputDialog.getItem(self, "Command palette", "Go to", options, 0, False)
+        if accepted and chosen:
+            page_id = chosen.rsplit("·", 1)[-1].strip()
+            self.navigate(page_id)
+
+    def _search_library(self):
+        query = self.global_search.text().strip()
+        if not query:
+            return
+        self.navigate("history")
+        if hasattr(self.history_page, "search"):
+            self.history_page.search.setText(query)
+            self.history_page.refresh()
+
+    def _on_audio_duration_changed(self, duration_ms):
+        self._audio_duration_ms = max(0, int(duration_ms))
+        if self.timeline.peaks:
+            self.timeline.set_waveform(self.timeline.peaks, self._audio_duration_seconds())
+
+    def _audio_duration_seconds(self):
+        return max(0.0, float(self._audio_duration_ms) / 1000.0) if hasattr(self, "_audio_duration_ms") else 0.0
+
+    def _load_waveform(self, audio_path: str):
+        self._waveform_generation += 1
+        generation = self._waveform_generation
+        self._audio_duration_ms = 0
+        self.waveform_status = "Loading waveform…"
+        worker = FunctionWorker(lambda emit: build_waveform(Path(audio_path), self.paths.cache / "waveforms", bins=4096, progress=lambda value: emit(value)))
+        worker.signals.progress.connect(lambda _value: None)
+        worker.signals.result.connect(lambda peaks, gen=generation: self._waveform_ready(gen, peaks))
+        worker.signals.error.connect(lambda message, gen=generation: self._waveform_failed(gen, message))
+        self.thread_pool.start(worker)
+        self.inspector_title.setText(Path(audio_path).name)
+        self.inspector_details.setText(str(audio_path))
+
+    def _waveform_ready(self, generation, peaks):
+        if generation != self._waveform_generation:
+            return
+        duration = self._audio_duration_seconds()
+        if duration <= 0 and self.transcription_page.player.player.duration():
+            duration = self.transcription_page.player.player.duration() / 1000.0
+        self.timeline.set_waveform(peaks, duration)
+        self.timeline.set_segments(self.transcription_page.segments)
+        self.status_bar.showMessage("Waveform ready", 4000)
+
+    def _waveform_failed(self, generation, message):
+        if generation == self._waveform_generation:
+            self.status_bar.showMessage(f"Waveform unavailable: {message}", 7000)
+
+    def _on_transcript_changed(self, segments, source_path, language, duration, original_text=""):
+        self.editor_page.load_segments(segments, source_path=source_path, language=language,
+                                       duration=duration, original_text=original_text)
+        self.subtitle_page.load_segments(segments)
+        self.timeline.set_segments(segments)
+        self.inspector_title.setText(Path(source_path).name if source_path else "Transcript")
+        self.inspector_details.setText(f"{len(segments)} segments · {language or 'language unknown'} · {duration:.1f}s")
+        if source_path and Path(source_path).is_file():
+            self._load_waveform(source_path)
+
+    def _sync_editor_document(self, document):
+        self.transcription_page.segments = self.editor_page.snapshot_segments()
+        text = document.text
+        self.transcription_page._loading_text = True
+        self.transcription_page.editor.setPlainText(text)
+        self.transcription_page._loading_text = False
+        self.transcription_page._editor_base_text = text
+        self.transcription_page._rebuild_segment_ranges()
+        self.transcription_page._schedule_autosave()
+        self.subtitle_page.load_segments(self.transcription_page.segments)
+        self.timeline.set_segments(self.transcription_page.segments)
+
+    def _sync_subtitle_document(self, segments):
+        self.transcription_page.segments = list(segments)
+        self.editor_page.load_segments(segments, source_path=self.transcription_page.audio_path,
+                                       duration=self._audio_duration_seconds())
+        text = " ".join(item.text.strip() for item in segments if item.text.strip())
+        self.transcription_page._loading_text = True
+        self.transcription_page.editor.setPlainText(text)
+        self.transcription_page._loading_text = False
+        self.transcription_page._editor_base_text = text
+        self.transcription_page._rebuild_segment_ranges()
+        self.transcription_page._schedule_autosave()
+        self.timeline.set_segments(segments)
 
     def _shortcuts(self):
         shortcuts = {
@@ -171,7 +600,12 @@ class MainWindow(QMainWindow):
             "Ctrl+3": lambda: self.navigate("recording"),
             "Ctrl+4": lambda: self.navigate("history"),
             "Ctrl+5": lambda: self.navigate("models"),
-            "Ctrl+6": lambda: self.navigate("audio"),
+            "Ctrl+6": lambda: self.navigate("editor"),
+            "Ctrl+7": lambda: self.navigate("subtitles"),
+            "Ctrl+8": lambda: self.navigate("cleanup"),
+            "Ctrl+9": lambda: self.navigate("audio"),
+            "Ctrl+K": self.show_command_palette,
+            "Ctrl+Shift+B": lambda: self.navigate("batch"),
             "Ctrl+,": lambda: self.navigate("settings"),
         }
         self._shortcut_refs = []
@@ -197,6 +631,14 @@ class MainWindow(QMainWindow):
             self.history_page.refresh()
         elif page_id == "audio":
             self.audio_page.refresh()
+        elif page_id == "editor":
+            if not self.editor_page.document.segments and self.transcription_page.segments:
+                self.editor_page.load_segments(self.transcription_page.segments,
+                                               source_path=self.transcription_page.audio_path,
+                                               duration=self._audio_duration_seconds())
+        elif page_id == "subtitles":
+            if not self.subtitle_page.segments and self.transcription_page.segments:
+                self.subtitle_page.load_segments(self.transcription_page.segments)
 
     def open_transcript(self, transcript_id: str):
         self.transcription_page.open_history_item(transcript_id)
@@ -255,6 +697,16 @@ class MainWindow(QMainWindow):
                     self.move(available.center() - self.rect().center())
             else:
                 self.resize(1100, 760)
+        saved_state = self.settings_store.settings.window_state
+        if saved_state:
+            try:
+                state = __import__("PySide6.QtCore", fromlist=["QByteArray"]).QByteArray.fromBase64(saved_state.encode("ascii"))
+                self.restoreState(state)
+            except Exception:
+                pass
+        settings = self.settings_store.settings
+        self.assistant_dock.setVisible(settings.inspector_visible)
+        self.timeline_dock.setVisible(settings.timeline_visible)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls() and any(url.isLocalFile() for url in event.mimeData().urls()):
@@ -281,9 +733,20 @@ class MainWindow(QMainWindow):
                 self.recording_page.stop_recording()
             else:
                 self.recording_page.cancel_recording()
-        self.settings_store.update(geometry=bytes(self.saveGeometry().toBase64()).decode("ascii"))
+        self.audio_cleanup_page.shutdown()
+        self.batch_page.shutdown()
+        self.settings_store.update(
+            geometry=bytes(self.saveGeometry().toBase64()).decode("ascii"),
+            window_state=bytes(self.saveState().toBase64()).decode("ascii"),
+            sidebar_collapsed=self._sidebar_collapsed,
+            inspector_visible=self.assistant_dock.isVisible(),
+            timeline_visible=self.timeline_dock.isVisible(),
+        )
         # Signal all cancellable tasks before draining the bounded pool.
         self.transcription_page.shutdown()
+        self.assistant_panel.shutdown()
+        if self.ipc_server:
+            self.ipc_server.close()
         for cancel_event in self.model_page._downloads.values():
             cancel_event.set()
         self.model_manager.downloader.cancel_all()

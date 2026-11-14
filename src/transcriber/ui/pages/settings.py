@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Signal
@@ -20,6 +21,8 @@ from transcriber.ui.workers import FunctionWorker
 class SettingsPage(QWidget):
     theme_changed = Signal(str)
     concurrency_changed = Signal(int)
+    permission_changed = Signal(str, bool)
+    agent_settings_saved = Signal()
     status_message = Signal(str)
 
     def __init__(self, paths, settings_store, database, thread_pool, model_manager, parent=None):
@@ -113,6 +116,102 @@ class SettingsPage(QWidget):
         jobs_form.addRow("Concurrent background downloads", self.download_workers)
         layout.addWidget(self._section("Background jobs", jobs))
 
+        runtime = Card()
+        runtime_form = QFormLayout(runtime)
+        runtime_form.setContentsMargins(18, 16, 18, 16)
+        self.max_active_models = QSpinBox()
+        self.max_active_models.setRange(1, 10)
+        self.max_active_models.setValue(current.max_active_models)
+        self.max_active_models.valueChanged.connect(lambda value: self._save(max_active_models=value))
+        self.ram_budget = QSpinBox()
+        self.ram_budget.setRange(0, 1_048_576)
+        self.ram_budget.setSingleStep(512)
+        self.ram_budget.setSuffix(" MB")
+        self.ram_budget.setValue(current.ram_budget_mb)
+        self.ram_budget.valueChanged.connect(lambda value: self._save(ram_budget_mb=value))
+        self.vram_budget = QSpinBox()
+        self.vram_budget.setRange(0, 1_048_576)
+        self.vram_budget.setSingleStep(256)
+        self.vram_budget.setSuffix(" MB")
+        self.vram_budget.setValue(current.vram_budget_mb)
+        self.vram_budget.valueChanged.connect(lambda value: self._save(vram_budget_mb=value))
+        runtime_form.addRow("Maximum loaded models (1–10)", self.max_active_models)
+        runtime_form.addRow("RAM budget", self.ram_budget)
+        runtime_form.addRow("VRAM budget", self.vram_budget)
+        runtime_note = QLabel(
+            "The generic ModelRuntimeManager enforces these resource policies for registered adapters. "
+            "The current Faster-Whisper application service is still single-active-model; these settings "
+            "do not make multiple Whisper models load simultaneously yet."
+        )
+        runtime_note.setWordWrap(True)
+        runtime_note.setObjectName("Muted")
+        runtime_form.addRow("Current integration", runtime_note)
+        layout.addWidget(self._section("Model runtime policy", runtime))
+
+        agent = Card()
+        agent_layout = QVBoxLayout(agent)
+        agent_layout.setContentsMargins(18, 16, 18, 16)
+        executable_row = QHBoxLayout()
+        executable_row.addWidget(QLabel("OpenCode executable"))
+        self.opencode_path = QLineEdit(current.opencode_path or "")
+        self.opencode_path.setPlaceholderText("Leave empty to use PATH")
+        browse_executable = QPushButton("Browse…")
+        browse_executable.clicked.connect(self._browse_opencode)
+        executable_row.addWidget(self.opencode_path, 1)
+        executable_row.addWidget(browse_executable)
+        agent_layout.addLayout(executable_row)
+        self.opencode_project = self._path_row(
+            "OpenCode project", current.opencode_project_directory or str(Path.cwd()), agent_layout,
+        )
+        wake_row = QHBoxLayout()
+        wake_row.addWidget(QLabel("Local wake phrase"))
+        self.wake_phrase = QLineEdit(current.wake_phrase)
+        wake_row.addWidget(self.wake_phrase, 1)
+        agent_layout.addLayout(wake_row)
+        self.wake_model = self._path_row(
+            "Vosk model directory", current.wake_model_directory or "", agent_layout,
+        )
+        agent_buttons = QHBoxLayout()
+        save_agent = QPushButton("Save Agent settings")
+        save_agent.clicked.connect(self._save_agent_settings)
+        self.test_opencode = QPushButton("Test OpenCode executable")
+        self.test_opencode.clicked.connect(self._test_opencode)
+        agent_buttons.addWidget(save_agent)
+        agent_buttons.addWidget(self.test_opencode)
+        agent_buttons.addStretch(1)
+        agent_layout.addLayout(agent_buttons)
+        agent_note = QLabel(
+            "Wake detection starts only after explicitly enabling it in the Assistant panel. "
+            "OpenCode/MCP are optional external components. Voice audio is processed locally by Vosk "
+            "and is not sent to OpenCode as raw audio."
+        )
+        agent_note.setWordWrap(True)
+        agent_note.setObjectName("Muted")
+        agent_layout.addWidget(agent_note)
+        permission_title = QLabel("Agent permissions")
+        permission_title.setStyleSheet("font-weight: 650; margin-top: 8px;")
+        agent_layout.addWidget(permission_title)
+        permission_labels = {
+            "read_only": "Read application state",
+            "edit_content": "Edit transcript content",
+            "modify_settings": "Modify application settings",
+            "audio_capture": "Start microphone/audio capture",
+            "file_export": "Export files",
+            "model_management": "Download/load/unload models",
+            "destructive_actions": "Allow destructive actions (still asks for confirmation)",
+        }
+        enabled_permissions = set(current.agent_permissions or ["read_only", "edit_content"])
+        self.agent_permission_checks = {}
+        permission_grid = QFormLayout()
+        for permission, label in permission_labels.items():
+            check = QCheckBox(label)
+            check.setChecked(permission in enabled_permissions)
+            check.toggled.connect(lambda enabled, key=permission: self._permission_changed(key, enabled))
+            self.agent_permission_checks[permission] = check
+            permission_grid.addRow(check)
+        agent_layout.addLayout(permission_grid)
+        layout.addWidget(self._section("OpenCode & Voice Agent", agent))
+
         privacy = Card()
         privacy_form = QFormLayout(privacy)
         privacy_form.setContentsMargins(18, 16, 18, 16)
@@ -186,6 +285,11 @@ class SettingsPage(QWidget):
         if path:
             edit.setText(path)
 
+    def _browse_opencode(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Choose OpenCode executable", self.opencode_path.text())
+        if path:
+            self.opencode_path.setText(path)
+
     def _save(self, **changes):
         self.settings_store.update(**changes)
         self.status_message.emit("Settings saved")
@@ -212,6 +316,61 @@ class SettingsPage(QWidget):
             QMessageBox.information(self, "Restart required", "The new storage locations will be used after restarting Transcriber.")
         except OSError as exc:
             QMessageBox.warning(self, "Cannot use directory", str(exc))
+
+    def _permission_changed(self, permission: str, enabled: bool):
+        current = set(self.settings_store.settings.agent_permissions or [])
+        if enabled:
+            current.add(permission)
+        else:
+            current.discard(permission)
+        ordered = [name for name in (
+            "read_only", "edit_content", "modify_settings", "audio_capture",
+            "file_export", "model_management", "destructive_actions",
+        ) if name in current]
+        self._save(agent_permissions=ordered)
+        self.permission_changed.emit(permission, enabled)
+
+    def _save_agent_settings(self):
+        executable = self.opencode_path.text().strip() or None
+        project = self.opencode_project.text().strip() or None
+        wake_model = self.wake_model.text().strip() or None
+        if project and not Path(project).expanduser().is_dir():
+            QMessageBox.warning(self, "Invalid project directory", "OpenCode project must be an existing directory.")
+            return
+        if wake_model and not Path(wake_model).expanduser().is_dir():
+            QMessageBox.warning(self, "Invalid Vosk model directory", "Choose an existing local Vosk model directory.")
+            return
+        self._save(
+            opencode_path=executable,
+            opencode_project_directory=project,
+            wake_model_directory=wake_model,
+            wake_phrase=self.wake_phrase.text().strip(),
+        )
+        self.agent_settings_saved.emit()
+
+    def _test_opencode(self):
+        executable = self.opencode_path.text().strip() or shutil.which("opencode") or "opencode"
+        self.test_opencode.setEnabled(False)
+
+        def run(_emit):
+            result = subprocess.run(
+                [executable, "--version"], capture_output=True, text=True, timeout=8, check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or f"OpenCode exited with code {result.returncode}")
+            return result.stdout.strip() or result.stderr.strip() or "OpenCode executable responded"
+
+        worker = FunctionWorker(run)
+        worker.signals.result.connect(lambda message: self._opencode_test_result(True, message))
+        worker.signals.error.connect(lambda message: self._opencode_test_result(False, message))
+        worker.signals.finished.connect(lambda: self.test_opencode.setEnabled(True))
+        self.thread_pool.start(worker)
+
+    def _opencode_test_result(self, success: bool, message: str):
+        if success:
+            QMessageBox.information(self, "OpenCode available", message)
+        else:
+            QMessageBox.warning(self, "OpenCode test failed", message)
 
     @staticmethod
     def _directory_size(path: Path) -> int:

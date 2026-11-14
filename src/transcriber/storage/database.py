@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class Database:
@@ -56,6 +56,14 @@ class Database:
                     text TEXT NOT NULL,
                     speaker TEXT,
                     words_json TEXT NOT NULL DEFAULT '[]',
+                    uid TEXT,
+                    language TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    is_edited INTEGER NOT NULL DEFAULT 0,
+                    comment TEXT,
+                    bookmarked INTEGER NOT NULL DEFAULT 0,
+                    locked INTEGER NOT NULL DEFAULT 0,
+                    reviewed INTEGER NOT NULL DEFAULT 0,
                     UNIQUE(transcript_id, ordinal)
                 );
                 CREATE INDEX IF NOT EXISTS idx_segments_transcript
@@ -65,10 +73,20 @@ class Database:
             segment_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(transcript_segments)")
             }
-            if "words_json" not in segment_columns:
-                connection.execute(
-                    "ALTER TABLE transcript_segments ADD COLUMN words_json TEXT NOT NULL DEFAULT '[]'"
-                )
+            migrations = {
+                "words_json": "TEXT NOT NULL DEFAULT '[]'",
+                "uid": "TEXT",
+                "language": "TEXT",
+                "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+                "is_edited": "INTEGER NOT NULL DEFAULT 0",
+                "comment": "TEXT",
+                "bookmarked": "INTEGER NOT NULL DEFAULT 0",
+                "locked": "INTEGER NOT NULL DEFAULT 0",
+                "reviewed": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for column, definition in migrations.items():
+                if column not in segment_columns:
+                    connection.execute(f"ALTER TABLE transcript_segments ADD COLUMN {column} {definition}")
             connection.execute(
                 "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('version', ?)",
                 (str(SCHEMA_VERSION),),

@@ -6,7 +6,7 @@ import json
 import os
 import tempfile
 import threading
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +31,21 @@ class AppSettings:
     retain_source_audio: bool = True
     download_concurrency: int = 2
     geometry: str | None = None
+    window_state: str | None = None
+    sidebar_collapsed: bool = False
+    inspector_visible: bool = True
+    timeline_visible: bool = True
+    opencode_path: str | None = None
+    opencode_project_directory: str | None = None
+    opencode_session_id: str | None = None
+    agent_permissions: list[str] = field(default_factory=lambda: ["read_only", "edit_content"])
+    wake_phrase: str = "transcriber"
+    wake_model_directory: str | None = None
+    wake_enabled: bool = False
+    voice_auto_sleep_seconds: int = 30
+    max_active_models: int = 2
+    ram_budget_mb: int = 8192
+    vram_budget_mb: int = 4096
     last_page: str = "home"
 
     def validate(self) -> None:
@@ -66,6 +81,37 @@ class AppSettings:
                     return False
             return default
 
+        self.sidebar_collapsed = as_bool(self.sidebar_collapsed, False)
+        self.inspector_visible = as_bool(self.inspector_visible, True)
+        self.timeline_visible = as_bool(self.timeline_visible, True)
+        self.wake_enabled = as_bool(self.wake_enabled, False)
+        try:
+            self.voice_auto_sleep_seconds = int(self.voice_auto_sleep_seconds)
+        except (TypeError, ValueError):
+            self.voice_auto_sleep_seconds = 30
+        try:
+            self.max_active_models = int(self.max_active_models)
+            self.ram_budget_mb = int(self.ram_budget_mb)
+            self.vram_budget_mb = int(self.vram_budget_mb)
+        except (TypeError, ValueError):
+            self.max_active_models, self.ram_budget_mb, self.vram_budget_mb = 2, 8192, 4096
+        self.voice_auto_sleep_seconds = max(5, min(600, self.voice_auto_sleep_seconds))
+        self.max_active_models = max(1, min(10, self.max_active_models))
+        self.ram_budget_mb = max(0, min(1_048_576, self.ram_budget_mb))
+        self.vram_budget_mb = max(0, min(1_048_576, self.vram_budget_mb))
+        self.wake_phrase = " ".join(str(self.wake_phrase or "transcriber").split())[:80]
+        self.opencode_path = str(self.opencode_path) if self.opencode_path else None
+        self.opencode_project_directory = str(self.opencode_project_directory) if self.opencode_project_directory else None
+        self.opencode_session_id = str(self.opencode_session_id) if self.opencode_session_id else None
+        valid_permissions = {
+            "read_only", "edit_content", "modify_settings", "audio_capture",
+            "file_export", "model_management", "destructive_actions",
+        }
+        raw_permissions = self.agent_permissions if isinstance(self.agent_permissions, list) else ["read_only", "edit_content"]
+        self.agent_permissions = list(dict.fromkeys(
+            str(value) for value in raw_permissions if str(value) in valid_permissions
+        ))
+        self.wake_model_directory = str(self.wake_model_directory) if self.wake_model_directory else None
         self.local_only = as_bool(self.local_only, True)
         self.cloud_consent = as_bool(self.cloud_consent, False)
         self.retain_source_audio = as_bool(self.retain_source_audio, True)

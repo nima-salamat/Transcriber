@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 SUPPORTED_AUDIO_SUFFIXES = {
-    ".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma",
+    ".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma", ".aiff", ".aif",
+    # Faster-Whisper/PyAV and FFmpeg can read the audio stream of common
+    # video containers. This does not imply a video editor or preview panel.
+    ".mp4", ".m4v", ".mkv", ".mov", ".webm", ".avi",
 }
 
 

@@ -1,18 +1,23 @@
-"""Desktop application entry point."""
+"""Desktop application and packaged MCP server entry point."""
 
 from __future__ import annotations
 
-import logging
 import sys
-
-from PySide6.QtWidgets import QApplication, QMessageBox
-
-from transcriber.bootstrap import build_services
-from transcriber.ui.main_window import MainWindow
-from transcriber.ui.theme import stylesheet
 
 
 def main() -> int:
+    # The stdio MCP process must not initialise Qt or construct the GUI.
+    if "--mcp-server" in sys.argv[1:]:
+        sys.argv.remove("--mcp-server")
+        from transcriber.mcp_server import main as mcp_main
+        return mcp_main()
+
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from transcriber.bootstrap import build_services
+    from transcriber.ui.main_window import MainWindow
+    from transcriber.ui.theme import stylesheet
+
     app = QApplication(sys.argv)
     app.setApplicationName("Transcriber")
     app.setOrganizationName("Transcriber")
@@ -34,4 +39,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

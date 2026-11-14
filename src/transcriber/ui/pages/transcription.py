@@ -26,6 +26,8 @@ from transcriber.ui.workers import FunctionWorker
 
 class TranscriptionPage(QWidget):
     status_message = Signal(str)
+    audio_changed = Signal(str)
+    transcript_changed = Signal(object, str, str, float, str)
 
     def __init__(self, paths, settings_store, history, model_manager, thread_pool, parent=None):
         super().__init__(parent)
@@ -216,7 +218,7 @@ class TranscriptionPage(QWidget):
     def choose_audio(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Import audio", str(self.paths.recordings),
-            "Audio files (*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus *.wma);;All files (*)",
+            "Media files (*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus *.wma *.aiff *.aif *.mp4 *.mkv *.mov *.webm *.avi);;All files (*)",
         )
         if path:
             self.set_audio(path)
@@ -243,6 +245,7 @@ class TranscriptionPage(QWidget):
         self.file_name.setToolTip(str(audio))
         self.player.set_source(str(audio))
         self.progress_label.setText("Audio ready")
+        self.audio_changed.emit(str(audio))
 
     def start_transcription(self):
         if self.audio_path is None:
@@ -357,6 +360,8 @@ class TranscriptionPage(QWidget):
         )
         self.status_message.emit("Transcription completed and saved to History")
         self._update_word_count()
+        self.transcript_changed.emit(list(self.segments), str(self.audio_path) if self.audio_path else "",
+                                     result.language or "", result.duration, result.text)
 
     def _on_transcription_error(self, message: str):
         if self.cancel_event and self.cancel_event.is_set():
@@ -404,7 +409,9 @@ class TranscriptionPage(QWidget):
             "segments": [
                 TranscriptSegment(
                     start=item.start, end=item.end, text=item.text, speaker=item.speaker,
-                    words=list(item.words or []),
+                    words=list(item.words or []), id=item.id, language=item.language,
+                    metadata=dict(item.metadata), is_edited=item.is_edited, comment=item.comment,
+                    bookmarked=item.bookmarked, locked=item.locked, reviewed=item.reviewed,
                 ) for item in self.segments
             ],
         }
@@ -503,6 +510,9 @@ class TranscriptionPage(QWidget):
         self._rebuild_segment_ranges()
         self._update_word_count()
         self.progress_label.setText("Transcript loaded · edits auto-save")
+        self.transcript_changed.emit(list(self.segments), str(self.audio_path) if self.audio_path else "",
+                                     record.get("language") or "", float(record.get("duration") or 0.0),
+                                     record.get("original_text") or record.get("text") or "")
 
     def _rebuild_segment_ranges(self):
         self._segment_ranges = []
