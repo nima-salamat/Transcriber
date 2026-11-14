@@ -7,25 +7,45 @@ import threading
 from pathlib import Path
 
 from transcriber.engines.faster_whisper import FasterWhisperEngine
+from transcriber.engines.vosk import VoskEngine
 from transcriber.models.compatibility import validate_faster_whisper_files, validate_repo_id
 from transcriber.models.downloader import ModelDownloader
 from transcriber.models.hub_client import HubModel, HuggingFaceHubClient
 from transcriber.models.registry import ModelRegistry
+from transcriber.models.vosk import (
+    VoskModelCatalog,
+    VoskModelDownloader,
+    validate_vosk_model_directory,
+)
 
 
 class ModelManager:
-    def __init__(self, registry: ModelRegistry, hub: HuggingFaceHubClient,
-                 downloader: ModelDownloader):
+    def __init__(
+        self,
+        registry: ModelRegistry,
+        hub: HuggingFaceHubClient,
+        downloader: ModelDownloader,
+        *,
+        vosk_catalog: VoskModelCatalog | None = None,
+        vosk_downloader: VoskModelDownloader | None = None,
+    ):
         self.registry = registry
         self.hub = hub
         self.downloader = downloader
+        self.vosk_catalog = vosk_catalog or VoskModelCatalog()
+        self.vosk_downloader = vosk_downloader or VoskModelDownloader(
+            registry,
+            self.vosk_catalog,
+            job_repository=downloader.job_repository,
+        )
         self._lock = threading.RLock()
         # Serialize model swaps/load/unload. A second worker must not detach a
         # model while the first worker is still materializing it in RAM.
         self._operation_lock = threading.RLock()
         self._active_model_id: str | None = None
-        self._active_engine: FasterWhisperEngine | None = None
+        self._active_engine: FasterWhisperEngine | VoskEngine | None = None
         self._active_options: tuple | None = None
+        self._active_runtime: str | None = None
         self._installing: set[str] = set()
 
     @property
@@ -35,6 +55,41 @@ class ModelManager:
 
     def set_download_concurrency(self, value: int) -> None:
         self.downloader.set_max_concurrent(value)
+        self.vosk_downloader.set_max_concurrent(value)
+
+    @property
+    def job_repository(self):
+        return self.downloader.job_repository
+
+    def list_download_jobs(self, limit: int = 500) -> list[dict]:
+        jobs = self.downloader.list_jobs(limit=limit)
+        jobs.extend(self.vosk_downloader.list_jobs(limit=limit))
+        jobs.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        return jobs[:max(1, min(int(limit), 2000))]
+
+    def pause_download(self, model_id: str) -> bool:
+        return (
+            self.vosk_downloader.pause(model_id)
+            if str(model_id).startswith("vosk/")
+            else self.downloader.pause(model_id)
+        )
+
+    def stop_download(self, model_id: str) -> bool:
+        return (
+            self.vosk_downloader.stop(model_id)
+            if str(model_id).startswith("vosk/")
+            else self.downloader.stop(model_id)
+        )
+
+    def cancel_download(self, model_id: str) -> bool:
+        return (
+            self.vosk_downloader.cancel(model_id)
+            if str(model_id).startswith("vosk/")
+            else self.downloader.cancel(model_id)
+        )
+
+    def cancel_all_downloads(self) -> int:
+        return self.downloader.cancel_all() + self.vosk_downloader.cancel_all()
 
     def clear_download_cache(self) -> None:
         # Keep the install reservation lock while the lower-level cache lock is held
@@ -43,6 +98,13 @@ class ModelManager:
             if self._installing:
                 raise RuntimeError("Cannot clear the model cache while downloads are queued or active")
             self.downloader.clear_cache()
+            cache_root = self.registry.root / ".staging" / "vosk-download-cache"
+            if cache_root.is_symlink():
+                raise ValueError("Refusing to clear a symbolic-link Vosk download cache")
+            if cache_root.exists():
+                import shutil
+
+                shutil.rmtree(cache_root)
 
     @property
     def active_model_id(self) -> str | None:
@@ -52,7 +114,15 @@ class ModelManager:
     def search(self, query: str = "", *, sort: str = "downloads", limit: int = 30) -> list[HubModel]:
         return self.hub.search(query, sort=sort, limit=limit)
 
-    def inspect(self, repo_id: str) -> tuple[HubModel, object]:
+    def search_vosk(self, query: str = "", *, limit: int = 50):
+        return self.vosk_catalog.search(query, limit=limit)
+
+    def inspect_vosk(self, model_id: str):
+        return self.vosk_catalog.inspect(model_id)
+
+    def inspect(self, repo_id: str):
+        if str(repo_id).startswith("vosk/"):
+            return self.inspect_vosk(repo_id)
         model = self.hub.inspect(validate_repo_id(repo_id))
         report = validate_faster_whisper_files(item.name for item in model.files)
         return model, report
@@ -78,15 +148,50 @@ class ModelManager:
             with self._lock:
                 self._installing.discard(repo_id)
 
+    def install_vosk(
+        self, model_id: str, *, cancel_event=None, progress=None,
+        task_id: str | None = None, metadata: dict | None = None,
+    ) -> Path:
+        model_id = str(model_id)
+        if not model_id.startswith("vosk/"):
+            model_id = "vosk/" + model_id
+        with self._lock:
+            if model_id == self._active_model_id:
+                raise RuntimeError("Unload the active Vosk model before reinstalling it")
+            if model_id in self._installing:
+                raise RuntimeError(f"A download for {model_id} is already active")
+            self._installing.add(model_id)
+        try:
+            return self.vosk_downloader.download(
+                model_id,
+                cancel_event=cancel_event,
+                progress=progress,
+                task_id=task_id,
+                metadata=metadata,
+            )
+        finally:
+            with self._lock:
+                self._installing.discard(model_id)
+
     def resume_download(self, task_id: str, *, cancel_event=None, progress=None) -> Path:
-        if self.downloader.job_repository is None:
+        repository = self.job_repository
+        if repository is None:
             raise RuntimeError("Persistent download history is unavailable.")
-        job = self.downloader.job_repository.get(task_id)
+        job = repository.get(task_id)
         if job is None:
             raise KeyError(task_id)
+        metadata = job.get("metadata") or {}
+        if metadata.get("runtime") == "vosk" or str(job["repo_id"]).startswith("vosk/"):
+            return self.install_vosk(
+                job["repo_id"],
+                cancel_event=cancel_event,
+                progress=progress,
+                task_id=job["task_id"],
+                metadata=metadata,
+            )
         return self.install(
             job["repo_id"], revision=job.get("revision"), cancel_event=cancel_event,
-            progress=progress, task_id=job["task_id"], metadata=job.get("metadata") or {},
+            progress=progress, task_id=job["task_id"], metadata=metadata,
         )
 
     def _publish_imported_directory(self, source: Path, repo_id: str) -> Path:
@@ -270,7 +375,7 @@ class ModelManager:
         finally:
             shutil.rmtree(extraction, ignore_errors=True)
 
-    def get_engine(self, repo_id: str, settings=None) -> FasterWhisperEngine:
+    def get_engine(self, repo_id: str, settings=None):
         repo_id = validate_repo_id(repo_id)
         with self._operation_lock, self._lock:
             if repo_id in self._installing:
@@ -278,20 +383,61 @@ class ModelManager:
             model_path = self.registry.get_path(repo_id)
             if model_path is None:
                 raise FileNotFoundError(f"Model is not installed or its manifest is missing: {repo_id}")
-            manifest = json.loads((model_path / ".transcriber-model.json").read_text(encoding="utf-8"))
+            try:
+                manifest = json.loads(
+                    (model_path / ".transcriber-model.json").read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError) as exc:
+                raise RuntimeError("Installed model manifest is missing or unreadable") from exc
+            runtime = str(manifest.get("engine", manifest.get("runtime", "faster-whisper")))
+            if runtime == "vosk":
+                report = validate_vosk_model_directory(model_path)
+                if not report.compatible:
+                    raise RuntimeError(
+                        "Installed Vosk model is incomplete or corrupted. "
+                        + report.reason + " Missing: " + ", ".join(report.missing_files)
+                    )
+                options = (manifest.get("language_code"),)
+                if (
+                    self._active_engine
+                    and self._active_model_id == repo_id
+                    and self._active_runtime == runtime
+                    and self._active_options == options
+                ):
+                    return self._active_engine
+                if self._active_engine:
+                    self._active_engine.unload()
+                self._active_engine = VoskEngine(
+                    model_path,
+                    language=manifest.get("language_code"),
+                )
+                self._active_options = options
+                self._active_runtime = runtime
+                self._active_model_id = repo_id
+                return self._active_engine
+
+            if runtime != "faster-whisper":
+                raise RuntimeError(f"Unsupported installed model runtime: {runtime}")
             files = manifest.get("files", [])
             report = validate_faster_whisper_files(files)
             if not report.compatible or any(
                 (model_path / name).is_symlink() or not (model_path / name).is_file()
                 for name in report.included_files
             ):
-                raise RuntimeError("Installed model is incomplete or corrupted. Reinstall it from Model Library.")
+                raise RuntimeError(
+                    "Installed model is incomplete or corrupted. Reinstall this model from Model Library."
+                )
             options = (
                 getattr(settings, "device", "auto"),
                 getattr(settings, "compute_type", "int8"),
                 getattr(settings, "cpu_threads", 0),
             )
-            if self._active_engine and self._active_model_id == repo_id and self._active_options == options:
+            if (
+                self._active_engine
+                and self._active_model_id == repo_id
+                and self._active_runtime == runtime
+                and self._active_options == options
+            ):
                 return self._active_engine
             if self._active_engine:
                 self._active_engine.unload()
@@ -299,11 +445,12 @@ class ModelManager:
                 model_path, device=options[0], compute_type=options[1], cpu_threads=options[2],
             )
             self._active_options = options
+            self._active_runtime = runtime
             self._active_model_id = repo_id
             return self._active_engine
 
-    def load(self, repo_id: str, settings=None) -> FasterWhisperEngine:
-        """Materialize the model in memory. Invoke from a background worker."""
+    def load(self, repo_id: str, settings=None):
+        """Materialize the selected runtime. Invoke from a background worker."""
         with self._operation_lock:
             engine = self.get_engine(repo_id, settings)
             engine.load()
@@ -316,6 +463,7 @@ class ModelManager:
             self._active_engine = None
             self._active_model_id = None
             self._active_options = None
+            self._active_runtime = None
 
     def set_active(self, repo_id: str | None) -> None:
         if repo_id is None:
@@ -341,13 +489,28 @@ class ModelManager:
                     name for name in registered_files
                     if (path / name).is_file() and not (path / name).is_symlink()
                 ]
-            report = validate_faster_whisper_files(actual_files)
             manifest_path = path / ".transcriber-model.json"
             manifest_ok = manifest_path.is_file() and not manifest_path.is_symlink()
-            item["compatible"] = report.compatible and manifest_ok
-            item["compatibility_message"] = (
-                report.reason if manifest_ok else "Model manifest is missing or invalid; reinstall this model."
-            )
+            runtime = str(item.get("runtime") or "faster-whisper")
+            item["runtime"] = runtime
+            if not manifest_ok:
+                compatible = False
+                message = "Model manifest is missing or invalid; reinstall this model."
+            elif runtime == "vosk":
+                report = validate_vosk_model_directory(path)
+                compatible = report.compatible
+                message = report.reason
+                if report.missing_files:
+                    message += " Missing: " + ", ".join(report.missing_files)
+            elif runtime == "faster-whisper":
+                report = validate_faster_whisper_files(actual_files)
+                compatible = report.compatible
+                message = report.reason
+            else:
+                compatible = False
+                message = f"Unsupported model runtime: {runtime}"
+            item["compatible"] = compatible
+            item["compatibility_message"] = message
             item["active"] = item["repo_id"] == self.active_model_id
             results.append(item)
         return results
