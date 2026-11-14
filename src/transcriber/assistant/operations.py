@@ -16,9 +16,10 @@ import time
 import uuid
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 class OperationState(StrEnum):
@@ -91,7 +92,7 @@ class OperationManager:
 
     @staticmethod
     def _timestamp() -> str:
-        return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        return datetime.now(UTC).isoformat(timespec="milliseconds")
 
     @staticmethod
     def _validate_arguments(arguments: Any) -> dict[str, Any]:
