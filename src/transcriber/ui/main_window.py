@@ -252,7 +252,7 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.home_page = HomePage(self.history, self.model_manager, self.thread_pool)
         self.transcription_page = TranscriptionPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool, document=self.transcript_document, command_history=self.transcript_history)
-        self.recording_page = RecordingPage(self.paths, self.recording_history)
+        self.recording_page = RecordingPage(self.paths, self.recording_history, self.settings_store)
         self.history_page = HistoryPage(self.history, self.thread_pool)
         self.model_page = ModelLibraryPage(
             self.model_manager, self.settings_store, self.thread_pool, self.release_active_model
@@ -355,6 +355,11 @@ class MainWindow(QMainWindow):
                 page.status_message.connect(self.status_bar.showMessage)
         self.settings_page.theme_changed.connect(self.apply_theme)
         self.settings_page.concurrency_changed.connect(self._update_worker_limit)
+        self.settings_page.audio_devices_changed.connect(self._apply_audio_device_preferences)
+        self._apply_audio_device_preferences(
+            self.settings_store.settings.audio_input_device_id,
+            self.settings_store.settings.audio_output_device_id,
+        )
         self.settings_page.permission_changed.connect(
             lambda permission, enabled: self.action_registry.set_permission(AgentPermission(permission), enabled)
         )
@@ -364,9 +369,10 @@ class MainWindow(QMainWindow):
         )
 
 
-    def _register_command(self, title, category, callback, shortcut=None):
+    def _register_command(self, title, category, callback, shortcut=None, keywords=""):
         self.command_registry.append({
             "title": title, "category": category, "shortcut": shortcut,
+            "keywords": str(keywords or ""),
             "callback": callback,
         })
 
@@ -445,6 +451,16 @@ class MainWindow(QMainWindow):
         self._add_menu_action(help_menu, "Keyboard Shortcuts", self._show_keyboard_shortcuts)
         self._add_menu_action(help_menu, "About Transcriber", self._show_about)
 
+        # Settings are destinations, too: expose every major control group to
+        # both global search and the Ctrl+K command palette.
+        for entry in self.settings_page.search_entries():
+            self._register_command(
+                entry["title"],
+                entry["category"],
+                lambda target=entry["callback"]: self._open_settings_target(target),
+                keywords=entry.get("keywords", ""),
+            )
+
     def _edit_focused_widget(self, operation):
         widget = QApplication.focusWidget()
         method = getattr(widget, operation, None) if widget is not None else None
@@ -497,25 +513,48 @@ class MainWindow(QMainWindow):
             inspector_visible=True, timeline_visible=True, window_state=None,
         )
 
+    @staticmethod
+    def _command_matches(command: dict, query: str) -> bool:
+        searchable = " ".join(
+            str(command.get(key) or "")
+            for key in ("title", "category", "keywords", "description", "shortcut")
+        ).casefold()
+        return all(token in searchable for token in str(query or "").casefold().split())
+
     def _search_items(self, query):
         normalized = str(query or "").strip().casefold()
         results = []
         if normalized:
-            for record in self.history.list(query, limit=12):
+            try:
+                records = self.history.list(query, limit=12)
+            except (OSError, RuntimeError, ValueError):
+                records = []
+            for record in records:
                 results.append({
                     "kind": "transcript", "id": record["id"],
                     "title": record["title"], "subtitle": record.get("preview", "Transcript"),
                 })
             for page_id, _icon, title in self.NAVIGATION:
-                if normalized in title.casefold() or normalized in page_id:
+                if any(
+                    token in title.casefold() or token in page_id.casefold()
+                    for token in normalized.split()
+                ):
                     results.append({"kind": "page", "id": page_id, "title": title, "subtitle": "Workspace page"})
             for command in self.command_registry:
-                if normalized in command["title"].casefold() or normalized in command["category"].casefold():
+                if self._command_matches(command, normalized):
                     results.append({
                         "kind": "command", "title": command["title"],
                         "subtitle": command["category"], "command": command,
                     })
-        return results[:30]
+        return results[:40]
+
+    def _open_settings_target(self, callback):
+        self.navigate("settings")
+        QTimer.singleShot(0, callback)
+
+    def _apply_audio_device_preferences(self, input_device_id: str, output_device_id: str):
+        self.recording_page.refresh_devices()
+        self.transcription_page.player.set_output_device(output_device_id)
 
     def _on_global_search_text_changed(self, query):
         self.global_search_popup.open_for(self.global_search, query)
@@ -916,6 +955,8 @@ class MainWindow(QMainWindow):
             self.model_page.refresh_installed()
         elif page_id == "history":
             self.history_page.refresh()
+        elif page_id == "settings":
+            self.settings_page.refresh_audio_devices()
         elif page_id == "audio":
             self.audio_page.refresh()
         elif page_id == "editor":
