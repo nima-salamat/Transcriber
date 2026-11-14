@@ -58,7 +58,7 @@ class ModelManager:
         self.vosk_downloader.set_max_concurrent(value)
 
     @staticmethod
-    def _is_vosk_id(model_id: str) -> bool:
+    def is_vosk_model_id(model_id: str) -> bool:
         return str(model_id).startswith(("vosk/", "vosk-hf/"))
 
     @property
@@ -74,7 +74,7 @@ class ModelManager:
     def pause_download(self, model_id: str) -> bool:
         return (
             self.vosk_downloader.pause(model_id)
-            if self._is_vosk_id(model_id)
+            if self.is_vosk_model_id(model_id)
             else self.downloader.pause(model_id)
         )
 
@@ -88,7 +88,7 @@ class ModelManager:
     def cancel_download(self, model_id: str) -> bool:
         return (
             self.vosk_downloader.cancel(model_id)
-            if str(model_id).startswith("vosk/")
+            if self.is_vosk_model_id(model_id)
             else self.downloader.cancel(model_id)
         )
 
