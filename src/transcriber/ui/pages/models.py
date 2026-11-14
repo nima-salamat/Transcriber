@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import uuid
 
-from PySide6.QtCore import QTimer, QUrl, Signal, Qt
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
@@ -14,9 +14,9 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QLineEdit,
     QMessageBox,
     QProgressBar,
     QPushButton,
