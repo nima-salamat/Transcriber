@@ -379,8 +379,10 @@ class AudioLibraryPage(QWidget):
     def _select_recording(self, path: Path, record: dict | None, auto_play: bool = False):
         path = Path(path).expanduser().resolve()
         if not path.is_file():
-            QMessageBox.warning(self, "Recording unavailable", f"The audio file is missing:
-{path}")
+            QMessageBox.warning(
+                self, "Recording unavailable",
+                f"The audio file is missing:\n{path}",
+            )
             return
         self._selected_path = path
         self._selected_recording_id = str(record["id"]) if record else ""
