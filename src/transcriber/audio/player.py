@@ -16,8 +16,15 @@ class AudioPlayer(QObject):
         self.output = QAudioOutput(self)
         self.player.setAudioOutput(self.output)
         self.output.setVolume(0.75)
-        self.player.positionChanged.connect(self.position_changed)
-        self.player.durationChanged.connect(self.duration_changed)
+        # QMediaPlayer exposes qint64/qlonglong, while our public Qt signals use int.
+        # Bridge through Python callables to avoid an incompatible Qt signal-to-signal
+        # connection on Windows and other PySide6 builds.
+        self.player.positionChanged.connect(
+            lambda position: self.position_changed.emit(int(position))
+        )
+        self.player.durationChanged.connect(
+            lambda duration: self.duration_changed.emit(int(duration))
+        )
         self.player.playbackStateChanged.connect(
             lambda state: self.playback_changed.emit(state == QMediaPlayer.PlayingState)
         )

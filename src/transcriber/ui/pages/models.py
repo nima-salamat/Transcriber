@@ -5,7 +5,8 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QDesktopServices, Qt, QUrl, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar,
     QPushButton, QScrollArea, QTabWidget, QVBoxLayout, QWidget,

@@ -167,7 +167,7 @@ class MainWindow(QMainWindow):
         local_status.setStyleSheet("color: #43b68b; font-size: 10px; font-weight: 700; margin: 4px;")
         side_layout.addWidget(local_status)
         self.local_status = local_status
-        version = QLabel("Version 2.1.0")
+        version = QLabel("Version 2.1.4")
         version.setObjectName("Muted")
         version.setStyleSheet("font-size: 10px; margin: 4px;")
         side_layout.addWidget(version)
@@ -207,17 +207,17 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(toolbar)
 
         self.stack = QStackedWidget()
-        self.home_page = HomePage(history, model_manager, self.thread_pool)
-        self.transcription_page = TranscriptionPage(paths, settings_store, history, model_manager, self.thread_pool)
-        self.recording_page = RecordingPage(paths)
-        self.history_page = HistoryPage(history, self.thread_pool)
+        self.home_page = HomePage(self.history, self.model_manager, self.thread_pool)
+        self.transcription_page = TranscriptionPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool)
+        self.recording_page = RecordingPage(self.paths)
+        self.history_page = HistoryPage(self.history, self.thread_pool)
         self.model_page = ModelLibraryPage(
-            model_manager, settings_store, self.thread_pool, self.release_active_model
+            self.model_manager, self.settings_store, self.thread_pool, self.release_active_model
         )
-        self.audio_page = AudioLibraryPage(paths, history, self.thread_pool)
-        self.audio_cleanup_page = AudioCleanupPage(paths, self.thread_pool)
-        self.settings_page = SettingsPage(paths, settings_store, database, self.thread_pool, model_manager)
-        self.batch_page = BatchProcessingPage(paths, settings_store, history, model_manager, self.thread_pool)
+        self.audio_page = AudioLibraryPage(self.paths, self.history, self.thread_pool)
+        self.audio_cleanup_page = AudioCleanupPage(self.paths, self.thread_pool)
+        self.settings_page = SettingsPage(self.paths, self.settings_store, self.database, self.thread_pool, self.model_manager)
+        self.batch_page = BatchProcessingPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool)
         self.editor_page = TranscriptEditorPage()
         self.subtitle_page = SubtitleStudioPage()
         self.pages = {
@@ -254,7 +254,7 @@ class MainWindow(QMainWindow):
         properties_layout.addWidget(self.inspector_title)
         properties_layout.addWidget(self.inspector_details)
         properties_layout.addStretch(1)
-        self.assistant_panel = AssistantPanel(paths, self.thread_pool, settings_store)
+        self.assistant_panel = AssistantPanel(self.paths, self.thread_pool, self.settings_store)
         self.assistant_panel.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
         inspector_tabs.addTab(properties, "Properties")
         inspector_tabs.addTab(self.assistant_panel, "AI Assistant")

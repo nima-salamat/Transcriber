@@ -1,8 +1,8 @@
 # Transcriber
 
-**Transcriber** is a local-first desktop workspace for audio transcription, segment editing, subtitle production and optional AI-agent assistance. The 2.1.0 source uses PySide6, SQLite, Hugging Face Hub and Faster-Whisper/CTranslate2. A downloaded compatible ASR model can run offline; the default local engine does not send audio to a cloud service.
+**Transcriber** is a local-first desktop workspace for audio transcription, segment editing, subtitle production and optional AI-agent assistance. The 2.1.4 source uses PySide6, SQLite, Hugging Face Hub and Faster-Whisper/CTranslate2. A downloaded compatible ASR model can run offline; the default local engine does not send audio to a cloud service.
 
-> **Project status:** 2.1.0 expands the Stage-1 modernization with a native workspace, resizable inspector/timeline docks, segment-aware editing, subtitle tools, Batch, Audio Cleanup, a generic model-runtime foundation and optional OpenCode ACP/MCP integration. This is still an alpha development snapshot. Important limits remain, including no live partial ASR, automatic diarization, verified Persian wake-word accuracy, TTS or full video-preview workflow. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
+> **Project status:** 2.1.4 expands the Stage-1 modernization with a native workspace, resizable inspector/timeline docks, segment-aware editing, subtitle tools, Batch, Audio Cleanup, a generic model-runtime foundation and optional OpenCode ACP/MCP integration. This is still an alpha development snapshot. Important limits remain, including no live partial ASR, automatic diarization, verified Persian wake-word accuracy, TTS or full video-preview workflow. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
 
 ## What is implemented
 
@@ -38,15 +38,21 @@ The two images currently in the repository (`screenshot_1.png` and `screenshot_2
 
 ## Installation
 
-Create and activate a virtual environment, then install the application and the features you need:
+Create and activate a virtual environment, then install the runtime dependencies:
 
 ```bash
 python -m venv .venv
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 # Linux: source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -e ".[asr,documents]"
+pip install -r requirements.txt
+pip install -e . --no-deps
 ```
+
+`requirements.txt` includes the runtime integrations for local ASR, optional cloud recognition,
+local voice input, MCP, and document/PDF export. Cloud recognition and microphone-based voice
+features remain disabled until explicitly configured in the application. For a smaller install,
+install only the core package and selected extras with `pip install -e ".[asr,documents]"`.
 
 For development and tests:
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.1.4 — Microphone device-change signal fix
+
+- Fixed the Recording page startup crash caused by trying to connect `QMediaDevices.audioInputsChanged` as a class-level signal.
+- Created a page-owned `QMediaDevices` monitor and connected its instance signal, allowing microphone add/remove events to refresh the device list.
+- Added a dependency-free regression test to prevent connecting Qt instance signals through the class descriptor.
+
+## 2.1.3 — Qt Multimedia signal compatibility fix
+
+- Fixed startup failure when connecting `QMediaPlayer.positionChanged` and `durationChanged` (`qlonglong`) directly to custom `Signal(int)` signals.
+- Added Python-callable bridges that explicitly convert the 64-bit millisecond values to Python integers before emitting the application signals.
+- Added a dependency-free regression test for both multimedia signal connections.
+
+## 2.1.2 — Main window dependency initialization fix
+
+- Fixed startup crash caused by `_build_ui()` referencing constructor dependencies as local names instead of instance attributes.
+- Updated every page and assistant-panel construction call to use the dependencies stored on `MainWindow`.
+- Added a regression test that checks the UI builder for these out-of-scope dependency references without requiring a Qt runtime.
+
+## 2.1.1 — PySide6 import correction
+
+- Fixed `QMediaDevices` being imported from `PySide6.QtCore`; it is provided by `PySide6.QtMultimedia`.
+- Added a dependency-free AST regression test for the owning PySide6 modules of `QMediaDevices` and `QDesktopServices`.
+- Revalidated source compilation and the complete available test suite.
+
 ## 2.0.0 — Modern modular foundation
 
 - Replaced the monolithic custom-framed window with a native PySide6 application shell and separate Home, Transcription, Recording, History, Model Library, Audio Library, and Settings pages.

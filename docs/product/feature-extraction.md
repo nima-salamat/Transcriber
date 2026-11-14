@@ -1,7 +1,7 @@
 # Transcriber — Product Feature Extraction & UX Blueprint
 
 **Research snapshot:** 2026-11-14  
-**Project baseline:** Stage-1 source ZIP, `transcriber-desktop` 2.1.0, PySide6 6.7+, primary Faster-Whisper adapter  
+**Project baseline:** Stage-1 source ZIP, `transcriber-desktop` 2.1.1, PySide6 6.7+, primary Faster-Whisper adapter  
 **Scope:** Product patterns and technical capabilities; no third-party UI or model weights copied into this repository.
 
 > This report distinguishes product claims from functionality verified in the Stage-1 source. “Existing” means the implementation is present in code, not merely mentioned in a README. “Partial” means a narrower version exists. “No” means no implementation was found in the inspected source.

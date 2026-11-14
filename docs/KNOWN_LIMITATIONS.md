@@ -1,4 +1,4 @@
-# Known limitations of Transcriber 2.1.0
+# Known limitations of Transcriber 2.1.4
 
 This stage delivers a substantial desktop/workspace and service-layer expansion. It is not yet the complete production audio/AI suite described in the product roadmap. The following limitations are intentional and must remain visible until validated implementations replace them.
 

@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QMediaDevices, QTimer, Qt, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QProgressBar,
     QPushButton, QVBoxLayout, QWidget,
@@ -23,6 +24,9 @@ class RecordingPage(QWidget):
         super().__init__(parent)
         self.paths = paths
         self.recorder = QtAudioRecorder(self)
+        # Qt exposes audioInputsChanged as an instance signal, not a static signal.
+        # Keep the QMediaDevices monitor alive for this page lifetime.
+        self.media_devices = QMediaDevices(self)
         self.recording_path: Path | None = None
         self._elapsed = 0.0
         self.timer = QTimer(self)
@@ -116,7 +120,7 @@ class RecordingPage(QWidget):
         self.recorder.level_changed.connect(self.level.setValue)
         self.recorder.duration_changed.connect(self._set_duration)
         self.recorder.error_occurred.connect(self._show_error)
-        QMediaDevices.audioInputsChanged.connect(self.refresh_devices)
+        self.media_devices.audioInputsChanged.connect(self.refresh_devices)
         self.refresh_devices()
 
     def refresh_devices(self):
