@@ -17,6 +17,7 @@ class AppSettings:
     language: str = "system"
     default_engine: str = "faster-whisper"
     default_model: str = "Systran/faster-whisper-small"
+    vosk_default_model: str = ""
     default_language: str = "auto"
     device: str = "auto"
     audio_input_device_id: str = ""
@@ -60,6 +61,7 @@ class AppSettings:
         self.language = str(self.language or "system")
         self.default_engine = str(self.default_engine)
         self.default_model = str(self.default_model)
+        self.vosk_default_model = str(self.vosk_default_model or "")
         self.default_language = str(self.default_language or "auto")
         self.device = str(self.device)
         self.audio_input_device_id = str(self.audio_input_device_id or "")[:512]
@@ -143,7 +145,7 @@ class AppSettings:
         self.cpu_threads = max(0, min(int(self.cpu_threads), 256))
         self.beam_size = max(1, min(int(self.beam_size), 20))
         self.download_concurrency = max(1, min(int(self.download_concurrency), 4))
-        if self.default_engine not in {"faster-whisper", "google-cloud"}:
+        if self.default_engine not in {"faster-whisper", "google-cloud", "vosk"}:
             self.default_engine = "faster-whisper"
 
 
