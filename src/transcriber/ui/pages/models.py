@@ -90,7 +90,10 @@ class ModelCard(Card):
         self.install_button = primary_button("Install model")
         self.install_button.setEnabled(False)
         self.install_button.clicked.connect(lambda: self.install_requested.emit(model.repo_id))
-        open_button = QPushButton("Open on Hugging Face ↗")
+        is_vosk = str(getattr(model, "runtime", "faster-whisper")) == "vosk"
+        open_button = QPushButton(
+            "Official Vosk model list ↗" if is_vosk else "Open on Hugging Face ↗"
+        )
         open_button.clicked.connect(lambda: self.open_requested.emit(model.url))
         actions.addWidget(self.inspect_button)
         actions.addWidget(self.install_button)
@@ -108,29 +111,44 @@ class ModelCard(Card):
     def set_inspection(self, metadata, report):
         self.model = metadata
         self.report = report
+        runtime = str(getattr(metadata, "runtime", "faster-whisper"))
+        runtime_name = "Vosk" if runtime == "vosk" else "Faster-Whisper"
         if report.compatible:
-            self.compatibility.setText("Compatible · Faster-Whisper")
+            self.compatibility.setText(f"Compatible · {runtime_name}")
             self.compatibility.setStyleSheet("color: #36a47e; font-weight: 600;")
         else:
-            self.compatibility.setText("Not compatible")
+            self.compatibility.setText(f"Not compatible · {runtime_name}")
             self.compatibility.setStyleSheet("color: #d65a65; font-weight: 600;")
-        files = []
-        sizes = {item.name: item.size for item in metadata.files}
-        total = 0
-        known = True
-        for name in report.included_files:
-            size = sizes.get(name)
-            files.append(f"{name} ({_human_size(size)})")
-            if size is None:
-                known = False
-            else:
-                total += size
-        size_text = _human_size(total) if known else "Unknown (one or more file sizes not supplied)"
         missing = (" Missing: " + ", ".join(report.missing_files)) if report.missing_files else ""
-        self.inspection_detail = (
-            f"Estimated download: {size_text}\nFiles: " + (", ".join(files) or "Not provided") +
-            f"\n{report.reason}{missing}\nPinned revision: {metadata.revision or 'Unknown'}"
-        )
+        if runtime == "vosk":
+            self.inspection_detail = (
+                "Runtime: Vosk / Kaldi\n"
+                f"Language: {getattr(metadata, 'language_name', 'Unknown')} "
+                f"({getattr(metadata, 'language', 'unknown')})\n"
+                f"Model type: {getattr(metadata, 'model_type', 'unknown')}\n"
+                f"Archive size: {_human_size(getattr(metadata, 'size_bytes', None))}\n"
+                f"MD5 checksum: {getattr(metadata, 'md5', 'unknown')}\n"
+                f"{report.reason}{missing}\n"
+                "Inspected against the Vosk API directory structure, not CTranslate2."
+            )
+        else:
+            sizes = {item.name: item.size for item in metadata.files}
+            files = []
+            total = 0
+            known = True
+            for name in report.included_files:
+                size = sizes.get(name)
+                files.append(f"{name} ({_human_size(size)})")
+                if size is None:
+                    known = False
+                else:
+                    total += size
+            size_text = _human_size(total) if known else "Unknown (one or more file sizes not supplied)"
+            self.inspection_detail = (
+                f"Estimated download: {size_text}\nFiles: "
+                + (", ".join(files) or "Not provided")
+                + f"\n{report.reason}{missing}\nPinned revision: {metadata.revision or 'Unknown'}"
+            )
         self.detail_label.setText(self.inspection_detail)
         self.set_installed(self.installed_info)
 
@@ -139,8 +157,11 @@ class ModelCard(Card):
         self.installed_info = installed_info
         if installed_info:
             compatible = bool(installed_info.get("compatible"))
+            runtime = str(installed_info.get("runtime") or "faster-whisper")
+            runtime_name = "Vosk" if runtime == "vosk" else "Faster-Whisper"
             self.compatibility.setText(
-                "Installed · Ready" if compatible else "Installed · Repair needed"
+                f"{runtime_name} · Installed" if compatible
+                else f"{runtime_name} · Repair needed"
             )
             self.compatibility.setStyleSheet(
                 "color: #36a47e; font-weight: 700;" if compatible
@@ -151,14 +172,17 @@ class ModelCard(Card):
             path = installed_info.get("path")
             revision = installed_info.get("revision")
             self.detail_label.setText(
-                f"Local installation detected · revision {revision or 'unknown'}"
+                f"Local {runtime_name} installation · revision {revision or 'unknown'}"
                 + (f"\n{path}" if path else "")
             )
         else:
             if self.report:
                 compatible = bool(self.report.compatible)
+                runtime = str(getattr(self.model, "runtime", "faster-whisper"))
+                runtime_name = "Vosk" if runtime == "vosk" else "Faster-Whisper"
                 self.compatibility.setText(
-                    "Compatible · Faster-Whisper" if compatible else "Not compatible"
+                    f"Compatible · {runtime_name}" if compatible
+                    else f"Not compatible · {runtime_name}"
                 )
                 self.compatibility.setStyleSheet(
                     "color: #36a47e; font-weight: 600;" if compatible
@@ -218,11 +242,19 @@ class ModelLibraryPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(14)
-        layout.addWidget(page_header("Model library", "Discover compatible speech models from Hugging Face. Installation is explicit and pinned to a repository revision."))
+        layout.addWidget(page_header(
+            "Model library",
+            "Discover models from Hugging Face or the official Vosk catalogue. "
+            "Each model is inspected against the format required by its own runtime.",
+        ))
         self.tabs = QTabWidget()
         discover = QWidget()
         discover_layout = QVBoxLayout(discover)
         controls = QHBoxLayout()
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItem("Faster-Whisper · Hugging Face", "faster-whisper")
+        self.provider_combo.addItem("Vosk · Official catalogue", "vosk")
+        self.provider_combo.currentIndexChanged.connect(self._provider_changed)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search model name or publisher on Hugging Face…")
         self.search_input.returnPressed.connect(self.search_models)
@@ -234,6 +266,7 @@ class ModelLibraryPage(QWidget):
         search_button.clicked.connect(self.search_models)
         curated_button = QPushButton("Curated models")
         curated_button.clicked.connect(self.load_curated)
+        controls.addWidget(self.provider_combo)
         controls.addWidget(self.search_input, 1)
         controls.addWidget(self.sort_combo)
         controls.addWidget(search_button)
@@ -436,25 +469,58 @@ class ModelLibraryPage(QWidget):
         self.discover_cards.addWidget(card)
         self.cards[model.repo_id] = card
 
+    def _provider_changed(self, *_args):
+        is_vosk = self.provider_combo.currentData() == "vosk"
+        self.sort_combo.setVisible(not is_vosk)
+        self.search_input.setPlaceholderText(
+            "Search Vosk models by name or language (e.g. Persian / fa)…"
+            if is_vosk else "Search model name or publisher on Hugging Face…"
+        )
+        self.discover_hint.setText(
+            "Official Vosk API catalogue · language, model type, archive size and checksum are checked."
+            if is_vosk else
+            "Hugging Face Hub · CTranslate2 model, tokenizer, configuration and vocabulary files are checked."
+        )
+
     def search_models(self):
         query = self.search_input.text().strip()
-        sort = self.sort_combo.currentData()
-        self.discover_hint.setText("Searching Hugging Face…")
+        provider = self.provider_combo.currentData()
         self._clear_cards()
-        worker = FunctionWorker(lambda _emit: self.model_manager.search(query, sort=sort, limit=30))
+        if provider == "vosk":
+            self.discover_hint.setText("Searching the official Vosk model catalogue…")
+            worker = FunctionWorker(
+                lambda _emit: self.model_manager.search_vosk(query, limit=50)
+            )
+        else:
+            sort = self.sort_combo.currentData()
+            self.discover_hint.setText("Searching Hugging Face…")
+            worker = FunctionWorker(
+                lambda _emit: self.model_manager.search(query, sort=sort, limit=30)
+            )
         worker.signals.result.connect(self._show_search_results)
-        worker.signals.error.connect(lambda message: self.discover_hint.setText(f"Hub search failed: {message}"))
+        worker.signals.error.connect(
+            lambda message: self.discover_hint.setText(f"Model search failed: {message}")
+        )
         self.thread_pool.start(worker)
 
     def _show_search_results(self, models):
         if not models:
-            self.discover_hint.setText("No models were returned by the Hub search.")
+            self.discover_hint.setText("No models were returned by this catalogue search.")
             return
         for model in models:
             self._append_card(model)
-        self.discover_hint.setText(f"{len(models)} live Hub result(s). Inspect a repository before installation.")
+        provider = (
+            "official Vosk catalogue"
+            if self.provider_combo.currentData() == "vosk"
+            else "live Hugging Face Hub"
+        )
+        self.discover_hint.setText(
+            f"{len(models)} {provider} result(s). Inspect each model before installation."
+        )
 
     def load_curated(self):
+        if self.provider_combo.currentData() != "faster-whisper":
+            self.provider_combo.setCurrentIndex(self.provider_combo.findData("faster-whisper"))
         self.search_input.clear()
         self._clear_cards()
         self.discover_hint.setText("Fetching curated Faster-Whisper model metadata from Hugging Face…")
@@ -522,7 +588,7 @@ class ModelLibraryPage(QWidget):
             self._downloads_refresh_again = True
             return
         self._downloads_refresh_pending = True
-        worker = FunctionWorker(lambda _emit: self.model_manager.downloader.list_jobs())
+        worker = FunctionWorker(lambda _emit: self.model_manager.list_download_jobs())
         worker.signals.result.connect(self._show_download_jobs)
         worker.signals.error.connect(self._show_download_jobs_error)
         worker.signals.finished.connect(self._downloads_refresh_finished)
@@ -629,12 +695,12 @@ class ModelLibraryPage(QWidget):
             self.downloads_refresh_timer.stop()
 
     def pause_download(self, repo_id: str):
-        if self.model_manager.downloader.pause(repo_id):
+        if self.model_manager.pause_download(repo_id):
             self.status_message.emit(f"Pausing {repo_id} at the next safe transfer boundary…")
             self.refresh_downloads()
 
     def stop_download(self, repo_id: str):
-        if self.model_manager.downloader.stop(repo_id):
+        if self.model_manager.stop_download(repo_id):
             self.status_message.emit(f"Stopping {repo_id}; cached data will be retained.")
             self.refresh_downloads()
 
@@ -652,7 +718,7 @@ class ModelLibraryPage(QWidget):
         if answer != QMessageBox.Yes:
             return
         event.set()
-        if self.model_manager.downloader.cancel(repo_id):
+        if self.model_manager.cancel_download(repo_id):
             self.status_message.emit(f"Cancelling download: {repo_id}; shared cache is retained.")
             self.refresh_downloads()
 
@@ -687,14 +753,19 @@ class ModelLibraryPage(QWidget):
         event = threading.Event()
         self._downloads[repo_id] = event
         self._download_task_ids[repo_id] = task_id
-        worker = FunctionWorker(lambda emit: self.model_manager.install(
-            repo_id,
-            revision=job.get("revision"),
-            cancel_event=event,
-            progress=emit,
-            task_id=task_id,
-            metadata=model,
-        ))
+        if model.get("runtime") == "vosk" or repo_id.startswith("vosk/"):
+            worker = FunctionWorker(lambda emit: self.model_manager.install_vosk(
+                repo_id, cancel_event=event, progress=emit, task_id=task_id, metadata=model,
+            ))
+        else:
+            worker = FunctionWorker(lambda emit: self.model_manager.install(
+                repo_id,
+                revision=job.get("revision"),
+                cancel_event=event,
+                progress=emit,
+                task_id=task_id,
+                metadata=model,
+            ))
         self._wire_download_worker(worker, repo_id, task_id)
         self._download_workers[repo_id] = worker
         self.thread_pool.start(worker)
@@ -721,12 +792,27 @@ class ModelLibraryPage(QWidget):
         if not card or not card.report or not card.report.compatible:
             return
         model = card.model
+        is_vosk = str(getattr(model, "runtime", "faster-whisper")) == "vosk"
         if not model.revision:
-            QMessageBox.warning(self, "Revision unavailable", "The Hub did not provide a commit revision. This repository cannot be installed reproducibly.")
+            QMessageBox.warning(
+                self, "Revision unavailable",
+                "The model catalogue did not provide a reproducible revision or checksum.",
+            )
             return
         answer = QMessageBox.question(
-            self, "Install model",
-            f"Download {repo_id} from Hugging Face?\n\nRevision: {model.revision}\nLicense: {model.license or 'Not provided'}\n\nThe repository will be validated before it is marked installed. Review the model card and its license before continuing.",
+            self,
+            "Install Vosk model" if is_vosk else "Install model",
+            (
+                f"Download {repo_id} from the official Vosk catalogue?\n\n"
+                f"Language: {model.language_name}\nType: {model.model_type}\n"
+                f"Archive: {_human_size(model.size_bytes)}\nMD5: {model.md5}\n\n"
+                "The ZIP checksum and Vosk directory layout will be verified before installation."
+                if is_vosk else
+                f"Download {repo_id} from Hugging Face?\n\nRevision: {model.revision}\n"
+                f"License: {model.license or 'Not provided'}\n\n"
+                "The repository will be validated before it is marked installed. "
+                "Review the model card and its license before continuing."
+            ),
         )
         if answer != QMessageBox.Yes:
             return
@@ -751,15 +837,22 @@ class ModelLibraryPage(QWidget):
             "task": model.task,
             "languages": list(model.languages or []),
             "repository_url": model.url,
+            "runtime": "vosk" if is_vosk else "faster-whisper",
         }
-        worker = FunctionWorker(lambda emit: self.model_manager.install(
-            repo_id,
-            revision=model.revision,
-            cancel_event=event,
-            progress=emit,
-            task_id=task_id,
-            metadata=metadata,
-        ))
+        if is_vosk:
+            metadata.update(model.metadata)
+            worker = FunctionWorker(lambda emit: self.model_manager.install_vosk(
+                repo_id, cancel_event=event, progress=emit, task_id=task_id, metadata=metadata,
+            ))
+        else:
+            worker = FunctionWorker(lambda emit: self.model_manager.install(
+                repo_id,
+                revision=model.revision,
+                cancel_event=event,
+                progress=emit,
+                task_id=task_id,
+                metadata=metadata,
+            ))
         self._wire_download_worker(worker, repo_id, task_id, card)
         self._download_workers[repo_id] = worker
         self.thread_pool.start(worker)
@@ -777,7 +870,7 @@ class ModelLibraryPage(QWidget):
     def _download_failed(self, repo_id, task_id, message):
         card = self.cards.get(repo_id)
         job = None
-        repository = self.model_manager.downloader.job_repository
+        repository = self.model_manager.job_repository
         if repository is not None:
             try:
                 job = repository.get(task_id)
