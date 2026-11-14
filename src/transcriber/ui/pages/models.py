@@ -352,7 +352,7 @@ class ModelLibraryPage(QWidget):
         self.download_state_filter.addItem("All states", "")
         for label, value in (
             ("In progress", "active"), ("Ready to resume", "recoverable"),
-            ("Completed", "installed"), ("Cancelled", "cancelled"),
+            ("Failed", "failed"), ("Completed", "installed"), ("Cancelled", "cancelled"),
         ):
             self.download_state_filter.addItem(label, value)
         self.download_state_filter.currentIndexChanged.connect(self._filter_download_cards)
@@ -379,7 +379,11 @@ class ModelLibraryPage(QWidget):
         )
         downloads_layout.addWidget(self.download_list, 1)
         download_actions = QHBoxLayout()
-        refresh_downloads = QPushButton("Refresh downloads")
+        self.clear_failed_button = QPushButton("Clear failed")
+        self.clear_failed_button.setToolTip("Remove failed tasks from download history; model files and caches are not affected")
+        self.clear_failed_button.clicked.connect(self.clear_failed_downloads)
+        download_actions.addWidget(self.clear_failed_button)
+        refresh_downloads = QPushButton("Refresh")
         refresh_downloads.clicked.connect(self.refresh_downloads)
         download_actions.addWidget(refresh_downloads)
         download_actions.addStretch(1)
@@ -782,12 +786,17 @@ class ModelLibraryPage(QWidget):
             "queued", "inspecting", "downloading", "validating", "installing",
             "pausing", "stopping", "cancelling",
         }
-        recoverable_states = {"paused", "stopped", "failed"}
-        state_counts = {"active": 0, "recoverable": 0, "installed": 0, "cancelled": 0}
+        resumable_states = {"paused", "stopped"}
+        tokens = get_tokens(self.settings_store.settings.theme).colors
+        state_counts = {
+            "active": 0, "recoverable": 0, "failed": 0,
+            "installed": 0, "cancelled": 0,
+        }
 
         for job in jobs:
             state = str(job.get("state") or "unknown").casefold()
             repo_id = str(job.get("repo_id") or "Unknown model")
+            task_id = str(job.get("task_id") or "")
             metadata = job.get("metadata") or {}
             runtime = (
                 "vosk" if metadata.get("runtime") == "vosk" or self.model_manager.is_vosk_model_id(repo_id)
@@ -798,19 +807,28 @@ class ModelLibraryPage(QWidget):
                 metadata.get("source_repo") or metadata.get("source")
                 or ("Official Vosk catalogue" if runtime == "vosk" else "Hugging Face Hub")
             )
+            language = str(metadata.get("language_name") or metadata.get("language") or "")
             downloaded_bytes = int(job.get("downloaded_bytes") or 0)
             total_bytes = job.get("total_bytes")
+            try:
+                total_bytes = int(total_bytes) if total_bytes is not None else None
+            except (TypeError, ValueError):
+                total_bytes = None
             percent = (
                 max(0, min(100, int(downloaded_bytes / total_bytes * 100)))
-                if total_bytes else None
+                if total_bytes and total_bytes > 0 else None
             )
+
             if state in active_states:
                 filter_state = "active"
                 state_counts["active"] += 1
-            elif state in recoverable_states:
+            elif state == "failed":
+                filter_state = "failed"
+                state_counts["failed"] += 1
+            elif state in resumable_states:
                 filter_state = "recoverable"
                 state_counts["recoverable"] += 1
-            elif state == "installed":
+            elif state in {"installed", "completed"}:
                 filter_state = "installed"
                 state_counts["installed"] += 1
             elif state == "cancelled":
@@ -819,57 +837,108 @@ class ModelLibraryPage(QWidget):
             else:
                 filter_state = state
 
-            revision = str(job.get("revision") or "revision unavailable")
-            detail = (
-                f"{_human_size(downloaded_bytes)} / {_human_size(total_bytes)}"
-                + (f" · {percent}%" if percent is not None else "")
-                + f" · {runtime_label}"
-                + f" · {source}"
+            state_color = (
+                tokens["success"] if state in {"installed", "completed"}
+                else tokens["danger"] if state == "failed"
+                else tokens["warning"] if state in {"paused", "stopped", "pausing", "stopping"}
+                else tokens["accent"] if state in active_states
+                else tokens["muted"]
             )
+            model_title = str(metadata.get("model_name") or repo_id)
+            revision = str(job.get("revision") or "revision unavailable")
+            size_line = f"{_human_size(downloaded_bytes)} / {_human_size(total_bytes)}"
+            if percent is not None:
+                size_line += f"  ·  {percent}%"
+            supporting = [runtime_label]
+            if language:
+                supporting.append(language)
+            supporting.append(str(source))
+            detail = "  ·  ".join(supporting)
+
             row = QFrame()
             row.setObjectName("DownloadTaskCard")
-            row.setFrameShape(QFrame.StyledPanel)
+            row.setFrameShape(QFrame.NoFrame)
+            row.setStyleSheet(
+                f"QFrame#DownloadTaskCard {{ background: {tokens['surface']}; "
+                f"border: 1px solid {tokens['border']}; border-left: 4px solid {state_color}; "
+                "border-radius: 12px; }}"
+            )
             row_layout = QVBoxLayout(row)
-            row_layout.setContentsMargins(12, 10, 12, 10)
-            row_layout.setSpacing(7)
+            row_layout.setContentsMargins(16, 13, 16, 13)
+            row_layout.setSpacing(9)
 
             heading = QHBoxLayout()
-            title = QLabel(repo_id)
-            title.setStyleSheet("font-weight: 700; font-size: 13px;")
+            heading.setSpacing(8)
+            title = QLabel(model_title)
+            title.setStyleSheet(
+                f"font-size: 13px; font-weight: 700; color: {tokens['text']};"
+            )
             title.setWordWrap(True)
+            title.setTextInteractionFlags(Qt.TextSelectableByMouse)
             heading.addWidget(title, 1)
-            runtime_badge = QLabel(runtime_label)
+
+            runtime_badge = QLabel("Vosk / Kaldi" if runtime == "vosk" else "Faster-Whisper")
             runtime_badge.setStyleSheet(
-                "font-size: 9px; font-weight: 800; border-radius: 7px; "
-                "padding: 4px 7px; background: rgba(80,135,205,0.14); color: #6fa4ed;"
+                f"font-size: 9px; font-weight: 750; color: {tokens['accent']}; "
+                f"background: {_rgba(tokens['accent'], 0.10)}; "
+                "border: 1px solid transparent; border-radius: 7px; padding: 4px 7px;"
             )
             heading.addWidget(runtime_badge, 0, Qt.AlignTop)
-            state_badge = QLabel(state.replace("_", " ").upper())
-            state_color = (
-                "#36a47e" if state in {"installed", "completed"}
-                else "#d49a42" if state in recoverable_states
-                else "#6fa4ed" if state in active_states
-                else "#9aa5b4"
-            )
+
+            state_text = {
+                "queued": "QUEUED", "inspecting": "INSPECTING",
+                "downloading": "DOWNLOADING", "validating": "VERIFYING",
+                "installing": "INSTALLING", "pausing": "PAUSING",
+                "stopping": "STOPPING", "cancelling": "CANCELLING",
+                "paused": "PAUSED", "stopped": "STOPPED",
+                "failed": "FAILED", "installed": "INSTALLED",
+                "completed": "COMPLETED", "cancelled": "CANCELLED",
+            }.get(state, state.replace("_", " ").upper())
+            state_badge = QLabel(state_text)
             state_badge.setStyleSheet(
                 f"font-size: 9px; font-weight: 800; color: {state_color}; "
-                f"border: 1px solid {state_color}; border-radius: 7px; padding: 4px 7px;"
+                f"background: {_rgba(state_color, 0.12)}; "
+                f"border: 1px solid {_rgba(state_color, 0.28)}; "
+                "border-radius: 7px; padding: 4px 8px;"
             )
             heading.addWidget(state_badge, 0, Qt.AlignTop)
             row_layout.addLayout(heading)
 
-            meta_label = QLabel(detail + f" · revision {revision[:12]}")
-            meta_label.setObjectName("Muted")
+            meta_label = QLabel(detail)
+            meta_label.setStyleSheet(
+                f"font-size: 11px; color: {tokens['muted']};"
+            )
             meta_label.setWordWrap(True)
             row_layout.addWidget(meta_label)
 
+            transfer_row = QHBoxLayout()
+            transfer_caption = QLabel("TRANSFER")
+            transfer_caption.setStyleSheet(
+                f"font-size: 9px; font-weight: 750; letter-spacing: 0.7px; "
+                f"color: {tokens['muted']};"
+            )
+            transfer_value = QLabel(size_line)
+            transfer_value.setStyleSheet(
+                f"font-size: 11px; font-weight: 650; color: {tokens['text']};"
+            )
+            transfer_row.addWidget(transfer_caption)
+            transfer_row.addStretch(1)
+            transfer_row.addWidget(transfer_value)
+            row_layout.addLayout(transfer_row)
+
             progress = QProgressBar()
+            progress.setObjectName("DownloadTaskProgress")
             progress.setTextVisible(False)
             progress.setFixedHeight(7)
-            if total_bytes:
+            progress.setStyleSheet(
+                f"QProgressBar {{ background: {tokens['surface_2']}; border: 0; "
+                "border-radius: 4px; } "
+                f"QProgressBar::chunk {{ background: {state_color}; border-radius: 4px; }}"
+            )
+            if total_bytes and total_bytes > 0:
                 progress.setRange(0, 100)
                 progress.setValue(percent or 0)
-            elif state == "downloading":
+            elif state in {"queued", "inspecting", "downloading", "validating", "installing"}:
                 progress.setRange(0, 0)
             else:
                 progress.setRange(0, 100)
@@ -879,71 +948,124 @@ class ModelLibraryPage(QWidget):
             if job.get("error"):
                 error_label = QLabel(str(job["error"]))
                 error_label.setWordWrap(True)
-                error_label.setStyleSheet("color: #d65a65; font-size: 11px;")
+                error_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                error_label.setStyleSheet(
+                    f"color: {tokens['danger']}; background: {_rgba(tokens['danger'], 0.08)}; "
+                    f"border: 1px solid {_rgba(tokens['danger'], 0.18)}; "
+                    "border-radius: 7px; padding: 7px 9px; font-size: 11px;"
+                )
                 row_layout.addWidget(error_label)
 
+            revision_label = QLabel(f"Revision · {revision[:16]}{'…' if len(revision) > 16 else ''}")
+            revision_label.setStyleSheet(f"font-size: 10px; color: {tokens['muted']};")
+            revision_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            row_layout.addWidget(revision_label)
+
             actions = QHBoxLayout()
+            actions.setSpacing(7)
             actions.addStretch(1)
+
+            def compact_button(label: str, role: str = "neutral") -> QPushButton:
+                button = QPushButton(label)
+                button.setCursor(Qt.PointingHandCursor)
+                button.setFixedHeight(28)
+                if role == "primary":
+                    button.setStyleSheet(
+                        f"QPushButton {{ background: {tokens['accent']}; color: white; "
+                        "border: 0; border-radius: 7px; padding: 4px 11px; font-weight: 650; } "
+                        f"QPushButton:hover {{ background: {tokens['accent_hover']}; }}"
+                    )
+                elif role == "danger":
+                    button.setStyleSheet(
+                        f"QPushButton {{ background: {_rgba(tokens['danger'], 0.08)}; "
+                        f"color: {tokens['danger']}; border: 1px solid {_rgba(tokens['danger'], 0.28)}; "
+                        "border-radius: 7px; padding: 4px 10px; font-weight: 600; } "
+                        f"QPushButton:hover {{ background: {_rgba(tokens['danger'], 0.16)}; }}"
+                    )
+                elif role == "warning":
+                    button.setStyleSheet(
+                        f"QPushButton {{ background: {_rgba(tokens['warning'], 0.10)}; "
+                        f"color: {tokens['warning']}; border: 1px solid {_rgba(tokens['warning'], 0.25)}; "
+                        "border-radius: 7px; padding: 4px 10px; font-weight: 600; }}"
+                    )
+                else:
+                    button.setStyleSheet(
+                        f"QPushButton {{ background: {tokens['surface_2']}; "
+                        f"color: {tokens['text']}; border: 1px solid {tokens['border']}; "
+                        "border-radius: 7px; padding: 4px 10px; font-weight: 600; } "
+                        f"QPushButton:hover {{ border-color: {tokens['accent']}; }}"
+                    )
+                return button
+
             if state in {"queued", "inspecting", "downloading"}:
-                pause = QPushButton("Pause")
+                pause = compact_button("Pause")
                 pause.clicked.connect(
                     lambda _checked=False, rid=repo_id: self.pause_download(rid)
                 )
-                stop = QPushButton("Stop")
+                stop = compact_button("Stop", "warning")
                 stop.clicked.connect(
                     lambda _checked=False, rid=repo_id: self.stop_download(rid)
                 )
-                cancel = QPushButton("Cancel")
+                cancel = compact_button("Cancel", "danger")
                 cancel.clicked.connect(
                     lambda _checked=False, rid=repo_id: self.cancel_download(rid)
                 )
                 actions.addWidget(pause)
                 actions.addWidget(stop)
                 actions.addWidget(cancel)
-            elif state in recoverable_states:
-                resume = QPushButton("Resume")
+            elif state in {"paused", "stopped", "failed"}:
+                primary_label = "Retry" if state == "failed" else "Resume"
+                resume = compact_button(primary_label, "primary")
                 resume.clicked.connect(
-                    lambda _checked=False, current=job: self.resume_download(current)
+                    lambda _checked=False, current=job: (
+                        self.restart_download(current) if state == "failed"
+                        else self.resume_download(current)
+                    )
                 )
                 actions.addWidget(resume)
-                restart = QPushButton("Restart")
+                restart = compact_button("Start over")
                 restart.clicked.connect(
                     lambda _checked=False, current=job: self.restart_download(current)
                 )
                 actions.addWidget(restart)
             elif state == "cancelled":
-                restart = QPushButton("Download again")
+                restart = compact_button("Download again", "primary")
                 restart.clicked.connect(
                     lambda _checked=False, current=job: self.restart_download(current)
                 )
                 actions.addWidget(restart)
             elif state in {"pausing", "stopping", "cancelling"}:
                 pending = QLabel("Applying request…")
-                pending.setObjectName("Muted")
+                pending.setStyleSheet(f"font-size: 11px; color: {tokens['muted']};")
                 actions.addWidget(pending)
             elif state in {"validating", "installing"}:
                 pending = QLabel("Verifying and registering model…")
-                pending.setObjectName("Muted")
+                pending.setStyleSheet(f"font-size: 11px; color: {tokens['muted']};")
                 actions.addWidget(pending)
+
+            if state not in active_states and task_id:
+                remove = compact_button("Remove from history", "danger")
+                remove.clicked.connect(
+                    lambda _checked=False, current=job: self.remove_download_job(current)
+                )
+                actions.addWidget(remove)
             row_layout.addLayout(actions)
-            row.setStyleSheet(
-                "QFrame#DownloadTaskCard { border: 1px solid palette(mid); "
-                "border-radius: 11px; background: palette(base); }"
-            )
 
             item = QListWidgetItem()
             item.setSizeHint(row.sizeHint())
             self.download_list.addItem(item)
             self.download_list.setItemWidget(item, row)
             searchable = " ".join((
-                repo_id, str(source), runtime, state, str(metadata.get("language_name") or ""),
+                repo_id, model_title, str(source), runtime, state, language,
+                str(job.get("error") or ""),
             )).casefold()
             self._download_card_rows.append((row, searchable, runtime, filter_state))
 
         self.download_summary.setText(
-            f"{len(jobs)} tasks · {state_counts['active']} active · "
-            f"{state_counts['recoverable']} resumable"
+            f"{len(jobs)} tasks  ·  {state_counts['active']} active  ·  "
+            f"{state_counts['failed']} failed  ·  {state_counts['recoverable']} resumable"
         )
+        self.clear_failed_button.setEnabled(state_counts["failed"] > 0)
         downloads_index = self.tabs.indexOf(self.download_tab)
         if downloads_index >= 0:
             self.tabs.setTabText(
@@ -952,12 +1074,12 @@ class ModelLibraryPage(QWidget):
             )
         if not jobs:
             self.downloads_hint.setText(
-                "No download tasks yet. Discover a Faster-Whisper or Vosk model, inspect its runtime compatibility, then install it."
+                "No download tasks yet. Discover a model, inspect its runtime compatibility, then install it."
             )
         else:
             self.downloads_hint.setText(
-                "Every task is pinned to a revision/checksum. Paused or stopped transfers can resume; "
-                "Vosk and Faster-Whisper downloads are shown separately."
+                "Tasks are kept locally. Failed, paused and stopped entries can be retried or removed from history. "
+                "Removing a task does not delete an installed model or the reusable download cache."
             )
         self._filter_download_cards()
         if self.tabs.currentWidget() is self.download_tab and state_counts["active"]:
