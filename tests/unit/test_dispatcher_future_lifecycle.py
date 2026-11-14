@@ -49,14 +49,16 @@ def test_dispatch_propagates_handler_errors_without_invalid_future_state():
 
 
 def test_mcp_child_environment_excludes_secrets():
-    environment = AssistantPanel._mcp_child_environment({
-        "PATH": "/safe/bin",
-        "SystemRoot": "C:\\Windows",
-        "HF_TOKEN": "hf-secret",
-        "HUGGINGFACE_HUB_TOKEN": "hub-secret",
-        "OPENAI_API_KEY": "openai-secret",
-        "TRANSCRIBER_IPC_TOKEN": "ipc-secret",
-    })
+    environment = AssistantPanel._mcp_child_environment(
+        {
+            "PATH": "/safe/bin",
+            "SystemRoot": "C:\\Windows",
+            "HF_TOKEN": "hf-secret",
+            "HUGGINGFACE_HUB_TOKEN": "hub-secret",
+            "OPENAI_API_KEY": "openai-secret",
+            "TRANSCRIBER_IPC_TOKEN": "ipc-secret",
+        }
+    )
 
     assert environment == {"PATH": "/safe/bin", "SystemRoot": "C:\\Windows"}
     assert not any("TOKEN" in key.upper() or "KEY" in key.upper() for key in environment)
