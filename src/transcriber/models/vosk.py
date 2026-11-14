@@ -174,6 +174,35 @@ def _safe_model_url(value: str, name: str) -> str:
     return value
 
 
+def _validate_archive_source(model: VoskModelInfo) -> str:
+    """Only permit the official Vosk host or a pinned, curated Hugging Face mirror."""
+    parsed = urlparse(model.download_url)
+    if model.source == "official":
+        return _safe_model_url(model.download_url, model.name)
+    if model.source == "huggingface":
+        expected_path = (
+            f"/{model.source_repo}/resolve/{model.source_revision}/{model.source_file}"
+        )
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "huggingface.co"
+            or parsed.username
+            or parsed.password
+            or parsed.port not in (None, 443)
+            or parsed.query
+            or parsed.fragment
+            or not model.source_repo
+            or not model.source_file
+            or not model.source_revision
+            or parsed.path != expected_path
+        ):
+            raise ValueError(
+                "Vosk mirror URL does not match its pinned Hugging Face repository, revision and file"
+            )
+        return model.download_url
+    raise ValueError(f"Unsupported Vosk download source: {model.source!r}")
+
+
 def _parse_catalogue_entry(raw: object) -> VoskModelInfo | None:
     if not isinstance(raw, dict):
         return None
@@ -595,6 +624,7 @@ class VoskModelDownloader:
                 raise DownloadStopped("Vosk model download stopped at a safe transfer boundary")
 
         try:
+            archive_url = _validate_archive_source(model)
             if self.job_repository:
                 self.job_repository.enqueue(
                     task_id, model.repo_id, model.revision, str(target), job_metadata,
@@ -623,7 +653,7 @@ class VoskModelDownloader:
             request_headers = {"User-Agent": "Transcriber-Desktop/2.1", "Accept": "application/zip"}
             if downloaded:
                 request_headers["Range"] = f"bytes={downloaded}-"
-            request = urllib.request.Request(model.download_url, headers=request_headers)
+            request = urllib.request.Request(archive_url, headers=request_headers)
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 status = getattr(response, "status", 200)
                 if downloaded and status != 206:
@@ -752,7 +782,7 @@ class VoskModelDownloader:
                 "language_name": model.language_name,
                 "model_name": model.name,
                 "model_type": model.model_type,
-                "license": None,
+                "license": model.license,
                 "source": model.source,
                 "source_repo": model.source_repo,
                 "source_file": model.source_file,
@@ -780,7 +810,7 @@ class VoskModelDownloader:
                     target,
                     revision=model.revision,
                     files=files,
-                    license_name=None,
+                    license_name=model.license,
                     runtime="vosk",
                     metadata={
                         "language_code": model.language,
@@ -793,6 +823,7 @@ class VoskModelDownloader:
                         "archive_sha256": model.sha256,
                         "source": model.source,
                         "source_repo": model.source_repo,
+                        "license_name": model.license,
                     },
                 )
             except Exception:
