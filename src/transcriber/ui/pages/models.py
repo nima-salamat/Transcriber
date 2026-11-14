@@ -1074,7 +1074,11 @@ class ModelLibraryPage(QWidget):
                 actions.addWidget(pending)
 
             if state not in active_states and task_id:
-                remove = compact_button("Remove from history", "danger")
+                remove_label = (
+                    "Remove from history" if state in {"installed", "completed"}
+                    else "Delete partial files"
+                )
+                remove = compact_button(remove_label, "danger")
                 remove.clicked.connect(
                     lambda _checked=False, current=job: self.remove_download_job(current)
                 )
@@ -1144,12 +1148,19 @@ class ModelLibraryPage(QWidget):
         if state in {"queued", "inspecting", "downloading", "validating", "installing",
                      "pausing", "stopping", "cancelling"}:
             return
+        removes_partial_data = state not in {"installed", "completed"}
         answer = QMessageBox.question(
             self,
-            "Remove download history?",
-            f"Remove the {state or 'finished'} entry for {repo_id} from Downloads?\n\n"
-            "This only removes the history entry. Installed model files and reusable download "
-            "cache data are not deleted.",
+            "Delete partial download?" if removes_partial_data else "Remove download history?",
+            (
+                f"Delete the incomplete download for {repo_id} and remove its history entry?\n\n"
+                "The task-specific Vosk archive, abandoned staging files, and this model's "
+                "Hugging Face incomplete/revision cache will be removed. Cache blobs shared "
+                "with other models or revisions are kept."
+                if removes_partial_data else
+                f"Remove the completed entry for {repo_id} from Downloads?\n\n"
+                "The installed model files will remain untouched."
+            ),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -1171,8 +1182,8 @@ class ModelLibraryPage(QWidget):
         answer = QMessageBox.question(
             self,
             "Clear failed downloads?",
-            f"Remove {len(failed)} failed download entr{'y' if len(failed) == 1 else 'ies'} "
-            "from history? Installed models and reusable cache files will not be deleted.",
+            f"Delete partial files for {len(failed)} failed download entr{'y' if len(failed) == 1 else 'ies'} "
+            "and remove them from history? Cache blobs shared with other models are preserved.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
