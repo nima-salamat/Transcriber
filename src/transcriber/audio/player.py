@@ -110,6 +110,9 @@ class AudioPlayer(QObject):
         self.playback_changed.emit(False)
         self.status_changed.emit("No audio loaded")
 
+    def stop(self) -> None:
+        self.player.stop()
+
     def play_pause(self) -> None:
         if self.player.playbackState() == QMediaPlayer.PlayingState:
             self.player.pause()
