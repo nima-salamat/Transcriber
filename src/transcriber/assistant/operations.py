@@ -14,11 +14,11 @@ import re
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from collections.abc import Callable
 from typing import Any
 
 
