@@ -58,7 +58,12 @@ class ModelCard(Card):
         layout.setContentsMargins(18, 15, 18, 15)
         layout.setSpacing(8)
         top = QHBoxLayout()
-        heading = QLabel(model.repo_id)
+        heading_text = (
+            f"{model.source_repo}/{model.source_file}"
+            if getattr(model, "source", "") == "huggingface"
+            else model.repo_id
+        )
+        heading = QLabel(heading_text)
         heading.setStyleSheet("font-size: 15px; font-weight: 650;")
         top.addWidget(heading, 1)
         self.compatibility = QLabel("Compatibility not inspected")
@@ -91,9 +96,13 @@ class ModelCard(Card):
         self.install_button.setEnabled(False)
         self.install_button.clicked.connect(lambda: self.install_requested.emit(model.repo_id))
         is_vosk = str(getattr(model, "runtime", "faster-whisper")) == "vosk"
-        open_button = QPushButton(
-            "Official Vosk model list ↗" if is_vosk else "Open on Hugging Face ↗"
+        open_label = (
+            "Open Hugging Face file ↗"
+            if getattr(model, "source", "") == "huggingface"
+            else "Official Vosk model list ↗"
+            if is_vosk else "Open on Hugging Face ↗"
         )
+        open_button = QPushButton(open_label)
         open_button.clicked.connect(lambda: self.open_requested.emit(model.url))
         actions.addWidget(self.inspect_button)
         actions.addWidget(self.install_button)
@@ -126,8 +135,10 @@ class ModelCard(Card):
                 f"Language: {getattr(metadata, 'language_name', 'Unknown')} "
                 f"({getattr(metadata, 'language', 'unknown')})\n"
                 f"Model type: {getattr(metadata, 'model_type', 'unknown')}\n"
-                f"Archive size: {_human_size(getattr(metadata, 'size_bytes', None))}\n"
-                f"MD5 checksum: {getattr(metadata, 'md5', 'unknown')}\n"
+                f"Archive size: {getattr(metadata, 'size_text', '') or _human_size(getattr(metadata, 'size_bytes', None))}\n"
+                f"Checksum ({getattr(metadata, 'checksum_algorithm', 'md5').upper()}): "
+                f"{getattr(metadata, 'checksum', 'unknown')}\n"
+                f"Source: {getattr(metadata, 'source_label', 'Official Vosk catalogue')}\n"
                 f"{report.reason}{missing}\n"
                 "Inspected against the Vosk API directory structure, not CTranslate2."
             )
@@ -254,24 +265,46 @@ class ModelLibraryPage(QWidget):
         controls = QHBoxLayout()
         self.provider_combo = QComboBox()
         self.provider_combo.addItem("Faster-Whisper · Hugging Face", "faster-whisper")
-        self.provider_combo.addItem("Vosk · Official catalogue", "vosk")
+        self.provider_combo.addItem("Vosk · Official + Hugging Face", "vosk")
         self.provider_combo.currentIndexChanged.connect(self._provider_changed)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search model name or publisher on Hugging Face…")
         self.search_input.returnPressed.connect(self.search_models)
+        self.language_filter = QComboBox()
+        self.language_filter.addItem("All languages", "")
+        self.language_filter.addItem("Persian / Farsi", "fa")
+        self.language_filter.addItem("English", "en")
+        self.language_filter.addItem("German", "de")
+        self.language_filter.addItem("French", "fr")
+        self.language_filter.addItem("Spanish", "es")
+        self.language_filter.addItem("Arabic", "ar")
+        self.language_filter.addItem("Russian", "ru")
+        self.language_filter.addItem("Chinese", "cn")
+        self.language_filter.addItem("Hindi", "hi")
+        self.language_filter.addItem("Italian", "it")
+        self.language_filter.addItem("Turkish", "tr")
+        self.source_filter = QComboBox()
+        self.source_filter.addItem("All Vosk sources", "")
+        self.source_filter.addItem("Official Vosk catalogue", "official")
+        self.source_filter.addItem("Hugging Face mirrors", "huggingface")
+        self.language_filter.setVisible(False)
+        self.source_filter.setVisible(False)
         self.sort_combo = QComboBox()
         self.sort_combo.addItem("Most downloaded", "downloads")
         self.sort_combo.addItem("Most liked", "likes")
         self.sort_combo.addItem("Recently updated", "lastModified")
         search_button = primary_button("Search Hub")
         search_button.clicked.connect(self.search_models)
-        curated_button = QPushButton("Curated models")
-        curated_button.clicked.connect(self.load_curated)
+        self.search_button = search_button
+        self.curated_button = QPushButton("Curated models")
+        self.curated_button.clicked.connect(self.load_curated)
         controls.addWidget(self.provider_combo)
         controls.addWidget(self.search_input, 1)
+        controls.addWidget(self.language_filter)
+        controls.addWidget(self.source_filter)
         controls.addWidget(self.sort_combo)
         controls.addWidget(search_button)
-        controls.addWidget(curated_button)
+        controls.addWidget(self.curated_button)
         discover_layout.addLayout(controls)
         self.discover_hint = QLabel("Search uses the official Hugging Face Hub API. Curated entries are fetched live; unavailable metadata is not fabricated.")
         self.discover_hint.setObjectName("Muted")
@@ -473,12 +506,16 @@ class ModelLibraryPage(QWidget):
     def _provider_changed(self, *_args):
         is_vosk = self.provider_combo.currentData() == "vosk"
         self.sort_combo.setVisible(not is_vosk)
+        self.language_filter.setVisible(is_vosk)
+        self.source_filter.setVisible(is_vosk)
+        self.curated_button.setText("Recommended Persian" if is_vosk else "Curated models")
+        self.search_button.setText("Search Vosk" if is_vosk else "Search Hub")
         self.search_input.setPlaceholderText(
-            "Search Vosk models by name or language (e.g. Persian / fa)…"
+            "Search Vosk model name or language (Persian / Farsi / fa)…"
             if is_vosk else "Search model name or publisher on Hugging Face…"
         )
         self.discover_hint.setText(
-            "Official Vosk API catalogue · language, model type, archive size and checksum are checked."
+            "Vosk API / Kaldi models · filter by language and source. Hugging Face mirrors are pinned and checksum-verified."
             if is_vosk else
             "Hugging Face Hub · CTranslate2 model, tokenizer, configuration and vocabulary files are checked."
         )
@@ -488,9 +525,13 @@ class ModelLibraryPage(QWidget):
         provider = self.provider_combo.currentData()
         self._clear_cards()
         if provider == "vosk":
-            self.discover_hint.setText("Searching the official Vosk model catalogue…")
+            language = self.language_filter.currentData()
+            source = self.source_filter.currentData()
+            self.discover_hint.setText("Searching official Vosk models and verified Hugging Face mirrors…")
             worker = FunctionWorker(
-                lambda _emit: self.model_manager.search_vosk(query, limit=50)
+                lambda _emit: self.model_manager.search_vosk(
+                    query, limit=100, language=language, source=source,
+                )
             )
         else:
             sort = self.sort_combo.currentData()
@@ -511,7 +552,7 @@ class ModelLibraryPage(QWidget):
         for model in models:
             self._append_card(model)
         provider = (
-            "official Vosk catalogue"
+            "Vosk catalogue / Hugging Face mirror"
             if self.provider_combo.currentData() == "vosk"
             else "live Hugging Face Hub"
         )
@@ -520,6 +561,19 @@ class ModelLibraryPage(QWidget):
         )
 
     def load_curated(self):
+        if self.provider_combo.currentData() == "vosk":
+            self.language_filter.setCurrentIndex(self.language_filter.findData("fa"))
+            self.source_filter.setCurrentIndex(self.source_filter.findData(""))
+            self.search_input.clear()
+            self._clear_cards()
+            self.discover_hint.setText("Loading recommended Persian Vosk models from the official catalogue and Hugging Face…")
+            worker = FunctionWorker(lambda _emit: self.model_manager.curated_vosk("fa"))
+            worker.signals.result.connect(self._show_search_results)
+            worker.signals.error.connect(
+                lambda message: self.discover_hint.setText(f"Could not load Persian Vosk models: {message}")
+            )
+            self.thread_pool.start(worker)
+            return
         if self.provider_combo.currentData() != "faster-whisper":
             self.provider_combo.setCurrentIndex(self.provider_combo.findData("faster-whisper"))
         self.search_input.clear()
@@ -712,7 +766,7 @@ class ModelLibraryPage(QWidget):
         answer = QMessageBox.question(
             self,
             "Cancel model download?",
-            f"Cancel the download for {repo_id}? Reusable data in the shared Hugging Face cache will be retained.",
+            f"Cancel the download for {repo_id}? The partial archive or reusable cache will be kept where possible.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -754,7 +808,7 @@ class ModelLibraryPage(QWidget):
         event = threading.Event()
         self._downloads[repo_id] = event
         self._download_task_ids[repo_id] = task_id
-        if model.get("runtime") == "vosk" or repo_id.startswith("vosk/"):
+        if model.get("runtime") == "vosk" or self.model_manager.is_vosk_model_id(repo_id):
             worker = FunctionWorker(lambda emit: self.model_manager.install_vosk(
                 repo_id, cancel_event=event, progress=emit, task_id=task_id, metadata=model,
             ))
@@ -806,7 +860,9 @@ class ModelLibraryPage(QWidget):
             (
                 f"Download {repo_id} from the official Vosk catalogue?\n\n"
                 f"Language: {model.language_name}\nType: {model.model_type}\n"
-                f"Archive: {_human_size(model.size_bytes)}\nMD5: {model.md5}\n\n"
+                f"Archive: {model.size_text or _human_size(model.size_bytes)}\n"
+                f"Checksum ({model.checksum_algorithm.upper()}): {model.checksum}\n"
+                f"Source: {model.source_label}\n\n"
                 "The ZIP checksum and Vosk directory layout will be verified before installation."
                 if is_vosk else
                 f"Download {repo_id} from Hugging Face?\n\nRevision: {model.revision}\n"
