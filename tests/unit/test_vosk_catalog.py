@@ -56,3 +56,30 @@ def test_pinned_huggingface_small_model_has_real_archive_size():
     assert model.size_bytes == 53_431_220
     assert model.md5 == "cc2b18af256ffab2c44055f6a02ecb3d"
     assert model.sha256 == "977cb5faa538f3a835ccfd35f5f6d8284b5c450b89c700b9bd4736b66536ad46"
+
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"size_bytes": 1_667_089_770},
+        {"download_url": "https://alphacephei.com/vosk/models/vosk-model-fa-0.42.zip"},
+    ],
+)
+def test_downloader_rejects_model_size_or_url_changed_after_inspection(tmp_path, metadata):
+    from transcriber.models.registry import ModelRegistry
+
+    model = vosk.VoskModelCatalog._huggingface_curated_models()[0]
+
+    class Catalog:
+        @staticmethod
+        def by_name(_model_id, *, include_obsolete=False):
+            return model
+
+    downloader = vosk.VoskModelDownloader(
+        ModelRegistry(tmp_path / "models", tmp_path / "registry.json"),
+        Catalog(),
+    )
+
+    with pytest.raises(RuntimeError, match="no longer matches"):
+        downloader.download(model.repo_id, metadata=metadata)
