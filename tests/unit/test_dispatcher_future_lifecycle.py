@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from concurrent.futures import Future
 
-from transcriber.ui.main_window import MainThreadDispatcher
 from transcriber.ui.components.assistant_panel import AssistantPanel
+from transcriber.ui.main_window import MainThreadDispatcher
 
 
 def test_cancelled_queued_dispatch_never_runs_handler():

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import StrEnum
 from threading import RLock
 from time import monotonic
-from typing import Callable
 
 
 class VoiceState(StrEnum):
@@ -141,6 +141,7 @@ class VoskWakeWordDetector:
             raise ValueError("Wake phrase cannot be empty")
         try:
             import json
+
             import sounddevice as sd
             from vosk import KaldiRecognizer, Model
         except ImportError as exc:

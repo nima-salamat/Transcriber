@@ -11,8 +11,9 @@ import os
 import secrets
 import socket
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from transcriber.ipc.protocol import decode_request, encode_response
 
@@ -64,7 +65,7 @@ class LocalIPCServer:
         while not self._stop.is_set() and self.listener:
             try:
                 client, _address = self.listener.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break

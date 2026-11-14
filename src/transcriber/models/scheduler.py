@@ -11,11 +11,11 @@ import itertools
 import queue
 import threading
 import uuid
-from concurrent.futures import Future
-from concurrent.futures import CancelledError
+from collections.abc import Callable
+from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
-from typing import Any, Callable
+from typing import Any
 
 
 class JobPriority(IntEnum):

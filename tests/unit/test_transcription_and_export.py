@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from threading import Event
 
 import pytest
@@ -9,7 +8,11 @@ import pytest
 from transcriber.storage.database import Database
 from transcriber.storage.history import HistoryRepository
 from transcriber.transcription.exporters import export_transcript
-from transcriber.transcription.segments import TranscriptSegment, TranscriptionOptions, TranscriptionResult
+from transcriber.transcription.segments import (
+    TranscriptionOptions,
+    TranscriptionResult,
+    TranscriptSegment,
+)
 from transcriber.transcription.service import TranscriptionService
 
 

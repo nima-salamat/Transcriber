@@ -5,11 +5,22 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-    QSlider, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 from transcriber.audio.decoder import decoder_help, validate_audio_file
@@ -18,10 +29,12 @@ from transcriber.editor.document import TranscriptDocument
 from transcriber.engines.faster_whisper import FasterWhisperEngine
 from transcriber.transcription.exporters import export_transcript
 from transcriber.transcription.segments import (
-    TranscriptSegment, TranscriptionOptions, reconcile_segments,
+    TranscriptionOptions,
+    TranscriptSegment,
+    reconcile_segments,
 )
 from transcriber.transcription.service import TranscriptionService
-from transcriber.ui.widgets import Card, add_card_content, page_header, primary_button
+from transcriber.ui.widgets import Card, page_header, primary_button
 from transcriber.ui.workers import FunctionWorker
 
 

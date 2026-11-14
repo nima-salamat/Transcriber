@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from threading import Event
-from typing import Callable
 
 from transcriber.engines.base import TranscriptionEngine
 from transcriber.storage.history import HistoryRepository

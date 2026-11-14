@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
 import queue
 import shutil
 import subprocess
 import threading
-import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 class ACPError(RuntimeError):

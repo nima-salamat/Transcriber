@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Callable
+from typing import Any
 
 
 class JobStatus(StrEnum):
@@ -24,7 +25,7 @@ class Job:
     job_id: str
     job_type: str
     status: JobStatus = JobStatus.QUEUED
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     started_at: str | None = None
     finished_at: str | None = None
     progress: float | None = None
@@ -61,10 +62,10 @@ class JobQueue:
                 with self._lock:
                     if job.cancel_event.is_set():
                         job.status = JobStatus.CANCELLED
-                        job.finished_at = datetime.now(timezone.utc).isoformat()
+                        job.finished_at = datetime.now(UTC).isoformat()
                         return None
                     job.status = JobStatus.RUNNING
-                    job.started_at = datetime.now(timezone.utc).isoformat()
+                    job.started_at = datetime.now(UTC).isoformat()
                     job.message = "Running"
                 try:
                     result = function(job.cancel_event, update)
@@ -87,7 +88,7 @@ class JobQueue:
                     raise
                 finally:
                     with self._lock:
-                        job.finished_at = datetime.now(timezone.utc).isoformat()
+                        job.finished_at = datetime.now(UTC).isoformat()
 
             self._futures[job.job_id] = self._executor.submit(run)
             return job
@@ -101,7 +102,7 @@ class JobQueue:
             future = self._futures.get(job_id)
             if future and future.cancel():
                 job.status = JobStatus.CANCELLED
-                job.finished_at = datetime.now(timezone.utc).isoformat()
+                job.finished_at = datetime.now(UTC).isoformat()
             return True
 
     def get(self, job_id: str) -> Job | None:

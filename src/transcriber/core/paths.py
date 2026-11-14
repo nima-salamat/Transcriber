@@ -28,7 +28,7 @@ class AppPaths:
     registry: Path
 
     @classmethod
-    def discover(cls, app_name: str = APP_NAME) -> "AppPaths":
+    def discover(cls, app_name: str = APP_NAME) -> AppPaths:
         override = os.environ.get("TRANSCRIBER_HOME")
         if override:
             root = Path(override).expanduser().resolve()
@@ -52,7 +52,7 @@ class AppPaths:
             registry=config / "models.json",
         )
 
-    def ensure(self) -> "AppPaths":
+    def ensure(self) -> AppPaths:
         for directory in (
             self.config, self.data, self.cache, self.logs, self.models,
             self.recordings, self.models / ".staging",

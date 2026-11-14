@@ -8,9 +8,9 @@ import shutil
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from transcriber.core.errors import DownloadCancelled, ModelCompatibilityError
 from transcriber.models.compatibility import require_faster_whisper_compatible, validate_repo_id
@@ -160,8 +160,8 @@ class ModelDownloader:
             emit("Downloading", total=total, message="Downloading pinned model files")
 
             try:
-                from tqdm.auto import tqdm
                 from huggingface_hub import hf_hub_download
+                from tqdm.auto import tqdm
             except ImportError as exc:
                 raise RuntimeError("Install Faster-Whisper with pip install 'transcriber-desktop[asr]'") from exc
 

@@ -7,7 +7,11 @@ from threading import Event
 
 from transcriber.core.errors import EngineUnavailableError
 from transcriber.engines.base import ProgressCallback, TranscriptionEngine
-from transcriber.transcription.segments import TranscriptSegment, TranscriptionOptions, TranscriptionResult
+from transcriber.transcription.segments import (
+    TranscriptionOptions,
+    TranscriptionResult,
+    TranscriptSegment,
+)
 
 
 class GoogleCloudEngine(TranscriptionEngine):

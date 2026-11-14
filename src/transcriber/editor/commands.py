@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Callable
 
 from transcriber.editor.document import TranscriptDocument
 from transcriber.transcription.segments import TranscriptSegment

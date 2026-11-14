@@ -10,7 +10,7 @@ import json
 import threading
 import time
 from array import array
-from typing import Callable
+from collections.abc import Callable
 
 
 class VoskVoiceAgent:

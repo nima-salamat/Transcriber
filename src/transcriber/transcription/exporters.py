@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from transcriber.transcription.segments import TranscriptSegment
 
@@ -67,8 +68,8 @@ def export_transcript(
             start = _timestamp(segment.start, separator)
             end = _timestamp(segment.end, separator)
             caption = f"{segment.speaker}: {segment.text}" if include_speakers and segment.speaker else segment.text
-            rows.append((f"{index}\n{start} --> {end}\n{caption}" if fmt == "srt"
-                         else f"{start} --> {end}\n{caption}"))
+            rows.append(f"{index}\n{start} --> {end}\n{caption}" if fmt == "srt"
+                         else f"{start} --> {end}\n{caption}")
         prefix = "WEBVTT\n\n" if fmt == "vtt" else ""
         target.write_text(prefix + "\n\n".join(rows) + "\n", encoding="utf-8")
     elif fmt == "json":
@@ -119,13 +120,14 @@ def _export_pdf(path: Path, *, title: str | None, text: str,
                 segments: list[TranscriptSegment], include_timestamps: bool,
                 include_speakers: bool) -> None:
     try:
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from xml.sax.saxutils import escape
+
         from reportlab.lib.enums import TA_RIGHT
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-        from xml.sax.saxutils import escape
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
     except ImportError as exc:
         raise RuntimeError("PDF export requires reportlab: pip install 'transcriber[documents]'") from exc
     font_candidates = [

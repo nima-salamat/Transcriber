@@ -4,8 +4,14 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-    QPushButton, QVBoxLayout, QWidget,
+    QHBoxLayout,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 from transcriber.ui.widgets import Card, page_header, primary_button

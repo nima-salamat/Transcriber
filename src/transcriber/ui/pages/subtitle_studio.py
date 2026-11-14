@@ -7,9 +7,17 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QDoubleSpinBox,
+    QFileDialog,
+    QHBoxLayout,
     QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from transcriber.subtitles.formats import export_subtitles, parse_subtitles

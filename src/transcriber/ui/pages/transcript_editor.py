@@ -6,9 +6,20 @@ from copy import deepcopy
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDoubleSpinBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QPlainTextEdit, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QCheckBox,
+    QDialog,
+    QHBoxLayout,
     QHeaderView,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from transcriber.editor.cleanup import apply_cleanup, preview_cleanup
@@ -16,9 +27,8 @@ from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
 from transcriber.editor.search import replace as replace_text
 from transcriber.editor.search import search as search_text
-from transcriber.transcription.segments import TranscriptSegment
 from transcriber.transcription.quality_report import build_quality_report
-from transcriber.ui.widgets import Card, page_header, primary_button
+from transcriber.ui.widgets import Card, page_header
 
 
 class TranscriptEditorPage(QWidget):
@@ -350,7 +360,9 @@ class TranscriptEditorPage(QWidget):
 
     def export_selected(self):
         from pathlib import Path
+
         from PySide6.QtWidgets import QFileDialog
+
         from transcriber.transcription.exporters import export_transcript
         ids = set(self._selected_ids())
         if not ids:

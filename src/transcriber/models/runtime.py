@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Callable, Iterator, Protocol
+from typing import Any, Protocol
 
 
 class ModelState(StrEnum):
@@ -28,7 +29,7 @@ class ModelState(StrEnum):
 
 
 class ModelAdapter(Protocol):
-    def load(self, spec: "ModelSpec") -> Any: ...
+    def load(self, spec: ModelSpec) -> Any: ...
     def unload(self, handle: Any) -> None: ...
 
 

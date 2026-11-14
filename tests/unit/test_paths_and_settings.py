@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from transcriber.core.config import AppSettings, SettingsStore
 from transcriber.core.paths import AppPaths

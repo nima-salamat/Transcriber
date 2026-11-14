@@ -5,34 +5,46 @@ from __future__ import annotations
 from concurrent.futures import Future
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QThread, QThreadPool, QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QThread, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QDockWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-    QMessageBox, QPushButton, QStackedWidget, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
+    QApplication,
+    QDockWidget,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QStatusBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
-from transcriber.editor.document import TranscriptDocument
 from transcriber.audio.decoder import validate_audio_file
 from transcriber.audio.waveform import build_waveform
+from transcriber.editor.document import TranscriptDocument
 from transcriber.ipc.server import LocalIPCServer
 from transcriber.ui.components.assistant_panel import AssistantPanel
 from transcriber.ui.components.waveform import WaveformTimeline
 from transcriber.ui.components.workspace_popups import CommandPalettePopup, GlobalSearchPopup
 from transcriber.ui.design.icon_registry import IconRegistry
-from transcriber.ui.pages.audio_library import AudioLibraryPage
 from transcriber.ui.pages.audio_cleanup import AudioCleanupPage
+from transcriber.ui.pages.audio_library import AudioLibraryPage
 from transcriber.ui.pages.batch_processing import BatchProcessingPage
 from transcriber.ui.pages.history import HistoryPage
 from transcriber.ui.pages.home import HomePage
 from transcriber.ui.pages.models import ModelLibraryPage
 from transcriber.ui.pages.recording import RecordingPage
 from transcriber.ui.pages.settings import SettingsPage
-from transcriber.ui.pages.transcription import TranscriptionPage
-from transcriber.ui.pages.transcript_editor import TranscriptEditorPage
 from transcriber.ui.pages.subtitle_studio import SubtitleStudioPage
+from transcriber.ui.pages.transcript_editor import TranscriptEditorPage
+from transcriber.ui.pages.transcription import TranscriptionPage
 from transcriber.ui.theme import stylesheet
 from transcriber.ui.workers import FunctionWorker
 
@@ -683,6 +695,7 @@ class MainWindow(QMainWindow):
 
     def _agent_subtitle_export(self, args):
         from uuid import uuid4
+
         from transcriber.subtitles.formats import export_subtitles
         fmt = str(args["format"]).casefold().lstrip(".")
         if fmt not in {"srt", "vtt", "ass", "ssa"}:

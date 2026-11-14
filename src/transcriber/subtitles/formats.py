@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
-from transcriber.transcription.segments import TranscriptSegment
 from transcriber.transcription.exporters import _timestamp
+from transcriber.transcription.segments import TranscriptSegment
 
 _TIME = re.compile(r"(?P<h>\d{1,2}):(?P<m>\d{2}):(?P<s>\d{2})[,.](?P<ms>\d{1,3})")
 _ASS_TIME = re.compile(r"(?P<h>\d+):(?P<m>\d{2}):(?P<s>\d{2})\.(?P<cs>\d{2})")

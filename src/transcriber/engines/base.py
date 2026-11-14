@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
 from threading import Event
-from typing import Callable
 
 from transcriber.transcription.segments import TranscriptionOptions, TranscriptionResult
 

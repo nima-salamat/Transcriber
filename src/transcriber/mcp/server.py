@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from transcriber.core.paths import AppPaths
-from transcriber.ipc.client import LocalIPCClient, IPCUnavailable
+from transcriber.ipc.client import IPCUnavailable, LocalIPCClient
 
 
 def _client() -> LocalIPCClient:

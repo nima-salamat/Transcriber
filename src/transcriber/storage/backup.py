@@ -8,7 +8,7 @@ import shutil
 import sqlite3
 import tempfile
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from transcriber.storage.database import Database
@@ -29,7 +29,7 @@ def create_backup(database: Database, settings_path: Path, destination: Path) ->
             settings_copy.write_text("{}", encoding="utf-8")
         manifest = {
             "format": 1,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "contents": ["transcripts.sqlite3", "settings.json"],
             "excluded": ["recordings", "models", "cache", "logs"],
         }

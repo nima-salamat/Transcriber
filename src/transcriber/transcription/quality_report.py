@@ -7,11 +7,10 @@ is actually present. It never invents an ASR confidence value.
 from __future__ import annotations
 
 import re
-from collections import Counter
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from typing import Iterable
 
-from transcriber.transcription.segments import TranscriptSegment, TranscriptionResult
+from transcriber.transcription.segments import TranscriptionResult, TranscriptSegment
 
 
 @dataclass(frozen=True, slots=True)

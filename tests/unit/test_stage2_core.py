@@ -19,7 +19,11 @@ from transcriber.editor.search import replace, search
 from transcriber.ipc.client import IPCUnavailable, LocalIPCClient
 from transcriber.ipc.server import LocalIPCServer
 from transcriber.models.runtime import (
-    ModelRuntimeManager, ModelSpec, ModelState, ResourceLimitError, ResourceSnapshot,
+    ModelRuntimeManager,
+    ModelSpec,
+    ModelState,
+    ResourceLimitError,
+    ResourceSnapshot,
 )
 from transcriber.models.scheduler import JobPriority, JobStatus, PriorityModelScheduler
 from transcriber.storage.database import Database
@@ -400,7 +404,6 @@ def test_opencode_acp_client_persistent_session_and_prompt(tmp_path):
 
 
 def test_icon_assets_are_packaged_inside_transcriber_package():
-    from pathlib import Path
 
     import transcriber
 

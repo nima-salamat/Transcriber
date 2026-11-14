@@ -8,8 +8,8 @@ import shutil
 import subprocess
 import wave
 from array import array
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 
 class WaveformError(RuntimeError):
@@ -19,7 +19,7 @@ class WaveformError(RuntimeError):
 def waveform_cache_key(path: Path) -> str:
     source = Path(path).resolve()
     stat = source.stat()
-    payload = f"{source}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8")
+    payload = f"{source}|{stat.st_size}|{stat.st_mtime_ns}".encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -68,7 +68,7 @@ def _decode_ffmpeg(source: Path, bins: int, cancel_event, progress) -> list[floa
     )
     peaks: list[float] = []
     sample_rate = 8000
-    samples_per_bin = max(256, int((duration * sample_rate / bins))) if duration else 1024
+    samples_per_bin = max(256, int(duration * sample_rate / bins)) if duration else 1024
     samples_seen = 0
     current_max = 0
     try:

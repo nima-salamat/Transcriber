@@ -10,7 +10,10 @@ from threading import Event, RLock
 from transcriber.core.errors import EngineUnavailableError
 from transcriber.engines.base import ProgressCallback, TranscriptionEngine
 from transcriber.transcription.segments import (
-    TranscriptSegment, TranscriptWord, TranscriptionOptions, TranscriptionResult,
+    TranscriptionOptions,
+    TranscriptionResult,
+    TranscriptSegment,
+    TranscriptWord,
 )
 
 logger = logging.getLogger("transcriber.engines.faster_whisper")

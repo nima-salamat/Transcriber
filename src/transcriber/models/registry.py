@@ -7,12 +7,12 @@ import os
 import shutil
 import tempfile
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from transcriber.core.errors import ActiveModelError
-from transcriber.models.compatibility import validate_repo_id, validate_faster_whisper_files
+from transcriber.models.compatibility import validate_faster_whisper_files, validate_repo_id
 
 
 class ModelRegistry:
@@ -111,7 +111,7 @@ class ModelRegistry:
             previous = self._models.get(repo_id)
             self._models[repo_id] = {
                 "revision": revision, "files": sorted(files), "license": license_name,
-                "installed_at": datetime.now(timezone.utc).isoformat(),
+                "installed_at": datetime.now(UTC).isoformat(),
             }
             try:
                 self._write()

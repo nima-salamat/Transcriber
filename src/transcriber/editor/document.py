@@ -6,9 +6,8 @@ share the exact same validation rules.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
-from difflib import SequenceMatcher
-from typing import Iterable
 
 from transcriber.transcription.segments import TranscriptSegment, TranscriptWord
 

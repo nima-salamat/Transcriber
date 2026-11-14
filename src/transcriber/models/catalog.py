@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from transcriber.models.runtime import ModelSpec
 
-
 BUILTIN_MODELS = (
     ModelSpec(
         model_id="vosk-model-small-fa-0.42", provider="Vosk", task="asr", runtime="vosk",

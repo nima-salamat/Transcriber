@@ -7,10 +7,11 @@ arbitrary attribute paths, shell commands, Python expressions or Qt widgets.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
-from transcriber.assistant.permissions import AgentPermission, DEFAULT_PERMISSIONS, PermissionDenied
+from transcriber.assistant.permissions import DEFAULT_PERMISSIONS, AgentPermission, PermissionDenied
 
 
 @dataclass(frozen=True, slots=True)

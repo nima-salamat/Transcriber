@@ -6,11 +6,11 @@ import json
 import threading
 from pathlib import Path
 
-from transcriber.models.compatibility import validate_repo_id, validate_faster_whisper_files
-from transcriber.models.downloader import ModelDownloader
-from transcriber.models.hub_client import HuggingFaceHubClient, HubModel
-from transcriber.models.registry import ModelRegistry
 from transcriber.engines.faster_whisper import FasterWhisperEngine
+from transcriber.models.compatibility import validate_faster_whisper_files, validate_repo_id
+from transcriber.models.downloader import ModelDownloader
+from transcriber.models.hub_client import HubModel, HuggingFaceHubClient
+from transcriber.models.registry import ModelRegistry
 
 
 class ModelManager:
