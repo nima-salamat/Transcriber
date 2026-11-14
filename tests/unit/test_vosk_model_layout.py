@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import threading
 import zipfile
 
 from transcriber.models import vosk
@@ -130,12 +131,10 @@ def test_manual_vosk_zip_import_uses_the_inner_model_root(tmp_path):
         archive.writestr(prefix + "conf/model.conf", "--beam=13")
         archive.writestr(prefix + "conf/mfcc.conf", "--sample-frequency=16000")
         archive.writestr(prefix + "graph/HCLG.fst", b"graph")
-        archive.writestr(prefix + "graph/words.txt", "<eps> 0\\n")
+        archive.writestr(prefix + "graph/words.txt", "<eps> 0\n")
 
     registry = ModelRegistry(tmp_path / "models", tmp_path / "registry.json")
     manager = object.__new__(ModelManager)
-    import threading
-
     manager.registry = registry
     manager._lock = threading.RLock()
     manager._installing = set()
@@ -149,3 +148,35 @@ def test_manual_vosk_zip_import_uses_the_inner_model_root(tmp_path):
     assert (imported / "am" / "final.mdl").read_bytes() == b"model"
     assert not (imported / "mirror").exists()
     assert vosk.validate_vosk_model_directory(imported).compatible
+
+
+
+def test_vosk_hclg_graph_may_embed_words_without_words_txt(tmp_path):
+    model_root = tmp_path / "model"
+    _write_vosk_v2_model(model_root)
+    (model_root / "graph" / "words.txt").unlink()
+
+    report = vosk.validate_vosk_model_directory(model_root)
+
+    assert report.compatible
+    assert "graph/words.txt" not in report.included_files
+
+
+def test_vosk_lookahead_graph_requires_disambiguation_symbols(tmp_path):
+    model_root = tmp_path / "model"
+    (model_root / "am").mkdir(parents=True)
+    (model_root / "conf").mkdir()
+    (model_root / "graph").mkdir()
+    (model_root / "am" / "final.mdl").write_bytes(b"model")
+    (model_root / "conf" / "model.conf").write_text("--beam=13", encoding="utf-8")
+    (model_root / "conf" / "fbank.conf").write_text("--sample-frequency=16000", encoding="utf-8")
+    (model_root / "graph" / "HCLr.fst").write_bytes(b"hcl")
+    (model_root / "graph" / "Gr.fst").write_bytes(b"g")
+
+    incomplete = vosk.validate_vosk_model_directory(model_root)
+    assert not incomplete.compatible
+    assert "graph/disambig_tid.int" in incomplete.missing_files
+
+    (model_root / "graph" / "disambig_tid.int").write_text("0\\n", encoding="utf-8")
+    complete = vosk.validate_vosk_model_directory(model_root)
+    assert complete.compatible
