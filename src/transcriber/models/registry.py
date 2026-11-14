@@ -84,8 +84,17 @@ class ModelRegistry:
                     pass
         return total
 
-    def register(self, repo_id: str, path: Path, *, revision: str,
-                 files: list[str], license_name: str | None = None) -> None:
+    def register(
+        self,
+        repo_id: str,
+        path: Path,
+        *,
+        revision: str,
+        files: list[str],
+        license_name: str | None = None,
+        runtime: str = "faster-whisper",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         repo_id = validate_repo_id(repo_id)
         raw_path = Path(path)
         if raw_path.is_symlink():
@@ -104,14 +113,29 @@ class ModelRegistry:
             raise ValueError("Validated model manifest must be a JSON object")
         if manifest.get("repo_id") != repo_id or manifest.get("revision") != revision:
             raise ValueError("Model manifest does not match the repository and pinned revision")
-        report = validate_faster_whisper_files(files)
-        if not report.compatible:
-            raise ValueError(report.reason)
+        if manifest.get("engine", "faster-whisper") != runtime:
+            raise ValueError("Model manifest runtime does not match the requested registry runtime")
+        if runtime == "faster-whisper":
+            report = validate_faster_whisper_files(files)
+            if not report.compatible:
+                raise ValueError(report.reason)
+        elif runtime == "vosk":
+            from transcriber.models.vosk import validate_vosk_model_directory
+
+            report = validate_vosk_model_directory(resolved)
+            if not report.compatible:
+                raise ValueError(report.reason + " Missing: " + ", ".join(report.missing_files))
+        else:
+            raise ValueError(f"Unsupported model runtime: {runtime}")
         with self._lock:
             previous = self._models.get(repo_id)
             self._models[repo_id] = {
-                "revision": revision, "files": sorted(files), "license": license_name,
+                "revision": revision,
+                "files": sorted(files),
+                "license": license_name,
+                "runtime": runtime,
                 "installed_at": datetime.now(UTC).isoformat(),
+                **dict(metadata or {}),
             }
             try:
                 self._write()
