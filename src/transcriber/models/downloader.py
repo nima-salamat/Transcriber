@@ -89,7 +89,7 @@ class ModelDownloader:
         with self._condition:
             key = validate_repo_id(repo_id)
             event = self._pause_events.get(key)
-            if event is None or (key not in self._active and key not in self._pending):
+            if event is None:
                 return False
             event.set()
             task_id = self._job_ids.get(key)
@@ -102,7 +102,7 @@ class ModelDownloader:
         with self._condition:
             key = validate_repo_id(repo_id)
             event = self._stop_events.get(key)
-            if event is None or (key not in self._active and key not in self._pending):
+            if event is None:
                 return False
             event.set()
             task_id = self._job_ids.get(key)

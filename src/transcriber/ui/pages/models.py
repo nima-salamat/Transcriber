@@ -162,6 +162,7 @@ class ModelLibraryPage(QWidget):
         self._download_task_ids: dict[str, str] = {}
         self._download_workers: dict[str, FunctionWorker] = {}
         self._downloads_refresh_pending = False
+        self._downloads_refresh_again = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
@@ -342,6 +343,7 @@ class ModelLibraryPage(QWidget):
 
     def refresh_downloads(self):
         if self._downloads_refresh_pending:
+            self._downloads_refresh_again = True
             return
         self._downloads_refresh_pending = True
         worker = FunctionWorker(lambda _emit: self.model_manager.downloader.list_jobs())
@@ -352,6 +354,9 @@ class ModelLibraryPage(QWidget):
 
     def _downloads_refresh_finished(self):
         self._downloads_refresh_pending = False
+        if self._downloads_refresh_again:
+            self._downloads_refresh_again = False
+            QTimer.singleShot(0, self.refresh_downloads)
 
     def _show_download_jobs_error(self, message):
         self.downloads_hint.setText(f"Could not load persistent download history: {message}")
@@ -488,6 +493,9 @@ class ModelLibraryPage(QWidget):
     def restart_download(self, job: dict):
         repo_id = str(job.get("repo_id") or "")
         if not repo_id:
+            return
+        if repo_id in self._downloads:
+            self.status_message.emit(f"A download for {repo_id} is already active.")
             return
         model = job.get("metadata") or {}
         task_id = uuid.uuid4().hex
