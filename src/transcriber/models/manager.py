@@ -275,6 +275,206 @@ class ModelManager:
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
+    def _publish_imported_vosk_directory(
+        self, source: Path, repo_id: str, *, language_code: str | None = None,
+    ) -> Path:
+        """Copy a validated Vosk model tree into managed storage and register its runtime."""
+        import hashlib
+        import shutil
+        import uuid
+
+        if source.is_symlink() or not source.is_dir():
+            raise ValueError("Choose a real Vosk model directory, not a symbolic link.")
+        source = source.resolve(strict=True)
+        report = validate_vosk_model_directory(source)
+        if not report.compatible:
+            raise ValueError(
+                report.reason + " Missing: " + ", ".join(report.missing_files)
+            )
+        target = self.registry.root / self.registry.directory_name(repo_id)
+        if target.exists() or target.is_symlink():
+            raise FileExistsError(
+                f"A managed model already exists for {repo_id}; remove or rename it before importing."
+            )
+
+        file_paths = []
+        total_size = 0
+        for item in source.rglob("*"):
+            if item.is_symlink():
+                raise ValueError(f"Vosk model contains a symbolic link: {item.relative_to(source)}")
+            if item.is_file() and item.name != ".transcriber-model.json":
+                resolved = item.resolve(strict=True)
+                if not resolved.is_relative_to(source):
+                    raise ValueError("Vosk model contains a file outside the selected directory.")
+                file_paths.append(item)
+                total_size += item.stat().st_size
+
+        staging_root = self.registry.root / ".staging"
+        staging_root.mkdir(parents=True, exist_ok=True)
+        staging = staging_root / f"vosk-import-{uuid.uuid4().hex}"
+        staging.mkdir(parents=False, exist_ok=False)
+        digest = hashlib.sha256()
+        try:
+            if shutil.disk_usage(self.registry.root).free < total_size + 64 * 1024 * 1024:
+                raise OSError("Not enough free disk space to import and validate this Vosk model.")
+            copied_files = []
+            for source_file in file_paths:
+                relative = source_file.relative_to(source)
+                destination = staging / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with source_file.open("rb") as reader, destination.open("xb") as writer:
+                    while True:
+                        chunk = reader.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        writer.write(chunk)
+                        digest.update(relative.as_posix().encode("utf-8") + b"\\0" + chunk)
+                copied_files.append(relative.as_posix())
+
+            revision = "local-" + digest.hexdigest()
+            manifest = {
+                "repo_id": repo_id,
+                "revision": revision,
+                "engine": "vosk",
+                "runtime": "vosk",
+                "files": sorted(copied_files),
+                "language_code": language_code,
+                "language_name": None,
+                "model_name": source.name,
+                "model_type": "local-import",
+                "license": None,
+                "source": "local-import",
+            }
+            (staging / ".transcriber-model.json").write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            staging.rename(target)
+            try:
+                self.registry.register(
+                    repo_id,
+                    target,
+                    revision=revision,
+                    files=copied_files,
+                    license_name=None,
+                    runtime="vosk",
+                    metadata={
+                        "language_code": language_code,
+                        "model_name": source.name,
+                        "source": "local-import",
+                    },
+                )
+            except Exception:
+                shutil.rmtree(target, ignore_errors=True)
+                raise
+            return target
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
+    def import_vosk_directory(
+        self, source: str | Path, repo_id: str, *, language_code: str | None = None,
+    ) -> Path:
+        repo_id = self._reserve_import(repo_id)
+        try:
+            path = Path(source).expanduser()
+            if path.is_symlink():
+                raise ValueError("Importing a symbolic-link directory is not allowed.")
+            return self._publish_imported_vosk_directory(
+                path.resolve(), repo_id, language_code=language_code,
+            )
+        finally:
+            with self._lock:
+                self._installing.discard(repo_id)
+
+    def import_vosk_zip(
+        self, archive_path: str | Path, repo_id: str, *, language_code: str | None = None,
+    ) -> Path:
+        """Safely extract a local ZIP and import its contained Vosk model tree."""
+        import shutil
+        import stat
+        import uuid
+        import zipfile
+        from pathlib import PurePosixPath
+
+        repo_id = self._reserve_import(repo_id)
+        archive = Path(archive_path).expanduser()
+        if archive.is_symlink() or not archive.is_file():
+            with self._lock:
+                self._installing.discard(repo_id)
+            raise FileNotFoundError(f"Vosk ZIP archive does not exist: {archive}")
+
+        staging_root = self.registry.root / ".staging"
+        staging_root.mkdir(parents=True, exist_ok=True)
+        extraction = staging_root / f"vosk-zip-import-{uuid.uuid4().hex}"
+        extraction.mkdir(parents=False, exist_ok=False)
+        try:
+            with zipfile.ZipFile(archive, "r") as package:
+                entries = package.infolist()
+                if len(entries) > 20_000:
+                    raise ValueError("Vosk ZIP contains too many entries (maximum 20,000).")
+                unpacked_total = sum(item.file_size for item in entries if not item.is_dir())
+                if unpacked_total > 32 * 1024**3:
+                    raise ValueError("Vosk ZIP expands beyond the 32 GiB import safety limit.")
+                if shutil.disk_usage(self.registry.root).free < unpacked_total + 128 * 1024**2:
+                    raise OSError("Not enough free disk space to extract this Vosk model.")
+                extraction_root = extraction.resolve()
+                for entry in entries:
+                    raw_name = entry.filename
+                    if "\\\\" in raw_name:
+                        raise ValueError("ZIP entries with backslash paths are not accepted.")
+                    member = PurePosixPath(raw_name)
+                    if (
+                        member.is_absolute()
+                        or not member.parts
+                        or ".." in member.parts
+                        or any(part.endswith(":") for part in member.parts)
+                    ):
+                        raise ValueError(f"Unsafe Vosk ZIP path: {raw_name}")
+                    if stat.S_ISLNK(entry.external_attr >> 16):
+                        raise ValueError(f"Vosk ZIP symbolic links are not accepted: {raw_name}")
+                    if entry.flag_bits & 0x1:
+                        raise ValueError(f"Encrypted Vosk ZIP entries are not supported: {raw_name}")
+                    destination = extraction.joinpath(*member.parts)
+                    if not destination.resolve().is_relative_to(extraction_root):
+                        raise ValueError(f"ZIP path escapes the import directory: {raw_name}")
+                    if entry.is_dir():
+                        destination.mkdir(parents=True, exist_ok=True)
+                        continue
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    written = 0
+                    with package.open(entry, "r") as reader, destination.open("xb") as writer:
+                        while True:
+                            chunk = reader.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            written += len(chunk)
+                            if written > entry.file_size or written > 32 * 1024**3:
+                                raise ValueError("Vosk ZIP entry expanded beyond its declared size.")
+                            writer.write(chunk)
+                    if written != entry.file_size:
+                        raise ValueError(f"Vosk ZIP entry size mismatch: {raw_name}")
+
+            directories = [extraction]
+            directories.extend(
+                item for item in extraction.rglob("*")
+                if item.is_dir() and not item.is_symlink()
+            )
+            model_roots = [
+                item for item in directories
+                if validate_vosk_model_directory(item).compatible
+            ]
+            if len(model_roots) != 1:
+                raise ValueError(
+                    "The ZIP must contain exactly one valid Vosk model directory; "
+                    f"found {len(model_roots)}."
+                )
+            return self._publish_imported_vosk_directory(
+                model_roots[0], repo_id, language_code=language_code,
+            )
+        finally:
+            shutil.rmtree(extraction, ignore_errors=True)
+            with self._lock:
+                self._installing.discard(repo_id)
+
     def _reserve_import(self, repo_id: str) -> str:
         repo_id = validate_repo_id(repo_id)
         with self._lock:
