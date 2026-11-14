@@ -5,7 +5,7 @@ from __future__ import annotations
 from concurrent.futures import CancelledError, Future
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, Qt, QThread, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, QSize, Qt, QThread, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -122,6 +122,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self, paths, settings_store, history, database, model_manager, recording_history=None):
         super().__init__()
+        # Drawer splitters and edge anchors must keep physical left/right semantics even
+        # when the host OS locale makes QApplication default to right-to-left.
+        self.setLayoutDirection(Qt.LeftToRight)
         self.paths = paths
         self.settings_store = settings_store
         self.history = history
@@ -290,6 +293,7 @@ class MainWindow(QMainWindow):
         self._drawer_animations = {}
         self.assistant_dock = QDockWidget("Inspector / AI Assistant", self)
         self.assistant_dock.setObjectName("AssistantDock")
+        self.assistant_dock.setLayoutDirection(Qt.LeftToRight)
         self.assistant_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.assistant_dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
@@ -321,6 +325,7 @@ class MainWindow(QMainWindow):
 
         self.timeline_dock = QDockWidget("Audio Timeline", self)
         self.timeline_dock.setObjectName("TimelineDock")
+        self.timeline_dock.setLayoutDirection(Qt.LeftToRight)
         self.timeline_dock.setAllowedAreas(Qt.BottomDockWidgetArea)
         self.timeline_dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetClosable
@@ -339,22 +344,41 @@ class MainWindow(QMainWindow):
         status = QStatusBar()
         self.setStatusBar(status)
         self.status_bar = status
-        self.assistant_drawer_button = QPushButton("☷ Inspector")
+        self.assistant_drawer_button = QPushButton("Inspector")
+        self.assistant_drawer_button.setIcon(self.icon_registry.icon("assistant", color="#79a8ff", size=14))
+        self.assistant_drawer_button.setIconSize(QSize(14, 14))
         self.assistant_drawer_button.setCheckable(True)
         self.assistant_drawer_button.setChecked(not self.assistant_dock.isHidden())
         self.assistant_drawer_button.setToolTip("Show or hide the Inspector / AI Assistant drawer")
+        self.assistant_drawer_button.setAccessibleName("Toggle Inspector drawer")
         self.assistant_drawer_button.toggled.connect(
             lambda visible: self._animate_drawer(self.assistant_dock, visible, "width")
         )
-        self.timeline_drawer_button = QPushButton("〰 Waveform")
+        self.timeline_drawer_button = QPushButton("Waveform")
+        self.timeline_drawer_button.setIcon(self.icon_registry.icon("activity", color="#55b99a", size=14))
+        self.timeline_drawer_button.setIconSize(QSize(14, 14))
         self.timeline_drawer_button.setCheckable(True)
         self.timeline_drawer_button.setChecked(not self.timeline_dock.isHidden())
         self.timeline_drawer_button.setToolTip("Show or hide the audio waveform timeline drawer")
+        self.timeline_drawer_button.setAccessibleName("Toggle waveform drawer")
         self.timeline_drawer_button.toggled.connect(
             lambda visible: self._animate_drawer(self.timeline_dock, visible, "height")
         )
-        status.addWidget(self.assistant_drawer_button)
-        status.addWidget(self.timeline_drawer_button)
+        for drawer_button in (self.assistant_drawer_button, self.timeline_drawer_button):
+            drawer_button.setFixedHeight(25)
+            drawer_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            drawer_button.setStyleSheet(
+                "QPushButton { min-height: 0; max-height: 25px; padding: 2px 8px; "
+                "border: 1px solid rgba(130, 145, 165, 0.25); border-radius: 6px; "
+                "font-size: 10px; font-weight: 600; } "
+                "QPushButton:hover { background: rgba(120, 145, 180, 0.12); } "
+                "QPushButton:checked { background: rgba(100, 145, 210, 0.16); "
+                "border-color: rgba(110, 155, 220, 0.55); }"
+            )
+        status.setLayoutDirection(Qt.LeftToRight)
+        # Permanent widgets live at the far right and cannot be covered by status messages.
+        status.addPermanentWidget(self.assistant_drawer_button)
+        status.addPermanentWidget(self.timeline_drawer_button)
         status.showMessage("Ready · Local-first recognition")
         self.assistant_dock.visibilityChanged.connect(
             lambda visible: self._sync_drawer_controls(self.assistant_dock, visible)
