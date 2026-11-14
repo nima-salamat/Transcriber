@@ -215,6 +215,8 @@ class QtAudioRecorder(QObject):
         if self._state != "recording" or not self._source:
             return
         self._read_audio()
+        if self._state != "recording" or not self._source:
+            return
         self._elapsed_before_pause += time.monotonic() - self._started
         self._source.suspend()
         self._state = "paused"
@@ -249,7 +251,10 @@ class QtAudioRecorder(QObject):
             self._peaks = self._peaks[:peak_count]
             self.waveform_changed.emit(list(self._peaks))
         if self._preview_path:
-            self._preview_path.unlink(missing_ok=True)
+            try:
+                self._preview_path.unlink(missing_ok=True)
+            except OSError:
+                pass
             self._preview_path = None
         self._started = time.monotonic()
         self._source.resume()
