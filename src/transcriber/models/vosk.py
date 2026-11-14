@@ -895,6 +895,23 @@ class VoskModelDownloader:
                     "The Vosk catalogue revision/checksum changed since this download was created. "
                     "Start a fresh install after inspecting the updated entry."
                 )
+            expected_size = metadata.get("size_bytes")
+            if expected_size not in (None, "", 0, "0"):
+                try:
+                    expected_size = int(expected_size)
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise RuntimeError("The saved Vosk model size is invalid; inspect the model again.") from exc
+                if expected_size != model.size_bytes:
+                    raise RuntimeError(
+                        "The selected Vosk model size no longer matches its inspected catalogue entry. "
+                        "Inspect the model again before downloading."
+                    )
+            expected_url = str(metadata.get("download_url") or "").strip()
+            if expected_url and expected_url != model.download_url:
+                raise RuntimeError(
+                    "The selected Vosk download URL no longer matches its inspected catalogue entry. "
+                    "Inspect the model again before downloading."
+                )
         task_id = str(task_id or uuid.uuid4().hex)
         cancel_event = cancel_event or threading.Event()
         pause_event = threading.Event()
