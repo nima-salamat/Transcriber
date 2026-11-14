@@ -1202,6 +1202,9 @@ class MainWindow(QMainWindow):
     def apply_theme(self, theme: str):
         effective = "light" if theme == "light" else "dark"
         QApplication.instance().setStyleSheet(stylesheet(effective))
+        model_page = getattr(self, "model_page", None)
+        if model_page is not None:
+            model_page.refresh_visual_theme()
 
     def _restore_geometry(self):
         encoded = self.settings_store.settings.geometry
