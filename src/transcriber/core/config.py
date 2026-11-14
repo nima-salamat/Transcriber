@@ -19,6 +19,8 @@ class AppSettings:
     default_model: str = "Systran/faster-whisper-small"
     default_language: str = "auto"
     device: str = "auto"
+    audio_input_device_id: str = ""
+    audio_output_device_id: str = ""
     compute_type: str = "int8"
     cpu_threads: int = 0
     beam_size: int = 5
@@ -60,6 +62,8 @@ class AppSettings:
         self.default_model = str(self.default_model)
         self.default_language = str(self.default_language or "auto")
         self.device = str(self.device)
+        self.audio_input_device_id = str(self.audio_input_device_id or "")[:512]
+        self.audio_output_device_id = str(self.audio_output_device_id or "")[:512]
         self.compute_type = str(self.compute_type)
         try:
             self.cpu_threads = int(self.cpu_threads)
