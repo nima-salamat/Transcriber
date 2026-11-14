@@ -53,6 +53,7 @@ class ModelCard(Card):
         self.model = model
         self.report = None
         self.installed_info = None
+        self.inspection_detail = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 15, 18, 15)
         layout.setSpacing(8)
@@ -126,10 +127,11 @@ class ModelCard(Card):
                 total += size
         size_text = _human_size(total) if known else "Unknown (one or more file sizes not supplied)"
         missing = (" Missing: " + ", ".join(report.missing_files)) if report.missing_files else ""
-        self.detail_label.setText(
+        self.inspection_detail = (
             f"Estimated download: {size_text}\nFiles: " + (", ".join(files) or "Not provided") +
             f"\n{report.reason}{missing}\nPinned revision: {metadata.revision or 'Unknown'}"
         )
+        self.detail_label.setText(self.inspection_detail)
         self.set_installed(self.installed_info)
 
     def set_installed(self, installed_info):
@@ -153,6 +155,20 @@ class ModelCard(Card):
                 + (f"\n{path}" if path else "")
             )
         else:
+            if self.report:
+                compatible = bool(self.report.compatible)
+                self.compatibility.setText(
+                    "Compatible · Faster-Whisper" if compatible else "Not compatible"
+                )
+                self.compatibility.setStyleSheet(
+                    "color: #36a47e; font-weight: 600;" if compatible
+                    else "color: #d65a65; font-weight: 600;"
+                )
+                if self.inspection_detail:
+                    self.detail_label.setText(self.inspection_detail)
+            else:
+                self.compatibility.setText("Compatibility not inspected")
+                self.compatibility.setStyleSheet("")
             self.install_button.setText("Install model")
             self.install_button.setEnabled(bool(self.report and self.report.compatible))
 
@@ -809,6 +825,8 @@ class ModelLibraryPage(QWidget):
 
     def _clear_installed_cards(self):
         self._installed_card_rows.clear()
+        for row in range(100):
+            self.installed_cards.setRowStretch(row, 0)
         while self.installed_cards.count() > 0:
             item = self.installed_cards.takeAt(0)
             if item.widget():
