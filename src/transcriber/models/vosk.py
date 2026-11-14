@@ -202,6 +202,7 @@ def _validate_archive_source(model: VoskModelInfo) -> str:
         return model.download_url
     raise ValueError(f"Unsupported Vosk download source: {model.source!r}")
 
+
 def _download_vosk_archive(
     url: str,
     partial: Path,
@@ -285,6 +286,14 @@ def _download_vosk_archive(
                 append = downloaded > 0
                 if range_total is not None:
                     if total is not None and total != range_total:
+                        partial.unlink(missing_ok=True)
+                        downloaded = 0
+                        progress(
+                            downloaded, total,
+                            "The archive size changed at source; discarding the old partial download",
+                        )
+                        if attempt == 0:
+                            continue
                         raise OSError(
                             f"Vosk archive size changed at source: expected {total:,} bytes, "
                             f"server reports {range_total:,} bytes"
@@ -304,7 +313,7 @@ def _download_vosk_archive(
                     response_length = int(raw_length) if raw_length is not None else None
                 except (TypeError, ValueError):
                     response_length = None
-                if response_length is not None and response_length >= 0:
+                if response_length is not None and response_length > 0:
                     if total is not None and total != response_length:
                         raise OSError(
                             f"Vosk archive size changed at source: expected {total:,} bytes, "
