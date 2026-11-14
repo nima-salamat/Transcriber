@@ -500,6 +500,27 @@ class ModelLibraryPage(QWidget):
         self.refresh_installed()
         self.refresh_downloads()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reflow_installed_grid()
+
+    def _reflow_installed_grid(self):
+        if not hasattr(self, "installed_scroll") or not self._installed_card_rows:
+            return
+        available_width = self.installed_scroll.viewport().width()
+        columns = 2 if available_width >= 700 else 1
+        if getattr(self, "_installed_grid_columns", 0) == columns:
+            return
+        self._installed_grid_columns = columns
+        self.installed_cards.setColumnStretch(0, 1)
+        self.installed_cards.setColumnStretch(1, 1 if columns == 2 else 0)
+        for index, (card, _searchable, _runtime, _state) in enumerate(self._installed_card_rows):
+            self.installed_cards.removeWidget(card)
+            card.setMinimumWidth(300 if columns == 2 else 0)
+            row, column = divmod(index, columns)
+            self.installed_cards.addWidget(card, row, column)
+        self.installed_cards.setRowStretch((len(self._installed_card_rows) + columns - 1) // columns, 1)
+
     def _manual_runtime_changed(self, *_args):
         is_vosk = self.manual_runtime_combo.currentData() == "vosk"
         self.manual_language_combo.setVisible(is_vosk)
@@ -1400,6 +1421,7 @@ class ModelLibraryPage(QWidget):
 
     def _clear_installed_cards(self):
         self._installed_card_rows.clear()
+        self._installed_grid_columns = 0
         for row in range(100):
             self.installed_cards.setRowStretch(row, 0)
         while self.installed_cards.count() > 0:
@@ -1659,8 +1681,7 @@ class ModelLibraryPage(QWidget):
             main_actions.addWidget(delete_button)
             layout.addLayout(main_actions)
 
-            row, column = divmod(index, 2)
-            self.installed_cards.addWidget(card, row, column)
+            self.installed_cards.addWidget(card, index, 0)
             searchable = " ".join((
                 repo_id, runtime,
                 str(model.get("language_name") or model.get("language_code") or ""),
@@ -1668,7 +1689,7 @@ class ModelLibraryPage(QWidget):
             )).casefold()
             self._installed_card_rows.append((card, searchable, runtime, state))
 
-        self.installed_cards.setRowStretch((count + 1) // 2, 1)
+        self._reflow_installed_grid()
         self._filter_installed_cards(self.installed_search.text())
 
     def _show_installed_error(self, message):
