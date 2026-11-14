@@ -458,6 +458,98 @@ class VoskModelCatalog:
 
 
 
+def validate_vosk_model_directory(path: str | Path) -> VoskCompatibilityReport:
+    """Validate the on-disk layout expected by the Vosk API without loading model weights."""
+    root = Path(path).expanduser()
+    if root.is_symlink() or not root.is_dir():
+        return VoskCompatibilityReport(
+            compatible=False,
+            missing_files=("model directory",),
+            reason="Vosk model path must be a real directory, not a symbolic link.",
+        )
+    try:
+        root = root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return VoskCompatibilityReport(
+            compatible=False,
+            missing_files=("model directory",),
+            reason="Vosk model directory cannot be resolved safely.",
+        )
+
+    def has_file(relative: str) -> bool:
+        candidate = root / relative
+        try:
+            return (
+                not candidate.is_symlink()
+                and candidate.is_file()
+                and candidate.resolve(strict=True).is_relative_to(root)
+            )
+        except (OSError, RuntimeError, ValueError):
+            return False
+
+    included: list[str] = []
+    missing: list[str] = []
+    # Current Vosk 0.3+ distributions use am/, conf/ and graph/.
+    if has_file("am/final.mdl") and has_file("conf/model.conf"):
+        included.extend(("am/final.mdl", "conf/model.conf"))
+        feature_configs = [
+            name for name in ("conf/mfcc.conf", "conf/fbank.conf") if has_file(name)
+        ]
+        if feature_configs:
+            included.extend(feature_configs)
+        else:
+            missing.append("conf/mfcc.conf or conf/fbank.conf")
+
+        if has_file("graph/HCLG.fst"):
+            included.append("graph/HCLG.fst")
+        elif has_file("graph/HCLr.fst") and has_file("graph/Gr.fst"):
+            included.extend(("graph/HCLr.fst", "graph/Gr.fst"))
+        else:
+            missing.append("graph/HCLG.fst or graph/HCLr.fst + graph/Gr.fst")
+        if has_file("graph/words.txt"):
+            included.append("graph/words.txt")
+        else:
+            missing.append("graph/words.txt")
+        layout = "Vosk v2"
+    else:
+        # Legacy layouts keep the decoding files at the model root.
+        if has_file("final.mdl"):
+            included.append("final.mdl")
+        else:
+            missing.append("final.mdl or am/final.mdl")
+        if has_file("mfcc.conf"):
+            included.append("mfcc.conf")
+        else:
+            missing.append("mfcc.conf or conf/model.conf")
+        if has_file("HCLG.fst"):
+            included.append("HCLG.fst")
+        elif has_file("HCLr.fst") and has_file("Gr.fst"):
+            included.extend(("HCLr.fst", "Gr.fst"))
+        else:
+            missing.append("HCLG.fst or HCLr.fst + Gr.fst")
+        if has_file("words.txt"):
+            included.append("words.txt")
+        else:
+            missing.append("words.txt")
+        layout = "legacy Vosk"
+
+    if missing:
+        return VoskCompatibilityReport(
+            compatible=False,
+            missing_files=tuple(missing),
+            included_files=tuple(sorted(set(included))),
+            reason=(
+                "The extracted directory does not contain the model, feature configuration "
+                "and decoding graph expected by the Vosk API."
+            ),
+        )
+    return VoskCompatibilityReport(
+        compatible=True,
+        included_files=tuple(sorted(set(included))),
+        reason=f"Required files found for {layout}. Model weights are not loaded during inspection.",
+    )
+
+
 class VoskModelDownloader:
     """Download, checksum, safely extract and atomically register official Vosk ZIP archives."""
 
@@ -645,7 +737,7 @@ class VoskModelDownloader:
             staging.mkdir(parents=False, exist_ok=False)
 
             downloaded = partial.stat().st_size if partial.is_file() else 0
-            if downloaded > total:
+            if total is not None and downloaded > total:
                 partial.unlink()
                 downloaded = 0
             emit("Downloading", f"Downloading Vosk model archive from {model.source_label}")
