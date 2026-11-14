@@ -380,7 +380,6 @@ class RecordingPage(QWidget):
         self.duration_label.setText("00:00")
         self.position_label.setText("00:00")
         self.total_label.setText(" / 00:00")
-        self.session_hint = getattr(self, "session_hint", None)
         self.transport_hint.setText(f"Recording from {device.description()} · Pause to review and replace a section.")
         try:
             self.recorder.start(target, device)
@@ -550,7 +549,6 @@ class RecordingPage(QWidget):
             self.record_button.setText("  Pause")
             self.record_button.setIcon(self.icons.icon("pause", "#ffffff", 20))
             self.record_button.setToolTip("Pause this take and review the waveform")
-            self.record_action_hint = "pause"
             self.pulse_timer.start()
             self._style_record_button("recording")
             self.waveform.set_interactive(False)
