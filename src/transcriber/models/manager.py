@@ -328,7 +328,7 @@ class ModelManager:
                         if not chunk:
                             break
                         writer.write(chunk)
-                        digest.update(relative.as_posix().encode("utf-8") + b"\\0" + chunk)
+                        digest.update(relative.as_posix().encode("utf-8") + b"\0" + chunk)
                 copied_files.append(relative.as_posix())
 
             revision = "local-" + digest.hexdigest()
@@ -419,7 +419,7 @@ class ModelManager:
                 extraction_root = extraction.resolve()
                 for entry in entries:
                     raw_name = entry.filename
-                    if "\\\\" in raw_name:
+                    if "\\" in raw_name:
                         raise ValueError("ZIP entries with backslash paths are not accepted.")
                     member = PurePosixPath(raw_name)
                     if (
