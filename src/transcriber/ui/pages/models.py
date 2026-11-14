@@ -891,7 +891,7 @@ class ModelLibraryPage(QWidget):
             row.setStyleSheet(
                 f"QFrame#DownloadTaskCard {{ background: {tokens['surface']}; "
                 f"border: 1px solid {tokens['border']}; border-left: 4px solid {state_color}; "
-                "border-radius: 12px; }}"
+                "border-radius: 12px; }"
             )
             row_layout = QVBoxLayout(row)
             row_layout.setContentsMargins(16, 13, 16, 13)
@@ -1489,7 +1489,7 @@ class ModelLibraryPage(QWidget):
             card.setStyleSheet(
                 f"QFrame#InstalledModelCard {{ background: {tokens['surface']}; "
                 f"border: 1px solid {tokens['border']}; border-left: 4px solid {state_color}; "
-                "border-radius: 13px; }}"
+                "border-radius: 13px; }"
             )
             layout = QVBoxLayout(card)
             layout.setContentsMargins(17, 15, 17, 14)
