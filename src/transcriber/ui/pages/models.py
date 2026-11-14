@@ -54,6 +54,17 @@ def _rgba(color: str, alpha: float = 0.12) -> str:
     return f"rgba({red}, {green}, {blue}, {alpha:.2f})"
 
 
+def _card_frame_stylesheet(
+    object_name: str, tokens: dict[str, str], accent_color: str, radius: int = 12,
+) -> str:
+    """Build a balanced QSS rule for an accent-edged model-library card."""
+    return (
+        f"QFrame#{object_name} {{ "
+        f"background: {tokens['surface']}; border: 1px solid {tokens['border']}; "
+        f"border-left: 4px solid {accent_color}; border-radius: {int(radius)}px; }}"
+    )
+
+
 class ModelCard(Card):
     inspect_requested = Signal(str)
     install_requested = Signal(str)
@@ -889,9 +900,7 @@ class ModelLibraryPage(QWidget):
             row.setObjectName("DownloadTaskCard")
             row.setFrameShape(QFrame.NoFrame)
             row.setStyleSheet(
-                f"QFrame#DownloadTaskCard {{ background: {tokens['surface']}; "
-                f"border: 1px solid {tokens['border']}; border-left: 4px solid {state_color}; "
-                "border-radius: 12px; }"
+                _card_frame_stylesheet("DownloadTaskCard", tokens, state_color, 12)
             )
             row_layout = QVBoxLayout(row)
             row_layout.setContentsMargins(16, 13, 16, 13)
@@ -1498,9 +1507,7 @@ class ModelLibraryPage(QWidget):
             card.setObjectName("InstalledModelCard")
             card.setMinimumWidth(300)
             card.setStyleSheet(
-                f"QFrame#InstalledModelCard {{ background: {tokens['surface']}; "
-                f"border: 1px solid {tokens['border']}; border-left: 4px solid {state_color}; "
-                "border-radius: 13px; }"
+                _card_frame_stylesheet("InstalledModelCard", tokens, state_color, 13)
             )
             layout = QVBoxLayout(card)
             layout.setContentsMargins(17, 15, 17, 14)
