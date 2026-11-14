@@ -74,9 +74,9 @@ class VoskEngine(TranscriptionEngine):
         if words:
             start, end = words[0].start, words[-1].end
         else:
-            # Vosk's word list is normally present after SetWords(True). Preserve
-            # text even for a runtime/model variant that returns no word details.
-            return None
+            # Preserve recognized text even if a Vosk runtime variant omits word
+            # timing metadata. The segment remains explicitly untimed at 0 seconds.
+            start, end = 0.0, 0.0
         return TranscriptSegment(
             start=start,
             end=end,
