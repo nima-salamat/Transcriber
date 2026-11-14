@@ -66,10 +66,19 @@ class ModelManager:
         return self.downloader.job_repository
 
     def list_download_jobs(self, limit: int = 500) -> list[dict]:
-        jobs = self.downloader.list_jobs(limit=limit)
-        jobs.extend(self.vosk_downloader.list_jobs(limit=limit))
-        jobs.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
-        return jobs[:max(1, min(int(limit), 2000))]
+        # Both runtime-specific downloaders share one SQLite ledger. Read it once;
+        # concatenating the generic list with the Vosk subset duplicated every Vosk task.
+        repository = self.job_repository
+        if repository is None:
+            return []
+        return repository.list(limit=max(1, min(int(limit), 2000)))
+
+    def remove_download_job(self, task_id: str) -> bool:
+        """Remove a failed/completed/cancelled task from history, never its model files."""
+        repository = self.job_repository
+        if repository is None:
+            raise RuntimeError("Persistent download history is unavailable.")
+        return repository.delete(task_id)
 
     def pause_download(self, model_id: str) -> bool:
         return (
