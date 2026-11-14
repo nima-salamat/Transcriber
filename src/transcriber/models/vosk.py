@@ -1162,23 +1162,13 @@ class VoskModelDownloader:
                         raise ValueError(f"Vosk ZIP entry size mismatch: {raw_name}")
 
             check_events()
-            candidates = [extract_root]
-            candidates.extend(
-                item for item in extract_root.iterdir()
-                if item.is_dir() and not item.is_symlink()
-            )
-            model_root = next(
-                (item for item in candidates if validate_vosk_model_directory(item).compatible),
-                None,
-            )
-            if model_root is None:
-                reports = [validate_vosk_model_directory(item) for item in candidates]
-                missing = sorted({name for report in reports for name in report.missing_files})
+            model_root, report = _find_vosk_model_directory(extract_root)
+            if model_root is None or not report.compatible:
+                missing = ", ".join(report.missing_files[:8]) or "Vosk model files"
                 raise ValueError(
                     "The downloaded archive is not a compatible Vosk model directory. "
-                    + "Missing: " + ", ".join(missing[:8])
+                    f"{report.reason} Missing: {missing}"
                 )
-            report = validate_vosk_model_directory(model_root)
             files = sorted(
                 item.relative_to(model_root).as_posix()
                 for item in model_root.rglob("*")
