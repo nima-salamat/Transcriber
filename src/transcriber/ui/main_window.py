@@ -25,14 +25,14 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
-from transcriber.assistant.permissions import AgentPermission, PermissionDenied
 from transcriber.assistant.operations import OperationManager
+from transcriber.assistant.permissions import AgentPermission, PermissionDenied
 from transcriber.audio.decoder import validate_audio_file
 from transcriber.audio.waveform import build_waveform
 from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
-from transcriber.storage.recordings import RecordingRepository
 from transcriber.ipc.server import LocalIPCServer
+from transcriber.storage.recordings import RecordingRepository
 from transcriber.ui.components.assistant_panel import AssistantPanel
 from transcriber.ui.components.waveform import WaveformTimeline
 from transcriber.ui.components.workspace_popups import CommandPalettePopup, GlobalSearchPopup
