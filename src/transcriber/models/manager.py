@@ -182,12 +182,6 @@ class ModelManager:
 
     def import_zip(self, archive_path: str | Path, repo_id: str) -> Path:
         """Safely extract and import a ZIP without path traversal or symlink entries."""
-        import shutil
-        import stat
-        import uuid
-        import zipfile
-        from pathlib import PurePosixPath
-
         repo_id = self._reserve_import(repo_id)
         try:
             return self._import_zip_contents(archive_path, repo_id)
@@ -212,11 +206,12 @@ class ModelManager:
         try:
             with zipfile.ZipFile(archive, "r") as package:
                 entries = package.infolist()
-                if len(entries) > 100_000:
-                    raise ValueError("ZIP contains too many entries to import safely.")
+                if len(entries) > 10_000:
+                    raise ValueError("ZIP contains too many entries to import safely (maximum 10,000).")
                 total_unpacked = sum(entry.file_size for entry in entries if not entry.is_dir())
-                if total_unpacked > 100 * 1024**3:
-                    raise ValueError("ZIP expands beyond the 100 GB import safety limit.")
+                max_unpacked = 32 * 1024**3
+                if total_unpacked > max_unpacked:
+                    raise ValueError("ZIP expands beyond the 32 GB import safety limit.")
                 if shutil.disk_usage(self.registry.root).free < total_unpacked + 64 * 1024 * 1024:
                     raise OSError("Not enough free disk space to extract and validate this model.")
                 extraction_root = extraction.resolve()
@@ -243,9 +238,19 @@ class ModelManager:
                         destination.mkdir(parents=True, exist_ok=True)
                         continue
                     destination.parent.mkdir(parents=True, exist_ok=True)
+                    if entry.flag_bits & 0x1:
+                        raise ValueError(f"Encrypted ZIP entries are not supported: {raw_name}")
+                    actual_written = 0
                     with package.open(entry, "r") as reader, destination.open("xb") as writer:
-                        shutil.copyfileobj(reader, writer, length=1024 * 1024)
-                    if destination.stat().st_size != entry.file_size:
+                        while True:
+                            chunk = reader.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            actual_written += len(chunk)
+                            if actual_written > max_unpacked:
+                                raise ValueError("ZIP expanded beyond the 32 GB import safety limit.")
+                            writer.write(chunk)
+                    if actual_written != entry.file_size:
                         raise ValueError(f"ZIP entry size mismatch: {raw_name}")
 
             source_root = extraction

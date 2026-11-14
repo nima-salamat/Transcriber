@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import threading
-from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QUrl, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -608,11 +607,24 @@ class TranscriptionPage(QWidget):
             "original_text": record["original_text"], "tags": record["tags"],
             "favorite": bool(record["favorite"]),
         }
-        self.audio_path = Path(record["source_path"]) if record["source_path"] else None
+        self.audio_path = (
+            Path(record["source_path"]).expanduser().resolve()
+            if record["source_path"] else None
+        )
+        # History loading must not call set_audio(): that user-import path
+        # intentionally saves and clears the current draft, whereas this
+        # record is already the new project. Calling it here could persist the
+        # previous editor text under the newly assigned transcript ID.
+        self.player.player.stop()
         if self.audio_path and self.audio_path.is_file():
-            self.set_audio(self.audio_path)
+            self.file_name.setText(self.audio_path.name)
+            self.file_name.setToolTip(str(self.audio_path))
+            self.player.set_source(str(self.audio_path))
+            self.audio_changed.emit(str(self.audio_path))
         else:
             self.file_name.setText("Source audio is unavailable")
+            self.file_name.setToolTip(str(self.audio_path) if self.audio_path else "")
+            self.player.player.setSource(QUrl())
         self.document.replace_all(
             [TranscriptSegment(**item) for item in record["segments"]],
             text=record["text"],
