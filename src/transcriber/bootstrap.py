@@ -16,6 +16,7 @@ from transcriber.models.manager import ModelManager
 from transcriber.models.registry import ModelRegistry
 from transcriber.storage.database import Database
 from transcriber.storage.history import HistoryRepository
+from transcriber.storage.recordings import RecordingRepository
 
 
 def build_services():
@@ -30,6 +31,7 @@ def build_services():
     logger = configure_logging(paths.logs, os.environ.get("TRANSCRIBER_LOG_LEVEL", "INFO"))
     database = Database(paths.database)
     history = HistoryRepository(database)
+    recording_history = RecordingRepository(database)
     hub_token = os.environ.get("HF_TOKEN")
     hub = HuggingFaceHubClient(token=hub_token)
     registry = ModelRegistry(paths.models, paths.registry)
@@ -41,5 +43,6 @@ def build_services():
     logger.info("Transcriber %s initialized; data directory: %s", __version__, paths.data)
     return {
         "paths": paths, "settings": settings, "database": database,
-        "history": history, "model_manager": model_manager, "logger": logger,
+        "history": history, "recording_history": recording_history,
+        "model_manager": model_manager, "logger": logger,
     }

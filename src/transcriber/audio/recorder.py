@@ -31,6 +31,8 @@ class QtAudioRecorder(QObject):
         self._elapsed_before_pause = 0.0
         self._state = "idle"
         self._last_duration_emit = 0.0
+        self.device_id: str | None = None
+        self.device_name: str | None = None
 
     @staticmethod
     def devices() -> list[QAudioDevice]:
@@ -66,6 +68,8 @@ class QtAudioRecorder(QObject):
         target.parent.mkdir(parents=True, exist_ok=True)
         self._path = target
         self._format = audio_format
+        self.device_id = str(selected.id())
+        self.device_name = str(selected.description())
         self._data_bytes = 0
         self._elapsed_before_pause = 0.0
         self._started = time.monotonic()
@@ -90,6 +94,8 @@ class QtAudioRecorder(QObject):
             target.unlink(missing_ok=True)
             self._path = None
             self._format = None
+            self.device_id = None
+            self.device_name = None
             self._state = "idle"
             raise
 

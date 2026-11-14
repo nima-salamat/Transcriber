@@ -28,9 +28,11 @@ class RecordingPage(QWidget):
     audio_ready = Signal(str)
     status_message = Signal(str)
 
-    def __init__(self, paths, parent=None):
+    def __init__(self, paths, recording_history=None, parent=None):
         super().__init__(parent)
         self.paths = paths
+        self.recording_history = recording_history
+        self._auto_transcribe_after_save = True
         self.recorder = QtAudioRecorder(self)
         # Qt exposes audioInputsChanged as an instance signal, not a static signal.
         # Keep the QMediaDevices monitor alive for this page lifetime.
@@ -128,6 +130,7 @@ class RecordingPage(QWidget):
         self.recorder.level_changed.connect(self.level.setValue)
         self.recorder.duration_changed.connect(self._set_duration)
         self.recorder.error_occurred.connect(self._show_error)
+        self.recorder.recording_saved.connect(self._register_saved_recording)
         self.media_devices.audioInputsChanged.connect(self.refresh_devices)
         self.refresh_devices()
 
@@ -174,9 +177,9 @@ class RecordingPage(QWidget):
             if answer != QMessageBox.Yes:
                 return
         device = self.device_combo.currentData()
+        self._auto_transcribe_after_save = self.auto_transcribe.isChecked()
         try:
             self.recorder.start(Path(path), device)
-            self.recorder._device_id = device.id()
             self.recording_path = Path(path)
             self._elapsed = 0.0
             self.timer.start()
@@ -193,11 +196,32 @@ class RecordingPage(QWidget):
     def stop_recording(self):
         saved = self.recorder.stop()
         self.timer.stop()
-        if saved:
-            self.status_message.emit(f"Recording saved: {saved.name}")
-            self.audio_ready.emit(str(saved))
-        else:
+        if not saved:
             self.status_message.emit("No audio samples were captured; the empty recording was discarded")
+
+    def _register_saved_recording(self, raw_path: str):
+        path = Path(raw_path).expanduser().resolve()
+        self.recording_path = path
+        try:
+            if self.recording_history is not None:
+                record = self.recording_history.register(
+                    path,
+                    duration=self.recorder.duration(),
+                    device_id=self.recorder.device_id,
+                    device_name=self.recorder.device_name,
+                )
+                self.status_message.emit(
+                    f"Recording saved to library: {record['filename']} · {record['duration']:.1f}s"
+                )
+            else:
+                self.status_message.emit(f"Recording saved: {path.name}")
+        except Exception as exc:
+            self.status_message.emit(
+                f"Recording file saved, but recording history could not be updated: {exc}"
+            )
+        if self._auto_transcribe_after_save:
+            self.audio_ready.emit(str(path))
+        self._auto_transcribe_after_save = True
 
     def cancel_recording(self):
         self.timer.stop()
@@ -214,6 +238,7 @@ class RecordingPage(QWidget):
         self.resume_button.setEnabled(paused)
         self.stop_button.setEnabled(active)
         self.cancel_button.setEnabled(active)
+        self.auto_transcribe.setEnabled(not active)
         self.device_combo.setEnabled(not active)
         self.record_button.setEnabled(not active and self.device_combo.count() > 0)
         if recording:

@@ -29,6 +29,7 @@ from transcriber.assistant.permissions import AgentPermission, PermissionDenied
 from transcriber.audio.decoder import validate_audio_file
 from transcriber.audio.waveform import build_waveform
 from transcriber.editor.document import TranscriptDocument
+from transcriber.storage.recordings import RecordingRepository
 from transcriber.ipc.server import LocalIPCServer
 from transcriber.ui.components.assistant_panel import AssistantPanel
 from transcriber.ui.components.waveform import WaveformTimeline
@@ -107,13 +108,14 @@ class MainWindow(QMainWindow):
         ("settings", "settings", "Settings"),
     ]
 
-    def __init__(self, paths, settings_store, history, database, model_manager):
+    def __init__(self, paths, settings_store, history, database, model_manager, recording_history=None):
         super().__init__()
         self.paths = paths
         self.settings_store = settings_store
         self.history = history
         self.database = database
         self.model_manager = model_manager
+        self.recording_history = recording_history or RecordingRepository(database)
         # One domain document is shared by transcription and segment editing.
         self.transcript_document = TranscriptDocument()
         self._sidebar_collapsed = False
@@ -236,12 +238,12 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.home_page = HomePage(self.history, self.model_manager, self.thread_pool)
         self.transcription_page = TranscriptionPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool, document=self.transcript_document)
-        self.recording_page = RecordingPage(self.paths)
+        self.recording_page = RecordingPage(self.paths, self.recording_history)
         self.history_page = HistoryPage(self.history, self.thread_pool)
         self.model_page = ModelLibraryPage(
             self.model_manager, self.settings_store, self.thread_pool, self.release_active_model
         )
-        self.audio_page = AudioLibraryPage(self.paths, self.history, self.thread_pool)
+        self.audio_page = AudioLibraryPage(self.paths, self.history, self.thread_pool, self.recording_history)
         self.audio_cleanup_page = AudioCleanupPage(self.paths, self.thread_pool)
         self.settings_page = SettingsPage(self.paths, self.settings_store, self.database, self.thread_pool, self.model_manager)
         self.batch_page = BatchProcessingPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool)

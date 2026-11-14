@@ -28,7 +28,7 @@ def main() -> int:
     try:
         window = MainWindow(
             services["paths"], services["settings"], services["history"],
-            services["database"], services["model_manager"],
+            services["database"], services["model_manager"], services["recording_history"],
         )
     except Exception as exc:
         services["logger"].exception("Application startup failed")
