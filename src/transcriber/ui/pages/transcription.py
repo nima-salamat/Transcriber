@@ -797,12 +797,14 @@ class TranscriptionPage(QWidget):
         self._audio_duration_ms = 0
         if self.audio_path and self.audio_path.is_file():
             self.close_audio_button.setEnabled(True)
+            self.play_button.setEnabled(True)
             self.file_name.setText(self.audio_path.name)
             self.file_name.setToolTip(str(self.audio_path))
             self.player.set_source(str(self.audio_path))
             self.audio_changed.emit(str(self.audio_path))
         else:
             self.close_audio_button.setEnabled(False)
+            self.play_button.setEnabled(False)
             self.file_name.setText("Source audio is unavailable")
             self.file_name.setToolTip(str(self.audio_path) if self.audio_path else "")
             self.player.clear_source()
