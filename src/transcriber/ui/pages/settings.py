@@ -479,7 +479,7 @@ class SettingsPage(QWidget):
             {
                 "title": title,
                 "category": category,
-                "keywords": keywords,
+                "keywords": f"{keywords} settings configuration preferences options",
                 "callback": lambda section=section: self.focus_section(section),
             }
             for title, category, keywords, section in entries
