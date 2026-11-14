@@ -8,6 +8,8 @@ huggingface-hub>=0.27,<2
 tqdm>=4.66,<5
 
 # Local speech recognition
+# Faster-Whisper 1.2.1 still passes metadata_errors to av.open; PyAV 19 removed it.
+av>=11,<19
 faster-whisper>=1.1,<2
 
 # Optional cloud recognition adapter (disabled until explicitly configured)
