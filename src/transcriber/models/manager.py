@@ -93,23 +93,30 @@ class ModelManager:
             raise RuntimeError(
                 f"Cannot delete files while {repo_id} is {state}. Cancel the active task first."
             )
+
+        # Reserve this model ID for the cleanup operation. This prevents a retry
+        # from starting between the activity check and removal of its cache files.
         with self._lock:
             if repo_id in self._installing:
                 raise RuntimeError(
                     f"Cannot delete files while the model operation for {repo_id} is still finishing."
                 )
+            self._installing.add(repo_id)
+        try:
+            # A completed installation is not a partial download: removing its
+            # history entry must never remove its installed model directory.
+            if state not in {"installed", "completed"}:
+                metadata = job.get("metadata") or {}
+                is_vosk = metadata.get("runtime") == "vosk" or self.is_vosk_model_id(repo_id)
+                if is_vosk:
+                    self.vosk_downloader.remove_download_artifacts(job)
+                else:
+                    self.downloader.remove_download_artifacts(job)
 
-        # A completed installation is not a partial download: removing its history
-        # entry must never remove its installed model directory.
-        if state not in {"installed", "completed"}:
-            metadata = job.get("metadata") or {}
-            is_vosk = metadata.get("runtime") == "vosk" or self.is_vosk_model_id(repo_id)
-            if is_vosk:
-                self.vosk_downloader.remove_download_artifacts(job)
-            else:
-                self.downloader.remove_download_artifacts(job)
-
-        return repository.delete(task_id)
+            return repository.delete(task_id)
+        finally:
+            with self._lock:
+                self._installing.discard(repo_id)
 
     def pause_download(self, model_id: str) -> bool:
         return (
