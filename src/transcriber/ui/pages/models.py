@@ -1026,8 +1026,8 @@ class ModelLibraryPage(QWidget):
                 primary_label = "Retry" if state == "failed" else "Resume"
                 resume = compact_button(primary_label, "primary")
                 resume.clicked.connect(
-                    lambda _checked=False, current=job: (
-                        self.restart_download(current) if state == "failed"
+                    lambda _checked=False, current=job, failed=(state == "failed"): (
+                        self.restart_download(current) if failed
                         else self.resume_download(current)
                     )
                 )
