@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -245,6 +246,7 @@ class ModelLibraryPage(QWidget):
         self.cards: dict[str, ModelCard] = {}
         self._installed_by_id: dict[str, dict] = {}
         self._installed_card_rows: list[tuple[QWidget, str, str, str]] = []
+        self._download_card_rows: list[tuple[QWidget, str, str, str]] = []
         self._downloads: dict[str, threading.Event] = {}
         self._download_task_ids: dict[str, str] = {}
         self._download_workers: dict[str, FunctionWorker] = {}
@@ -331,6 +333,30 @@ class ModelLibraryPage(QWidget):
         self.downloads_hint.setObjectName("Muted")
         self.downloads_hint.setWordWrap(True)
         downloads_layout.addWidget(self.downloads_hint)
+        download_filters = QHBoxLayout()
+        self.download_search = QLineEdit()
+        self.download_search.setPlaceholderText("Search downloads by model or source…")
+        self.download_search.textChanged.connect(self._filter_download_cards)
+        self.download_state_filter = QComboBox()
+        self.download_state_filter.addItem("All states", "")
+        for label, value in (
+            ("In progress", "active"), ("Ready to resume", "recoverable"),
+            ("Completed", "installed"), ("Cancelled", "cancelled"),
+        ):
+            self.download_state_filter.addItem(label, value)
+        self.download_state_filter.currentIndexChanged.connect(self._filter_download_cards)
+        self.download_runtime_filter = QComboBox()
+        self.download_runtime_filter.addItem("All runtimes", "")
+        self.download_runtime_filter.addItem("Faster-Whisper", "faster-whisper")
+        self.download_runtime_filter.addItem("Vosk / Kaldi", "vosk")
+        self.download_runtime_filter.currentIndexChanged.connect(self._filter_download_cards)
+        self.download_summary = QLabel("0 tasks")
+        self.download_summary.setObjectName("Muted")
+        download_filters.addWidget(self.download_search, 1)
+        download_filters.addWidget(self.download_runtime_filter)
+        download_filters.addWidget(self.download_state_filter)
+        download_filters.addWidget(self.download_summary)
+        downloads_layout.addLayout(download_filters)
         self.download_list = QListWidget()
         self.download_list.setAlternatingRowColors(True)
         downloads_layout.addWidget(self.download_list, 1)
@@ -721,31 +747,113 @@ class ModelLibraryPage(QWidget):
 
     def _show_download_jobs(self, jobs):
         self.download_list.clear()
-        rows = []
+        self._download_card_rows.clear()
         active_states = {
             "queued", "inspecting", "downloading", "validating", "installing",
             "pausing", "stopping", "cancelling",
         }
+        recoverable_states = {"paused", "stopped", "failed"}
+        state_counts = {"active": 0, "recoverable": 0, "installed": 0, "cancelled": 0}
+
         for job in jobs:
             state = str(job.get("state") or "unknown").casefold()
-            repo_id = str(job.get("repo_id") or "Unknown repository")
-            revision = str(job.get("revision") or "revision not pinned")
-            downloaded = _human_size(job.get("downloaded_bytes") or 0)
-            total = _human_size(job.get("total_bytes"))
-            details = (
-                f"{repo_id}  ·  {state.title()}  ·  {downloaded} / {total}  ·  "
-                f"revision {revision[:12]}"
+            repo_id = str(job.get("repo_id") or "Unknown model")
+            metadata = job.get("metadata") or {}
+            runtime = (
+                "vosk" if metadata.get("runtime") == "vosk" or self.model_manager.is_vosk_model_id(repo_id)
+                else "faster-whisper"
             )
-            if job.get("error"):
-                details += f"\n{job['error']}"
-            item = QListWidgetItem()
-            row = QWidget()
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(10, 5, 10, 5)
-            label = QLabel(details)
-            label.setWordWrap(True)
-            row_layout.addWidget(label, 1)
+            runtime_label = "VOSK / KALDI" if runtime == "vosk" else "FASTER-WHISPER"
+            source = (
+                metadata.get("source_repo") or metadata.get("source")
+                or ("Official Vosk catalogue" if runtime == "vosk" else "Hugging Face Hub")
+            )
+            downloaded_bytes = int(job.get("downloaded_bytes") or 0)
+            total_bytes = job.get("total_bytes")
+            percent = (
+                max(0, min(100, int(downloaded_bytes / total_bytes * 100)))
+                if total_bytes else None
+            )
+            if state in active_states:
+                filter_state = "active"
+                state_counts["active"] += 1
+            elif state in recoverable_states:
+                filter_state = "recoverable"
+                state_counts["recoverable"] += 1
+            elif state == "installed":
+                filter_state = "installed"
+                state_counts["installed"] += 1
+            elif state == "cancelled":
+                filter_state = "cancelled"
+                state_counts["cancelled"] += 1
+            else:
+                filter_state = state
 
+            revision = str(job.get("revision") or "revision unavailable")
+            detail = (
+                f"{_human_size(downloaded_bytes)} / {_human_size(total_bytes)}"
+                + (f" · {percent}%" if percent is not None else "")
+                + f" · {runtime_label}"
+                + f" · {source}"
+            )
+            row = QFrame()
+            row.setObjectName("DownloadTaskCard")
+            row.setFrameShape(QFrame.StyledPanel)
+            row_layout = QVBoxLayout(row)
+            row_layout.setContentsMargins(12, 10, 12, 10)
+            row_layout.setSpacing(7)
+
+            heading = QHBoxLayout()
+            title = QLabel(repo_id)
+            title.setStyleSheet("font-weight: 700; font-size: 13px;")
+            title.setWordWrap(True)
+            heading.addWidget(title, 1)
+            runtime_badge = QLabel(runtime_label)
+            runtime_badge.setStyleSheet(
+                "font-size: 9px; font-weight: 800; border-radius: 7px; "
+                "padding: 4px 7px; background: rgba(80,135,205,0.14); color: #6fa4ed;"
+            )
+            heading.addWidget(runtime_badge, 0, Qt.AlignTop)
+            state_badge = QLabel(state.replace("_", " ").upper())
+            state_color = (
+                "#36a47e" if state in {"installed", "completed"}
+                else "#d49a42" if state in recoverable_states
+                else "#6fa4ed" if state in active_states
+                else "#9aa5b4"
+            )
+            state_badge.setStyleSheet(
+                f"font-size: 9px; font-weight: 800; color: {state_color}; "
+                f"border: 1px solid {state_color}; border-radius: 7px; padding: 4px 7px;"
+            )
+            heading.addWidget(state_badge, 0, Qt.AlignTop)
+            row_layout.addLayout(heading)
+
+            meta_label = QLabel(detail + f" · revision {revision[:12]}")
+            meta_label.setObjectName("Muted")
+            meta_label.setWordWrap(True)
+            row_layout.addWidget(meta_label)
+
+            progress = QProgressBar()
+            progress.setTextVisible(False)
+            progress.setFixedHeight(7)
+            if total_bytes:
+                progress.setRange(0, 100)
+                progress.setValue(percent or 0)
+            elif state == "downloading":
+                progress.setRange(0, 0)
+            else:
+                progress.setRange(0, 100)
+                progress.setValue(100 if state in {"installed", "completed"} else 0)
+            row_layout.addWidget(progress)
+
+            if job.get("error"):
+                error_label = QLabel(str(job["error"]))
+                error_label.setWordWrap(True)
+                error_label.setStyleSheet("color: #d65a65; font-size: 11px;")
+                row_layout.addWidget(error_label)
+
+            actions = QHBoxLayout()
+            actions.addStretch(1)
             if state in {"queued", "inspecting", "downloading"}:
                 pause = QPushButton("Pause")
                 pause.clicked.connect(
@@ -759,56 +867,84 @@ class ModelLibraryPage(QWidget):
                 cancel.clicked.connect(
                     lambda _checked=False, rid=repo_id: self.cancel_download(rid)
                 )
-                row_layout.addWidget(pause)
-                row_layout.addWidget(stop)
-                row_layout.addWidget(cancel)
-            elif state in {"paused", "stopped", "failed"}:
+                actions.addWidget(pause)
+                actions.addWidget(stop)
+                actions.addWidget(cancel)
+            elif state in recoverable_states:
                 resume = QPushButton("Resume")
                 resume.clicked.connect(
                     lambda _checked=False, current=job: self.resume_download(current)
                 )
-                row_layout.addWidget(resume)
-            elif state == "cancelled":
+                actions.addWidget(resume)
                 restart = QPushButton("Restart")
                 restart.clicked.connect(
                     lambda _checked=False, current=job: self.restart_download(current)
                 )
-                row_layout.addWidget(restart)
+                actions.addWidget(restart)
+            elif state == "cancelled":
+                restart = QPushButton("Download again")
+                restart.clicked.connect(
+                    lambda _checked=False, current=job: self.restart_download(current)
+                )
+                actions.addWidget(restart)
             elif state in {"pausing", "stopping", "cancelling"}:
-                pending = QLabel("Applying…")
+                pending = QLabel("Applying request…")
                 pending.setObjectName("Muted")
-                row_layout.addWidget(pending)
+                actions.addWidget(pending)
             elif state in {"validating", "installing"}:
-                pending = QLabel("Finishing atomic install…")
+                pending = QLabel("Verifying and registering model…")
                 pending.setObjectName("Muted")
-                row_layout.addWidget(pending)
+                actions.addWidget(pending)
+            row_layout.addLayout(actions)
+            row.setStyleSheet(
+                "QFrame#DownloadTaskCard { border: 1px solid palette(mid); "
+                "border-radius: 11px; background: palette(base); }"
+            )
 
+            item = QListWidgetItem()
             item.setSizeHint(row.sizeHint())
             self.download_list.addItem(item)
             self.download_list.setItemWidget(item, row)
-            rows.append(state)
+            searchable = " ".join((
+                repo_id, str(source), runtime, state, str(metadata.get("language_name") or ""),
+            )).casefold()
+            self._download_card_rows.append((row, searchable, runtime, filter_state))
 
-        recoverable = sum(state in {"paused", "stopped", "failed"} for state in rows)
-        active = any(state in active_states for state in rows)
+        self.download_summary.setText(
+            f"{len(jobs)} tasks · {state_counts['active']} active · "
+            f"{state_counts['recoverable']} resumable"
+        )
         downloads_index = self.tabs.indexOf(self.download_tab)
         if downloads_index >= 0:
             self.tabs.setTabText(
                 downloads_index,
-                f"Downloads · {recoverable} ready" if recoverable else "Downloads",
+                f"Downloads · {state_counts['active']}" if state_counts["active"] else "Downloads",
             )
         if not jobs:
             self.downloads_hint.setText(
-                "No download tasks yet. Inspect a compatible Hub repository and choose Install model."
+                "No download tasks yet. Discover a Faster-Whisper or Vosk model, inspect its runtime compatibility, then install it."
             )
         else:
             self.downloads_hint.setText(
-                f"{len(jobs)} saved download task(s) · {recoverable} ready to resume · "
-                "Interrupted transfers never restart automatically."
+                "Every task is pinned to a revision/checksum. Paused or stopped transfers can resume; "
+                "Vosk and Faster-Whisper downloads are shown separately."
             )
-        if self.tabs.currentWidget() is self.download_tab and active:
+        self._filter_download_cards()
+        if self.tabs.currentWidget() is self.download_tab and state_counts["active"]:
             self.downloads_refresh_timer.start()
         else:
             self.downloads_refresh_timer.stop()
+
+    def _filter_download_cards(self, *_args):
+        needle = self.download_search.text().strip().casefold()
+        runtime_filter = str(self.download_runtime_filter.currentData() or "")
+        state_filter = str(self.download_state_filter.currentData() or "")
+        for widget, searchable, runtime, state in self._download_card_rows:
+            widget.setVisible(
+                (not needle or needle in searchable)
+                and (not runtime_filter or runtime == runtime_filter)
+                and (not state_filter or state == state_filter)
+            )
 
     def pause_download(self, repo_id: str):
         if self.model_manager.pause_download(repo_id):
