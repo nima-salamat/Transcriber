@@ -66,7 +66,6 @@ class RecordingPage(QWidget):
 
         # Device routing card
         device_card = Card()
-        device_card.setObjectName("RecordingDeviceCard")
         device_layout = QVBoxLayout(device_card)
         device_layout.setContentsMargins(20, 16, 20, 16)
         device_layout.setSpacing(10)
@@ -100,7 +99,6 @@ class RecordingPage(QWidget):
 
         # Main recording console
         hero = Card()
-        hero.setObjectName("RecordingHero")
         hero_layout = QVBoxLayout(hero)
         hero_layout.setContentsMargins(26, 24, 26, 22)
         hero_layout.setSpacing(18)
@@ -279,7 +277,7 @@ class RecordingPage(QWidget):
             self.device_combo.blockSignals(blocker)
 
         self._has_usable_input = (
-            default_id != "" if not selected_id else selected_id in available_ids
+            selected_id in available_ids if selected_id else not default_device.isNull()
         )
         if not devices and default_device.isNull():
             hint = "No microphone detected. Connect a microphone or check Windows sound settings."
