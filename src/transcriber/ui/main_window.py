@@ -1001,7 +1001,8 @@ class MainWindow(QMainWindow):
         for cancel_event in self.model_page._downloads.values():
             cancel_event.set()
         self.model_manager.downloader.cancel_all()
-        self.thread_pool.clear()
+        # Do not clear queued workers here: cancellable workers have been signalled,
+        # and queued cleanup tasks (notably microphone release) must be allowed to run.
         if not self.thread_pool.waitForDone(15000):
             QMessageBox.warning(
                 self, "Background task still running",

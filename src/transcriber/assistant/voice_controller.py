@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import StrEnum
-from threading import RLock
+from queue import Empty, Full, Queue
+from threading import Event, RLock, Thread
 from time import monotonic
 
 
@@ -120,68 +121,134 @@ class VoiceAgentController:
 
 
 class VoskWakeWordDetector:
-    """Optional local phrase detector. It never writes or uploads audio.
+    """Optional phrase detector with lightweight callback and bounded worker queue."""
 
-    Requires ``pip install 'transcriber[voice]'`` and a separately downloaded
-    Vosk model whose license/weights have been reviewed by the user.
-    """
-
-    def __init__(self, model_path, phrase: str, *, device=None, on_wake=None):
+    def __init__(self, model_path, phrase: str, *, device=None, on_wake=None, on_error=None):
         self.model_path = str(model_path)
         self.phrase = " ".join(phrase.casefold().split())
         self.device = device
         self.on_wake = on_wake
+        self.on_error = on_error
         self._stream = None
         self._recognizer = None
         self._model = None
-        self._lock = RLock()
+        self._audio_queue: Queue[bytes] | None = None
+        self._stop_event = Event()
+        self._worker: Thread | None = None
+        self._queue_overflows = 0
+        self._device_status_events = 0
+        self._metrics_lock = RLock()
 
     def start(self) -> None:
         if not self.phrase:
             raise ValueError("Wake phrase cannot be empty")
         try:
-            import json
-
             import sounddevice as sd
             from vosk import KaldiRecognizer, Model
         except ImportError as exc:
             raise RuntimeError("Local Vosk wake detection requires the optional voice dependencies") from exc
-        with self._lock:
-            if self._stream is not None:
-                return
-            self._model = Model(self.model_path)
-            self._recognizer = KaldiRecognizer(self._model, 16000, json.dumps([self.phrase]))
-            self._recognizer.SetWords(False)
-            self._stream = sd.RawInputStream(
-                samplerate=16000, blocksize=4000, device=self.device,
-                dtype="int16", channels=1, callback=self._audio_callback,
-            )
+        if self._stream is not None:
+            return
+        if self._worker is not None and self._worker.is_alive():
+            raise RuntimeError("The previous Vosk detector worker is still shutting down.")
+        self._model = Model(self.model_path)
+        self._recognizer = KaldiRecognizer(self._model, 16000, json.dumps([self.phrase]))
+        self._recognizer.SetWords(False)
+        self._audio_queue = Queue(maxsize=40)
+        self._stop_event.clear()
+        self._queue_overflows = 0
+        self._device_status_events = 0
+        self._worker = Thread(
+            target=self._recognition_loop,
+            name="Transcriber-Vosk-wake",
+            daemon=True,
+        )
+        self._stream = sd.RawInputStream(
+            samplerate=16000, blocksize=4000, device=self.device,
+            dtype="int16", channels=1, callback=self._audio_callback,
+        )
+        self._worker.start()
+        try:
             self._stream.start()
+        except Exception:
+            self.stop()
+            raise
 
     def _audio_callback(self, indata, frames, time_info, status) -> None:
+        """Only enqueue PCM; recognition and JSON parsing run on the worker."""
         if status:
+            with self._metrics_lock:
+                self._device_status_events += 1
+        audio_queue = self._audio_queue
+        if self._stop_event.is_set() or audio_queue is None:
             return
-        recognizer = self._recognizer
-        if recognizer is None:
-            return
-        if recognizer.AcceptWaveform(bytes(indata)):
+        try:
+            audio_queue.put_nowait(bytes(indata))
+        except Full:
+            with self._metrics_lock:
+                self._queue_overflows += 1
+
+    def _recognition_loop(self):
+        try:
+            while not self._stop_event.is_set():
+                audio_queue = self._audio_queue
+                recognizer = self._recognizer
+                if audio_queue is None or recognizer is None:
+                    return
+                try:
+                    payload = audio_queue.get(timeout=0.15)
+                except Empty:
+                    self._report_audio_metrics()
+                    continue
+                if self._stop_event.is_set():
+                    break
+                if recognizer.AcceptWaveform(payload):
+                    try:
+                        recognized = json.loads(recognizer.Result()).get("text", "")
+                    except (ValueError, TypeError):
+                        recognized = ""
+                    normalized = " ".join(str(recognized).casefold().split())
+                    if normalized == self.phrase and self.on_wake:
+                        try:
+                            self.on_wake()
+                        except Exception as exc:
+                            self._report_error(str(exc))
+                self._report_audio_metrics()
+        except Exception as exc:
+            self._report_error(str(exc))
+            self._stop_event.set()
+
+    def _report_audio_metrics(self):
+        with self._metrics_lock:
+            overflows, self._queue_overflows = self._queue_overflows, 0
+            status_events, self._device_status_events = self._device_status_events, 0
+        if overflows:
+            self._report_error(f"Vosk wake queue overflow; dropped {overflows} audio chunks")
+        if status_events:
+            self._report_error(f"Microphone reported {status_events} audio status event(s)")
+
+    def _report_error(self, message: str):
+        if self.on_error:
             try:
-                import json
-                recognized = json.loads(recognizer.Result()).get("text", "")
-            except (ValueError, TypeError):
-                return
-            normalized = " ".join(str(recognized).casefold().split())
-            if normalized == self.phrase and self.on_wake:
-                self.on_wake()
+                self.on_error(message)
+            except Exception:
+                pass
 
     def stop(self) -> None:
-        with self._lock:
-            stream, self._stream = self._stream, None
-            self._recognizer = None
-            self._model = None
+        stream, self._stream = self._stream, None
+        self._stop_event.set()
         if stream:
             try:
                 stream.stop()
+            finally:
                 stream.close()
-            except Exception:
-                pass
+        worker = self._worker
+        if worker and worker is not __import__("threading").current_thread():
+            worker.join(timeout=5.0)
+            if worker.is_alive():
+                self._report_error("Vosk wake detector is still shutting down.")
+                return
+        self._worker = None
+        self._recognizer = None
+        self._model = None
+        self._audio_queue = None

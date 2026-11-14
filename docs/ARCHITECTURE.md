@@ -33,7 +33,7 @@ The OpenCode ACP client starts `[opencode, acp]` in the selected absolute workin
 
 MCP uses stdio for its host-facing transport. Its tools call the desktop process through IPC, not direct Python object access. The IPC request contains a version, request ID and high-entropy per-run token. Unix uses a private domain socket; Windows uses a loopback-only TCP fallback. Endpoint files are restricted to the current user where OS permissions support it. The GUI must be running for state/actions to be available.
 
-Optional local Vosk capture opens a microphone only after the user explicitly enables it. Audio frames are used in memory by the recognizer and are not intentionally written or uploaded. The current wake phrase detector and Persian accuracy need device/language benchmarking; it is not advertised as an always-on low-power multilingual product.
+Optional local Vosk capture opens a microphone only after the user explicitly enables it. The PortAudio callback performs bounded non-blocking enqueue into a fixed-size PCM queue; a dedicated recognition worker owns all Vosk calls, silence/noise tracking and command finalization. Overflow is reported and dropped chunks are not persisted. Audio remains in memory and is not intentionally written or uploaded. Voice command submission is manual by default; an explicit setting enables automatic submission to an already connected OpenCode session. Wake phrase and Persian accuracy still need device/language benchmarking; this is not advertised as an always-on low-power multilingual product.
 
 ## Model runtime and resource policy
 

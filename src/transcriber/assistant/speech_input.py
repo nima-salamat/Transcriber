@@ -134,6 +134,15 @@ class VoskVoiceAgent:
                 if self._ptt_requested.is_set():
                     self._ptt_requested.clear()
                     if self._mode == "wake":
+                        # Discard queued pre-press audio so a PTT command cannot
+                        # accidentally include speech captured before the click.
+                        audio_queue = self._audio_queue
+                        if audio_queue is not None:
+                            while True:
+                                try:
+                                    audio_queue.get_nowait()
+                                except queue.Empty:
+                                    break
                         self._begin_command()
                         self._notify("Push-to-talk · listening locally")
                 self._report_audio_metrics()
