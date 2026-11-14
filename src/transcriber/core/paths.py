@@ -10,7 +10,13 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from platformdirs import user_cache_dir, user_config_dir, user_data_dir, user_log_dir, user_music_dir
+from platformdirs import (
+    user_cache_dir,
+    user_config_dir,
+    user_data_dir,
+    user_log_dir,
+    user_music_dir,
+)
 
 APP_NAME = "transcriber"
 
