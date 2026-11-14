@@ -167,6 +167,8 @@ class ModelDownloader:
 
         removed_bytes = 0
         staging_root = self.registry.root / ".staging"
+        if staging_root.is_symlink():
+            raise ValueError("Refusing to remove download data through a symbolic-link staging directory.")
         staging = staging_root / f"{self.registry.directory_name(repo_id)}-{task_id}"
         if staging.parent == staging_root and self._remove_path(staging):
             removed_bytes += 1
@@ -181,6 +183,8 @@ class ModelDownloader:
 
         cache_info = scan_cache_dir(cache_dir=self.cache_dir)
         repo_cache = self.cache_dir / f"models--{repo_id.replace('/', '--')}"
+        if repo_cache.is_symlink():
+            raise ValueError("Refusing to remove Hugging Face cache data through a symbolic link.")
         blobs_dir = repo_cache / "blobs"
         for incomplete in cache_info.incomplete_files:
             partial = Path(incomplete.file_path)
