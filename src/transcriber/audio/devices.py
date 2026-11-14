@@ -6,12 +6,12 @@ from PySide6.QtMultimedia import QAudioDevice, QMediaDevices
 
 
 def audio_device_id(device: QAudioDevice) -> str:
-    """Return a stable, lossless string for Qt's opaque QByteArray device ID."""
+    """Return Qt device IDs in the same UTF-8 form used by earlier app versions."""
     raw = device.id()
     if isinstance(raw, str):
         return raw
     try:
-        return bytes(raw).hex()
+        return bytes(raw).decode("utf-8", "replace")
     except (TypeError, ValueError):
         return str(raw)
 
