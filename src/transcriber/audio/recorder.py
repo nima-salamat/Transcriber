@@ -233,9 +233,10 @@ class QtAudioRecorder(QObject):
         if frame_bytes <= 0 or byte_rate <= 0:
             raise RuntimeError("The active microphone format cannot be resumed safely.")
         requested = max(0.0, float(position_seconds))
+        previous_data_bytes = self._data_bytes
         byte_count = int(requested * byte_rate)
         byte_count -= byte_count % frame_bytes
-        byte_count = min(self._data_bytes, byte_count)
+        byte_count = min(previous_data_bytes, byte_count)
         self._stream.flush()
         self._stream.seek(44 + byte_count)
         self._stream.truncate()
@@ -243,7 +244,7 @@ class QtAudioRecorder(QObject):
         self._elapsed_before_pause = byte_count / byte_rate
         if self._peaks:
             peak_count = max(0, min(len(self._peaks), round(
-                len(self._peaks) * self._elapsed_before_pause / max(0.001, self.duration())
+                len(self._peaks) * byte_count / max(1, previous_data_bytes)
             )))
             self._peaks = self._peaks[:peak_count]
             self.waveform_changed.emit(list(self._peaks))
