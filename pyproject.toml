@@ -32,7 +32,7 @@ dependencies = [
 # Faster-Whisper 1.2.1 passes metadata_errors to av.open; PyAV 19 removed it.
 asr = ["faster-whisper>=1.1,<2", "av>=11,<19"]
 cloud = ["google-cloud-speech>=2.27,<3"]
-voice = ["sounddevice>=0.5,<1", "vosk>=0.3.45,<1"]
+voice = ["sounddevice>=0.5,<1", "vosk>=0.3.45,<1", "av>=11,<19"]
 agent = ["mcp>=2,<3"]
 documents = [
   "python-docx>=1.1,<2",
