@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -51,6 +52,7 @@ class ModelCard(Card):
         super().__init__(parent)
         self.model = model
         self.report = None
+        self.installed_info = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 15, 18, 15)
         layout.setSpacing(8)
@@ -108,11 +110,9 @@ class ModelCard(Card):
         if report.compatible:
             self.compatibility.setText("Compatible · Faster-Whisper")
             self.compatibility.setStyleSheet("color: #36a47e; font-weight: 600;")
-            self.install_button.setEnabled(True)
         else:
             self.compatibility.setText("Not compatible")
             self.compatibility.setStyleSheet("color: #d65a65; font-weight: 600;")
-            self.install_button.setEnabled(False)
         files = []
         sizes = {item.name: item.size for item in metadata.files}
         total = 0
@@ -130,6 +130,31 @@ class ModelCard(Card):
             f"Estimated download: {size_text}\nFiles: " + (", ".join(files) or "Not provided") +
             f"\n{report.reason}{missing}\nPinned revision: {metadata.revision or 'Unknown'}"
         )
+        self.set_installed(self.installed_info)
+
+    def set_installed(self, installed_info):
+        """Keep Hub inspection and local installation state visible together."""
+        self.installed_info = installed_info
+        if installed_info:
+            compatible = bool(installed_info.get("compatible"))
+            self.compatibility.setText(
+                "Installed · Ready" if compatible else "Installed · Repair needed"
+            )
+            self.compatibility.setStyleSheet(
+                "color: #36a47e; font-weight: 700;" if compatible
+                else "color: #d49a42; font-weight: 700;"
+            )
+            self.install_button.setText("Installed" if compatible else "Installed · Repair")
+            self.install_button.setEnabled(False)
+            path = installed_info.get("path")
+            revision = installed_info.get("revision")
+            self.detail_label.setText(
+                f"Local installation detected · revision {revision or 'unknown'}"
+                + (f"\n{path}" if path else "")
+            )
+        else:
+            self.install_button.setText("Install model")
+            self.install_button.setEnabled(bool(self.report and self.report.compatible))
 
     def set_download_progress(self, progress):
         self.progress.setVisible(True)
@@ -146,7 +171,12 @@ class ModelCard(Card):
         if progress.state in {"Installed", "Failed", "Cancelled", "Paused", "Stopped"}:
             self.progress.setRange(0, 100)
             self.progress.setVisible(progress.state != "Installed")
-            self.install_button.setEnabled(progress.state != "Installed" and bool(self.report and self.report.compatible))
+            if progress.state == "Installed":
+                self.install_button.setText("Installed")
+                self.install_button.setEnabled(False)
+            elif not self.installed_info:
+                self.install_button.setText("Install model")
+                self.install_button.setEnabled(bool(self.report and self.report.compatible))
 
 
 class ModelLibraryPage(QWidget):
@@ -160,6 +190,8 @@ class ModelLibraryPage(QWidget):
         self.thread_pool = thread_pool
         self.release_active_model = release_active_model
         self.cards: dict[str, ModelCard] = {}
+        self._installed_by_id: dict[str, dict] = {}
+        self._installed_card_rows: list[tuple[QWidget, str]] = []
         self._downloads: dict[str, threading.Event] = {}
         self._download_task_ids: dict[str, str] = {}
         self._download_workers: dict[str, FunctionWorker] = {}
@@ -235,18 +267,31 @@ class ModelLibraryPage(QWidget):
         installed = QWidget()
         installed.setObjectName("InstalledTab")
         installed_layout = QVBoxLayout(installed)
+        installed_layout.setContentsMargins(14, 14, 14, 14)
+        installed_layout.setSpacing(10)
+        installed_toolbar = QHBoxLayout()
+        self.installed_summary = QLabel("Installed models")
+        self.installed_summary.setStyleSheet("font-size: 15px; font-weight: 650;")
+        self.installed_search = QLineEdit()
+        self.installed_search.setPlaceholderText("Filter installed models…")
+        self.installed_search.textChanged.connect(self._filter_installed_cards)
+        refresh = QPushButton("Refresh")
+        refresh.clicked.connect(self.refresh_installed)
+        installed_toolbar.addWidget(self.installed_summary, 1)
+        installed_toolbar.addWidget(self.installed_search, 1)
+        installed_toolbar.addWidget(refresh)
+        installed_layout.addLayout(installed_toolbar)
         self.installed_scroll = QScrollArea()
         self.installed_scroll.setWidgetResizable(True)
         self.installed_container = QWidget()
-        self.installed_cards = QVBoxLayout(self.installed_container)
-        self.installed_cards.setContentsMargins(0, 4, 8, 4)
-        self.installed_cards.setSpacing(10)
-        self.installed_cards.addStretch(1)
+        self.installed_cards = QGridLayout(self.installed_container)
+        self.installed_cards.setContentsMargins(0, 4, 8, 8)
+        self.installed_cards.setHorizontalSpacing(12)
+        self.installed_cards.setVerticalSpacing(12)
+        self.installed_cards.setColumnStretch(0, 1)
+        self.installed_cards.setColumnStretch(1, 1)
         self.installed_scroll.setWidget(self.installed_container)
         installed_layout.addWidget(self.installed_scroll, 1)
-        refresh = QPushButton("Refresh installed models")
-        refresh.clicked.connect(self.refresh_installed)
-        installed_layout.addWidget(refresh)
         self.tabs.addTab(installed, "Installed")
 
         import_tab = QWidget()
@@ -367,6 +412,7 @@ class ModelLibraryPage(QWidget):
         if self.discover_cards.count() and self.discover_cards.itemAt(self.discover_cards.count() - 1).spacerItem():
             self.discover_cards.takeAt(self.discover_cards.count() - 1)
         card = ModelCard(model)
+        card.set_installed(self._installed_by_id.get(model.repo_id))
         card.inspect_requested.connect(self.inspect_model)
         card.install_requested.connect(self.install_model)
         card.open_requested.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
@@ -437,6 +483,7 @@ class ModelLibraryPage(QWidget):
         if card and (owner is None or card is owner):
             card.inspect_button.setEnabled(True)
             card.set_inspection(*result)
+            card.set_installed(self._installed_by_id.get(repo_id))
 
     def _inspection_error(self, repo_id, message, owner=None):
         card = self.cards.get(repo_id)
@@ -754,67 +801,157 @@ class ModelLibraryPage(QWidget):
 
     def refresh_installed(self):
         self._clear_installed_cards()
-        self.installed_cards.insertWidget(0, QLabel("Inspecting installed models…"))
+        self.installed_cards.addWidget(QLabel("Refreshing local model registry…"), 0, 0, 1, 2)
         worker = FunctionWorker(lambda _emit: self.model_manager.installed(include_sizes=True))
         worker.signals.result.connect(self._show_installed_models)
         worker.signals.error.connect(self._show_installed_error)
         self.thread_pool.start(worker)
 
     def _clear_installed_cards(self):
+        self._installed_card_rows.clear()
         while self.installed_cards.count() > 0:
             item = self.installed_cards.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        self.installed_cards.addStretch(1)
+
+    def _sync_discover_install_states(self):
+        for repo_id, card in self.cards.items():
+            card.set_installed(self._installed_by_id.get(repo_id))
+
+    def _filter_installed_cards(self, query):
+        needle = str(query or "").strip().casefold()
+        for card, searchable in self._installed_card_rows:
+            card.setVisible(not needle or needle in searchable)
 
     def _show_installed_models(self, installed):
         self._clear_installed_cards()
-        for model in installed:
+        self._installed_by_id = {item["repo_id"]: item for item in installed}
+        self._sync_discover_install_states()
+        count = len(installed)
+        self.installed_summary.setText(
+            f"{count} installed model{'s' if count != 1 else ''}"
+        )
+        if not installed:
+            empty = QLabel("No compatible local models are registered yet. Install one from Discover or import a model.")
+            empty.setObjectName("Muted")
+            empty.setWordWrap(True)
+            self.installed_cards.addWidget(empty, 0, 0, 1, 2)
+            return
+
+        default_model = self.settings_store.settings.default_model
+        for index, model in enumerate(installed):
             card = Card()
+            card.setMinimumWidth(300)
             layout = QVBoxLayout(card)
-            layout.setContentsMargins(18, 14, 18, 14)
+            layout.setContentsMargins(16, 14, 16, 14)
+            layout.setSpacing(9)
+
+            top = QHBoxLayout()
             title = QLabel(model["repo_id"])
-            title.setStyleSheet("font-weight: 650; font-size: 15px;")
-            status = "Active · protected" if model["active"] else "Installed"
+            title.setStyleSheet("font-size: 14px; font-weight: 700;")
+            title.setWordWrap(True)
+            top.addWidget(title, 1)
+
+            state = "ACTIVE" if model["active"] else "INSTALLED"
+            state_color = "#36a47e" if model["compatible"] else "#d49a42"
             if not model["compatible"]:
-                status = "Corrupted or incompatible · reinstall recommended"
+                state = "REPAIR NEEDED"
+            state_label = QLabel(state)
+            state_label.setStyleSheet(
+                f"font-size: 9px; font-weight: 750; color: {state_color}; "
+                "padding: 4px 7px; border: 1px solid "
+                f"{state_color}; border-radius: 7px;"
+            )
+            top.addWidget(state_label, 0, Qt.AlignTop)
+            layout.addLayout(top)
+
+            if model["repo_id"] == default_model:
+                default_label = QLabel("★  DEFAULT FOR NEW TRANSCRIPTIONS")
+                default_label.setStyleSheet(
+                    "font-size: 9px; font-weight: 700; color: #75a7ff; "
+                    "padding: 4px 7px; border-radius: 6px; "
+                    "background: rgba(117, 167, 255, 0.12);"
+                )
+                layout.addWidget(default_label)
+
+            revision = str(model.get("revision") or "Unknown")
             info = QLabel(
-                f"{status} · {_human_size(model['size_bytes'])} · revision {model.get('revision') or 'Unknown'}\n"
-                f"Location: {model['path']}\n{model.get('compatibility_message', '')}"
+                f"Faster-Whisper / CTranslate2  ·  {_human_size(model.get('size_bytes'))}\n"
+                f"Revision: {revision[:16]}{'…' if len(revision) > 16 else ''}"
             )
             info.setObjectName("Muted")
             info.setWordWrap(True)
+            layout.addWidget(info)
+
+            path_label = QLabel(str(model["path"]))
+            path_label.setObjectName("Muted")
+            path_label.setWordWrap(True)
+            path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            path_label.setToolTip(str(model["path"]))
+            layout.addWidget(path_label)
+
+            compatibility = QLabel(
+                model.get("compatibility_message") or "Model files validated and ready to use."
+            )
+            compatibility.setObjectName("Muted")
+            compatibility.setWordWrap(True)
+            layout.addWidget(compatibility)
+
             actions = QHBoxLayout()
-            open_button = QPushButton("Show files")
-            open_button.clicked.connect(lambda _=False, p=model["path"]: QDesktopServices.openUrl(QUrl.fromLocalFile(p)))
-            default_button = QPushButton("Set as default")
-            default_button.setEnabled(self.settings_store.settings.default_model != model["repo_id"])
-            default_button.clicked.connect(lambda _=False, rid=model["repo_id"]: self.set_default_model(rid))
-            load_button = QPushButton("Unload" if model["active"] else "Load model")
-            load_button.clicked.connect(lambda _=False, rid=model["repo_id"], active=model["active"]:
-                                        self.release_active_model() if active else self.load_model(rid))
-            delete_button = QPushButton("Delete model")
+            actions.setSpacing(6)
+            open_button = QPushButton("Open folder")
+            open_button.clicked.connect(
+                lambda _=False, p=model["path"]: QDesktopServices.openUrl(QUrl.fromLocalFile(p))
+            )
+            default_button = QPushButton("★ Default" if model["repo_id"] == default_model else "Set default")
+            default_button.setEnabled(model["compatible"] and model["repo_id"] != default_model)
+            default_button.clicked.connect(
+                lambda _=False, rid=model["repo_id"]: self.set_default_model(rid)
+            )
+            load_button = QPushButton("Unload" if model["active"] else "Load")
+            load_button.setEnabled(model["compatible"])
+            load_button.clicked.connect(
+                lambda _=False, rid=model["repo_id"], active=model["active"]:
+                self.release_active_model() if active else self.load_model(rid)
+            )
+            delete_button = QPushButton("Delete")
             delete_button.setObjectName("Danger")
             delete_button.setEnabled(not model["active"])
-            delete_button.clicked.connect(lambda _=False, rid=model["repo_id"]: self.delete_model(rid))
+            delete_button.clicked.connect(
+                lambda _=False, rid=model["repo_id"]: self.delete_model(rid)
+            )
             actions.addWidget(open_button)
             actions.addWidget(default_button)
             actions.addWidget(load_button)
             actions.addStretch(1)
             actions.addWidget(delete_button)
-            layout.addWidget(title)
-            layout.addWidget(info)
             layout.addLayout(actions)
-            self.installed_cards.addWidget(card)
-        self.installed_cards.addStretch(1)
+
+            row, column = divmod(index, 2)
+            self.installed_cards.addWidget(card, row, column)
+            searchable = " ".join((
+                model["repo_id"], str(model.get("revision") or ""),
+                str(model.get("path") or ""),
+            )).casefold()
+            self._installed_card_rows.append((card, searchable))
+
+        self.installed_cards.setRowStretch((count + 1) // 2, 1)
+        self._filter_installed_cards(self.installed_search.text())
 
     def _show_installed_error(self, message):
         self._clear_installed_cards()
-        self.installed_cards.insertWidget(0, QLabel(f"Could not inspect installed models: {message}"))
+        self._installed_by_id = {}
+        self._sync_discover_install_states()
+        self.installed_summary.setText("Installed models unavailable")
+        label = QLabel(f"Could not inspect installed models: {message}")
+        label.setObjectName("Muted")
+        label.setWordWrap(True)
+        self.installed_cards.addWidget(label, 0, 0, 1, 2)
 
     def set_default_model(self, repo_id: str):
         self.settings_store.update(default_model=repo_id)
         self.default_model_changed.emit(repo_id)
+        self._sync_discover_install_states()
         self.refresh_installed()
         self.status_message.emit(f"Default model set to {repo_id}")
 
