@@ -163,6 +163,12 @@ class TranscriptionPage(QWidget):
         self.player.duration_changed.connect(self._duration_changed)
         self.time_label = QLabel("00:00 / 00:00")
         self.time_label.setObjectName("Muted")
+        self.player_status = QLabel("No audio loaded")
+        self.player_status.setObjectName("Muted")
+        self.player_status.setMinimumWidth(120)
+        self.player_status.setMaximumWidth(180)
+        self.player_status.setWordWrap(True)
+        self.player.status_changed.connect(self.player_status.setText)
         self.speed_combo = QComboBox()
         for speed in ("0.75×", "1.0×", "1.25×", "1.5×", "2.0×"):
             self.speed_combo.addItem(speed, float(speed[:-1]))
@@ -176,6 +182,7 @@ class TranscriptionPage(QWidget):
         player_layout.addWidget(self.play_button)
         player_layout.addWidget(self.seek_slider, 1)
         player_layout.addWidget(self.time_label)
+        player_layout.addWidget(self.player_status)
         player_layout.addWidget(self.speed_combo)
         player_layout.addWidget(QLabel("Vol"))
         player_layout.addWidget(self.volume_slider)
@@ -484,9 +491,17 @@ class TranscriptionPage(QWidget):
 
     def _on_transcription_complete(self, outcome):
         self.engine, result = outcome
+        transcript_text = str(result.text or "")
+        if not transcript_text.strip() and result.segments:
+            # Some engine adapters may return timed segments without the merged
+            # text field. Recover the visible transcript without inventing words.
+            transcript_text = " ".join(
+                segment.text.strip() for segment in result.segments if segment.text.strip()
+            )
+            result.text = transcript_text
         self.command_history.clear()
         self._pending_text_undo_snapshot = None
-        self.document.replace_all(result.segments, text=result.text)
+        self.document.replace_all(result.segments, text=transcript_text)
         self.transcript_id = result.transcript_id
         self._record_metadata = {
             "title": self.audio_path.stem if self.audio_path else "Transcript",
@@ -495,22 +510,36 @@ class TranscriptionPage(QWidget):
             "model_id": self.model_combo.currentData() if self.engine and self.engine.engine_id == "faster-whisper" else None,
             "language": result.language,
             "duration": result.duration,
-            "original_text": result.text,
+            "original_text": transcript_text,
             "tags": [],
             "favorite": False,
         }
         self._loading_text = True
-        self.editor.setPlainText(result.text)
+        self.editor.setPlainText(transcript_text)
         self._loading_text = False
-        self._editor_base_text = result.text
+        self._editor_base_text = transcript_text
+        if transcript_text.strip():
+            self.editor.setPlaceholderText("Your transcript will appear here. You can edit it at any time.")
+            self.progress_label.setText(
+                f"Saved locally · {result.language or 'language unknown'} · {len(result.segments)} segments"
+            )
+            self.status_message.emit("Transcription completed and saved to History")
+        else:
+            self.editor.setPlaceholderText(
+                "No speech was detected in this recording. Check the microphone input level and recording, then try again."
+            )
+            self.progress_label.setText(
+                f"No speech detected · {result.duration:.1f}s audio · {len(result.segments)} segments"
+            )
+            self.status_message.emit(
+                "Transcription finished, but no speech was detected. Check that the microphone captured audible speech."
+            )
         self._rebuild_segment_ranges()
-        self.progress_label.setText(
-            f"Saved locally · {result.language or 'language unknown'} · {len(result.segments)} segments"
-        )
-        self.status_message.emit("Transcription completed and saved to History")
         self._update_word_count()
-        self.transcript_changed.emit(list(self.segments), str(self.audio_path) if self.audio_path else "",
-                                     result.language or "", result.duration, result.text)
+        self.transcript_changed.emit(
+            list(self.segments), str(self.audio_path) if self.audio_path else "",
+            result.language or "", result.duration, transcript_text
+        )
 
     def _on_transcription_error(self, message: str):
         if self.cancel_event and self.cancel_event.is_set():
@@ -683,7 +712,7 @@ class TranscriptionPage(QWidget):
         else:
             self.file_name.setText("Source audio is unavailable")
             self.file_name.setToolTip(str(self.audio_path) if self.audio_path else "")
-            self.player.player.setSource(QUrl())
+            self.player.clear_source()
             self.audio_changed.emit("")
         self.document.replace_all(
             [TranscriptSegment(**item) for item in record["segments"]],
