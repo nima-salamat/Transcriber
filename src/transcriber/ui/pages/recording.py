@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -189,7 +190,9 @@ class RecordingPage(QWidget):
         controls.setSpacing(10)
         controls.addStretch(1)
         self.play_preview_button = QPushButton()
-        self.play_preview_button.setIcon(self.icons.icon("play", size=18))
+        self.play_preview_button.setIcon(
+            self.icons.icon("play", self._neutral_icon_color(), 18)
+        )
         self.play_preview_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
         self.play_preview_button.setToolTip("Listen to the paused recording")
         self.play_preview_button.setFixedSize(46, 46)
@@ -207,19 +210,21 @@ class RecordingPage(QWidget):
 
         self.stop_button = QPushButton()
         self.stop_button.setObjectName("StopRecording")
-        self.stop_button.setIcon(self.icons.icon("stop", "#d65a68", 21))
+        self.stop_button.setIcon(self.icons.icon("stop", "#ffffff", 21))
         self.stop_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(21, 21))
         self.stop_button.setFixedSize(54, 54)
         self.stop_button.setToolTip("Finish and save this recording")
+        self.stop_button.setAccessibleName("Stop and save recording")
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self.stop_recording)
         controls.addWidget(self.stop_button)
 
         self.cancel_button = QPushButton()
-        self.cancel_button.setIcon(self.icons.icon("discard", size=18))
+        self.cancel_button.setIcon(self.icons.icon("discard", "#ffffff", 18))
         self.cancel_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
         self.cancel_button.setFixedSize(44, 44)
         self.cancel_button.setToolTip("Discard this take")
+        self.cancel_button.setAccessibleName("Discard recording")
         self.cancel_button.setObjectName("Danger")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_recording)
@@ -465,7 +470,9 @@ class RecordingPage(QWidget):
 
     def _preview_playback_changed(self, playing: bool):
         name = "pause" if playing else "play"
-        self.play_preview_button.setIcon(self.icons.icon(name, size=18))
+        self.play_preview_button.setIcon(
+            self.icons.icon(name, self._neutral_icon_color(), 18)
+        )
         self.play_preview_button.setToolTip("Pause preview" if playing else "Listen to the paused recording")
 
     def _register_saved_recording(self, raw_path: str):
@@ -583,6 +590,9 @@ class RecordingPage(QWidget):
                 self.state_label.setText("Ready when you are")
                 self.waveform.set_interactive(False)
 
+    def _neutral_icon_color(self) -> str:
+        return self.palette().color(QPalette.ColorRole.ButtonText).name()
+
     def _style_status(self, state: str):
         styles = {
             "ready": "background: rgba(61, 177, 132, 0.14); color: #45b88c;",
@@ -613,10 +623,11 @@ class RecordingPage(QWidget):
             "QPushButton#RecordPrimary:disabled { background: #8993a1; color: white; }"
         )
         self.stop_button.setStyleSheet(
-            "QPushButton#StopRecording { border-radius: 27px; background: rgba(214,90,104,0.10); "
-            "border: 1px solid rgba(214,90,104,0.35); }"
-            "QPushButton#StopRecording:hover { background: rgba(214,90,104,0.20); }"
-            "QPushButton#StopRecording:disabled { opacity: 0.4; }"
+            "QPushButton#StopRecording { border-radius: 27px; background: #c94355; "
+            "border: 1px solid #c94355; }"
+            "QPushButton#StopRecording:hover { background: #ad3446; border-color: #ad3446; }"
+            "QPushButton#StopRecording:disabled { background: rgba(201,67,85,0.12); "
+            "border-color: rgba(201,67,85,0.18); }"
         )
 
     def _pulse_record_button(self):
