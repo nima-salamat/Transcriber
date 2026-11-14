@@ -14,7 +14,7 @@ from transcriber.models.registry import ModelRegistry
 from transcriber.storage.database import Database
 from transcriber.storage.downloads import DownloadRepository
 from transcriber.ui.design.tokens import get_tokens
-from transcriber.ui.pages.models import _card_frame_stylesheet
+from transcriber.ui.pages.models import _card_frame_stylesheet, _installed_runtime_key
 
 
 def _download_repository(tmp_path: Path) -> DownloadRepository:
@@ -195,3 +195,34 @@ def test_model_card_stylesheets_have_balanced_qss_braces(theme):
         assert stylesheet.count("{") == stylesheet.count("}")
         assert stylesheet.endswith("}")
         assert "}}" not in stylesheet
+
+
+
+@pytest.mark.parametrize(
+    "model,expected",
+    [
+        ({"runtime": "vosk", "repo_id": "local/imported"}, "vosk"),
+        ({"runtime": "Vosk / Kaldi", "repo_id": "local/imported"}, "vosk"),
+        ({"repo_id": "vosk/vosk-model-small-fa-0.42"}, "vosk"),
+        ({"repo_id": "local/vosk-model-small-fa-0.42"}, "vosk"),
+        ({"metadata": {"runtime": "vosk"}, "repo_id": "local/imported"}, "vosk"),
+        ({"runtime": "FASTER-WHISPER", "repo_id": "Systran/faster-whisper-small"}, "faster-whisper"),
+    ],
+)
+def test_installed_runtime_filter_recognises_current_and_legacy_vosk_metadata(model, expected):
+    assert _installed_runtime_key(model) == expected
+
+
+def test_model_library_uses_pixel_scrolling_and_fixed_card_heights():
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "src" / "transcriber" / "ui" / "pages" / "models.py"
+    ).read_text(encoding="utf-8")
+
+    assert "QAbstractItemView.ScrollMode.ScrollPerPixel" in source
+    assert "self.download_list.setUniformItemSizes(True)" in source
+    assert "row.setFixedHeight(236)" in source
+    assert "card.setFixedHeight(360)" in source
+    assert "self.installed_cards.setRowStretch(row_index, 0)" in source
