@@ -253,6 +253,7 @@ class MainWindow(QMainWindow):
             document=self.transcript_document,
             history=self.transcript_history,
             before_history_action=self.transcription_page._commit_pending_text_edit,
+            before_mutation=self.transcription_page._commit_pending_text_edit,
         )
         self.subtitle_page = SubtitleStudioPage()
         self.pages = {

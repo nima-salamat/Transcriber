@@ -616,6 +616,7 @@ class TranscriptionPage(QWidget):
         # record is already the new project. Calling it here could persist the
         # previous editor text under the newly assigned transcript ID.
         self.player.player.stop()
+        self._audio_duration_ms = 0
         if self.audio_path and self.audio_path.is_file():
             self.file_name.setText(self.audio_path.name)
             self.file_name.setToolTip(str(self.audio_path))
@@ -625,6 +626,7 @@ class TranscriptionPage(QWidget):
             self.file_name.setText("Source audio is unavailable")
             self.file_name.setToolTip(str(self.audio_path) if self.audio_path else "")
             self.player.player.setSource(QUrl())
+            self.audio_changed.emit("")
         self.document.replace_all(
             [TranscriptSegment(**item) for item in record["segments"]],
             text=record["text"],

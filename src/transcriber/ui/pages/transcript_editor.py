@@ -36,13 +36,14 @@ class TranscriptEditorPage(QWidget):
     document_changed = Signal(object)
     seek_requested = Signal(float)
 
-    def __init__(self, parent=None, *, document=None, history=None, before_history_action=None):
+    def __init__(self, parent=None, *, document=None, history=None, before_history_action=None, before_mutation=None):
         super().__init__(parent)
         self.document = document or TranscriptDocument()
         self.history = history or CommandHistory(self.document)
         if self.history.document is not self.document:
             raise ValueError("TranscriptEditorPage and CommandHistory must share the same TranscriptDocument")
         self.before_history_action = before_history_action
+        self.before_mutation = before_mutation
         self._busy_refresh = False
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
@@ -216,12 +217,17 @@ class TranscriptEditorPage(QWidget):
                 changes = {"speaker": item.text().strip() or None}
             else:
                 changes = {"text": item.text()}
-            self.history.execute(self.document.update_segment, segment_id, **changes)
+            self._execute_command(self.document.update_segment, segment_id, **changes)
             self.refresh()
             self.document_changed.emit(self.document)
         except Exception as exc:
             QMessageBox.warning(self, "Invalid segment edit", str(exc))
             self.refresh()
+
+    def _execute_command(self, operation, *args, **kwargs):
+        if self.before_mutation:
+            self.before_mutation()
+        return self.history.execute(operation, *args, **kwargs)
 
     def _finish_change(self, description):
         self.refresh()
@@ -282,14 +288,14 @@ class TranscriptEditorPage(QWidget):
             locked = [segment_id for segment_id in ids if self.document.get(segment_id).locked]
             if locked:
                 raise PermissionError("Unlock selected segments before deleting them.")
-            self.history.execute(self._delete_many, ids)
+            self._execute_command(self._delete_many, ids)
             self._finish_change(f"Deleted {len(ids)} segment(s)")
         except Exception as exc:
             QMessageBox.warning(self, "Delete failed", str(exc))
 
     def _run_edit(self, operation, *args, label="Updated"):
         try:
-            self.history.execute(operation, *args)
+            self._execute_command(operation, *args)
             self._finish_change(label)
         except Exception as exc:
             QMessageBox.warning(self, "Edit failed", str(exc))
@@ -422,7 +428,7 @@ class TranscriptEditorPage(QWidget):
         if QMessageBox.question(self, "Replace text", f"Replace {len(matches)} occurrence(s)?") != QMessageBox.Yes:
             return
         try:
-            self.history.execute(replace_text, self.document, query, replacement, regex=self.regex_check.isChecked())
+            self._execute_command(replace_text, self.document, query, replacement, regex=self.regex_check.isChecked())
             self._finish_change(f"Replaced {len(matches)} occurrence(s)")
         except Exception as exc:
             QMessageBox.warning(self, "Replace failed", str(exc))
@@ -452,17 +458,17 @@ class TranscriptEditorPage(QWidget):
         )
         if answer == QMessageBox.Yes:
             try:
-                self.history.execute(apply_cleanup, self.document, changes)
+                self._execute_command(apply_cleanup, self.document, changes)
                 self._finish_change(f"Applied cleanup to {len(changes)} segment(s)")
             except Exception as exc:
                 QMessageBox.warning(self, "Cleanup failed", str(exc))
 
     def set_bookmark(self, segment_id: str, bookmarked: bool):
-        self.history.execute(self.document.update_segment, segment_id, bookmarked=bookmarked)
+        self._execute_command(self.document.update_segment, segment_id, bookmarked=bookmarked)
         self._finish_change("Bookmark updated")
 
     def set_comment(self, segment_id: str, comment: str):
-        self.history.execute(self.document.update_segment, segment_id, comment=comment)
+        self._execute_command(self.document.update_segment, segment_id, comment=comment)
         self._finish_change("Comment updated")
 
     def snapshot_segments(self):
