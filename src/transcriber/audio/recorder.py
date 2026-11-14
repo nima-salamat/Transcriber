@@ -9,7 +9,7 @@ import time
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtMultimedia import QAudioDevice, QAudioFormat, QAudioSource, QMediaDevices, QtAudio
 
 
@@ -33,6 +33,11 @@ class QtAudioRecorder(QObject):
         self._elapsed_before_pause = 0.0
         self._state = "idle"
         self._last_duration_emit = 0.0
+        # Avoid QAudioSource.stateChanged(QAudio::State) Python slot conversion.
+        # The error enum is polled on the GUI event loop instead.
+        self._state_watchdog = QTimer(self)
+        self._state_watchdog.setInterval(250)
+        self._state_watchdog.timeout.connect(self._check_source_error)
         self.device_id: str | None = None
         self.device_name: str | None = None
 
@@ -89,8 +94,10 @@ class QtAudioRecorder(QObject):
             if self._io is None:
                 raise RuntimeError(f"Microphone could not start: {source.error()}")
             self._io.readyRead.connect(self._read_audio)
-            source.stateChanged.connect(self._source_state_changed)
             self._state = "recording"
+            if source.error() != QtAudio.Error.NoError:
+                raise RuntimeError(f"Microphone could not start: {source.error()}")
+            self._state_watchdog.start()
             self.state_changed.emit(self._state)
         except Exception:
             self._release_capture()
@@ -106,13 +113,23 @@ class QtAudioRecorder(QObject):
             self._state = "idle"
             raise
 
-    def _source_state_changed(self, _state) -> None:
-        if self._source and self._source.error() != QtAudio.Error.NoError:
-            error = self._source.error()
-            self.error_occurred.emit(f"Microphone capture failed: {error}")
-            # Save complete PCM frames already received; do not leave a dead
-            # QAudioSource attached to a UI that still claims to be recording.
-            self._finish_recording(publish=True)
+    def _check_source_error(self) -> None:
+        source = self._source
+        if source is None or self._state not in {"recording", "paused"}:
+            self._state_watchdog.stop()
+            return
+        try:
+            error = source.error()
+        except RuntimeError:
+            # The Qt source is already being destroyed.
+            return
+        if error == QtAudio.Error.NoError:
+            return
+        self._state_watchdog.stop()
+        self.error_occurred.emit(f"Microphone capture failed: {error}")
+        # Save complete PCM frames already received; do not leave a dead
+        # QAudioSource attached to a UI that still claims to be recording.
+        self._finish_recording(publish=True)
 
     def _read_audio(self) -> None:
         if not self._io or not self._stream:
@@ -165,6 +182,7 @@ class QtAudioRecorder(QObject):
         return self._finish_recording(publish=True)
 
     def _release_capture(self) -> None:
+        self._state_watchdog.stop()
         source, self._source = self._source, None
         io_device, self._io = self._io, None
         if io_device:
@@ -173,10 +191,6 @@ class QtAudioRecorder(QObject):
             except (RuntimeError, TypeError):
                 pass
         if source:
-            try:
-                source.stateChanged.disconnect(self._source_state_changed)
-            except (RuntimeError, TypeError):
-                pass
             source.stop()
             source.deleteLater()
 
