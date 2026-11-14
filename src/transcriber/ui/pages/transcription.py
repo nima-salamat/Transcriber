@@ -163,6 +163,7 @@ class TranscriptionPage(QWidget):
         self.player = AudioPlayer(self)
         self.play_button = QPushButton("▶")
         self.play_button.setFixedWidth(42)
+        self.play_button.setEnabled(False)
         self.play_button.clicked.connect(self.player.play_pause)
         self.player.playback_changed.connect(lambda playing: self.play_button.setText("Ⅱ" if playing else "▶"))
         self.seek_slider = QSlider(Qt.Horizontal)
@@ -427,6 +428,7 @@ class TranscriptionPage(QWidget):
             self._update_word_count()
         self.audio_path = audio
         self.close_audio_button.setEnabled(True)
+        self.play_button.setEnabled(True)
         self.file_name.setText(audio.name)
         self.file_name.setToolTip(str(audio))
         self.player.set_source(str(audio))
