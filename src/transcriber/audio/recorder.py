@@ -192,6 +192,15 @@ class QtAudioRecorder(QObject):
             b"data", data_bytes,
         )
 
+    def _clear_preview_snapshot(self) -> None:
+        preview, self._preview_path = self._preview_path, None
+        if preview is not None:
+            try:
+                preview.unlink(missing_ok=True)
+            except OSError:
+                # A media backend may briefly retain the preview file handle.
+                pass
+
     def preview_snapshot(self) -> Path | None:
         """Write a stable WAV snapshot of the paused take for auditioning."""
         if self._state != "paused" or not self._stream or not self._path or not self._format:
@@ -250,12 +259,7 @@ class QtAudioRecorder(QObject):
             )))
             self._peaks = self._peaks[:peak_count]
             self.waveform_changed.emit(list(self._peaks))
-        if self._preview_path:
-            try:
-                self._preview_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-            self._preview_path = None
+        self._clear_preview_snapshot()
         self._started = time.monotonic()
         self._source.resume()
         self._state = "recording"
@@ -321,18 +325,14 @@ class QtAudioRecorder(QObject):
         elif temporary:
             temporary.unlink(missing_ok=True)
         self._format = None
-        if self._preview_path:
-            self._preview_path.unlink(missing_ok=True)
-            self._preview_path = None
+        self._clear_preview_snapshot()
         if saved_path:
             self.recording_saved.emit(str(saved_path))
         return saved_path
 
     def cancel(self) -> None:
         self._finish_recording(publish=False)
-        if self._preview_path:
-            self._preview_path.unlink(missing_ok=True)
-            self._preview_path = None
+        self._clear_preview_snapshot()
         self._path = None
         self._format = None
         self._peaks = []
