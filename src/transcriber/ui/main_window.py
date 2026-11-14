@@ -5,7 +5,7 @@ from __future__ import annotations
 from concurrent.futures import CancelledError, Future
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, QThread, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, Qt, QThread, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -287,9 +287,16 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(content, 1)
         self.setCentralWidget(root)
 
+        self._drawer_animations = {}
         self.assistant_dock = QDockWidget("Inspector / AI Assistant", self)
         self.assistant_dock.setObjectName("AssistantDock")
         self.assistant_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.assistant_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        self.assistant_dock.setMinimumWidth(280)
         inspector_tabs = QTabWidget()
         properties = QWidget()
         properties_layout = QVBoxLayout(properties)
@@ -307,20 +314,52 @@ class MainWindow(QMainWindow):
         inspector_tabs.addTab(properties, "Properties")
         inspector_tabs.addTab(self.assistant_panel, "AI Assistant")
         self.assistant_dock.setWidget(inspector_tabs)
+        self._install_drawer_title_bar(
+            self.assistant_dock, "Inspector / AI Assistant", "☷", "width"
+        )
         self.addDockWidget(Qt.RightDockWidgetArea, self.assistant_dock)
 
         self.timeline_dock = QDockWidget("Audio Timeline", self)
         self.timeline_dock.setObjectName("TimelineDock")
         self.timeline_dock.setAllowedAreas(Qt.BottomDockWidgetArea)
+        self.timeline_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        self.timeline_dock.setMinimumHeight(140)
         self.timeline = WaveformTimeline()
         self.timeline.seek_requested.connect(lambda value: self.transcription_page.player.seek(int(value * 1000)))
         self.timeline_dock.setWidget(self.timeline)
+        self._install_drawer_title_bar(self.timeline_dock, "Audio Timeline", "〰", "height")
         self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
+        self.setCorner(Qt.BottomRightCorner, Qt.RightDockWidgetArea)
+        self.setCorner(Qt.BottomLeftCorner, Qt.BottomDockWidgetArea)
 
         status = QStatusBar()
-        status.showMessage("Ready · Local-first recognition")
         self.setStatusBar(status)
         self.status_bar = status
+        self.assistant_drawer_button = QPushButton("☷ Inspector")
+        self.assistant_drawer_button.setCheckable(True)
+        self.assistant_drawer_button.setToolTip("Show or hide the Inspector / AI Assistant drawer")
+        self.assistant_drawer_button.toggled.connect(
+            lambda visible: self._animate_drawer(self.assistant_dock, visible, "width")
+        )
+        self.timeline_drawer_button = QPushButton("〰 Waveform")
+        self.timeline_drawer_button.setCheckable(True)
+        self.timeline_drawer_button.setToolTip("Show or hide the audio waveform timeline drawer")
+        self.timeline_drawer_button.toggled.connect(
+            lambda visible: self._animate_drawer(self.timeline_dock, visible, "height")
+        )
+        status.addWidget(self.assistant_drawer_button)
+        status.addWidget(self.timeline_drawer_button)
+        status.showMessage("Ready · Local-first recognition")
+        self.assistant_dock.visibilityChanged.connect(
+            lambda visible: self._sync_drawer_controls(self.assistant_dock, visible)
+        )
+        self.timeline_dock.visibilityChanged.connect(
+            lambda visible: self._sync_drawer_controls(self.timeline_dock, visible)
+        )
 
         self.command_registry: list[dict] = []
         self.global_search_popup = GlobalSearchPopup(self, self._search_items)
@@ -330,6 +369,112 @@ class MainWindow(QMainWindow):
         self.command_palette_popup = CommandPalettePopup(self)
         self.command_palette_popup.command_activated.connect(self._run_palette_command)
         self._build_menus()
+
+    def _install_drawer_title_bar(self, dock, title: str, glyph: str, dimension: str):
+        title_bar = QWidget(dock)
+        title_layout = QHBoxLayout(title_bar)
+        title_layout.setContentsMargins(12, 5, 7, 5)
+        title_layout.setSpacing(9)
+        icon = QLabel(glyph)
+        icon.setStyleSheet("font-size: 16px; font-weight: 800;")
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-weight: 700;")
+        title_layout.addWidget(icon)
+        title_layout.addWidget(title_label, 1)
+        close_button = QPushButton("×")
+        close_button.setFixedSize(28, 28)
+        close_button.setToolTip("Close drawer")
+        close_button.setAccessibleName(f"Close {title}")
+        close_button.setStyleSheet(
+            "QPushButton { border: none; border-radius: 7px; font-size: 20px; "
+            "font-weight: 400; padding: 0; } "
+            "QPushButton:hover { background: rgba(140, 150, 165, 0.18); }"
+        )
+        close_button.clicked.connect(lambda _checked=False, target=dock, axis=dimension: self._animate_drawer(target, False, axis))
+        title_layout.addWidget(close_button)
+        dock.setTitleBarWidget(title_bar)
+
+    def _sync_drawer_controls(self, dock, visible: bool):
+        pairs = (
+            (self.assistant_dock, getattr(self, "assistant_drawer_button", None),
+             getattr(self, "assistant_view_action", None), "inspector_visible"),
+            (self.timeline_dock, getattr(self, "timeline_drawer_button", None),
+             getattr(self, "timeline_view_action", None), "timeline_visible"),
+        )
+        for target, button, action, setting in pairs:
+            if target is not dock:
+                continue
+            for control in (button, action):
+                if control is not None:
+                    previous = control.blockSignals(True)
+                    control.setChecked(bool(visible))
+                    control.blockSignals(previous)
+            self.settings_store.update(**{setting: bool(visible)})
+            break
+
+    def _animate_drawer(self, dock, visible: bool, dimension: str):
+        """Reveal a dock as an edge-attached drawer while retaining QMainWindow resizing."""
+        key = dock.objectName()
+        old = self._drawer_animations.pop(key, None)
+        if old is not None:
+            old.stop()
+            old.deleteLater()
+        property_name = b"maximumWidth" if dimension == "width" else b"maximumHeight"
+        maximum = dock.width() if dimension == "width" else dock.height()
+        minimum = dock.minimumWidth() if dimension == "width" else dock.minimumHeight()
+        target_size = 360 if dimension == "width" else 220
+
+        if visible:
+            if dock.isFloating():
+                dock.setFloating(False)
+            if not dock.isVisible():
+                if dimension == "width":
+                    dock.setMinimumWidth(0)
+                    dock.setMaximumWidth(0)
+                else:
+                    dock.setMinimumHeight(0)
+                    dock.setMaximumHeight(0)
+                dock.show()
+                dock.raise_()
+                start_size = 0
+            else:
+                start_size = maximum
+        else:
+            if not dock.isVisible():
+                self._sync_drawer_controls(dock, False)
+                return
+            start_size = max(1, maximum)
+            target_size = 0
+
+        animation = QPropertyAnimation(dock, property_name, self)
+        animation.setDuration(190)
+        animation.setEasingCurve(
+            QEasingCurve.Type.OutCubic if visible else QEasingCurve.Type.InCubic
+        )
+        animation.setStartValue(start_size)
+        animation.setEndValue(target_size)
+
+        def finished():
+            if visible:
+                if dimension == "width":
+                    dock.setMaximumWidth(16777215)
+                    dock.setMinimumWidth(280)
+                else:
+                    dock.setMaximumHeight(16777215)
+                    dock.setMinimumHeight(140)
+            else:
+                dock.hide()
+                if dimension == "width":
+                    dock.setMaximumWidth(16777215)
+                    dock.setMinimumWidth(280)
+                else:
+                    dock.setMaximumHeight(16777215)
+                    dock.setMinimumHeight(140)
+            self._drawer_animations.pop(key, None)
+
+        animation.finished.connect(finished)
+        self._drawer_animations[key] = animation
+        animation.start()
 
     def _connect_pages(self):
         self.home_page.navigate.connect(self.navigate)
@@ -392,6 +537,14 @@ class MainWindow(QMainWindow):
         file_menu = bar.addMenu("&File")
         self._add_menu_action(file_menu, "New Transcription", lambda: self.navigate("transcription"), "Ctrl+Shift+N")
         self._add_menu_action(file_menu, "Open Audio…", self.transcription_page.choose_audio, "Ctrl+O")
+        file_menu.addSeparator()
+        self.close_audio_action = self._add_menu_action(
+            file_menu, "Close Audio", self.transcription_page.close_audio, "Ctrl+W"
+        )
+        self.close_audio_action.setEnabled(self.transcription_page.audio_path is not None)
+        self.transcription_page.audio_changed.connect(
+            lambda path: self.close_audio_action.setEnabled(bool(path))
+        )
         self._add_menu_action(file_menu, "Save Transcript", self.transcription_page._autosave, "Ctrl+S")
         self._add_menu_action(file_menu, "Export Transcript…", self.transcription_page.export_button.click)
         file_menu.addSeparator()
@@ -417,24 +570,26 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.sidebar_action)
         panels_menu.addAction(self.sidebar_action)
 
-        self.assistant_view_action = self.assistant_dock.toggleViewAction()
-        self.assistant_view_action.setText("Inspector / AI Assistant")
+        self.assistant_view_action = QAction("Inspector / AI Assistant", self)
+        self.assistant_view_action.setCheckable(True)
+        self.assistant_view_action.setChecked(self.assistant_dock.isVisible())
         self.assistant_view_action.setShortcut(QKeySequence("Ctrl+Shift+I"))
         self.assistant_view_action.setShortcutContext(Qt.WindowShortcut)
-        self.timeline_view_action = self.timeline_dock.toggleViewAction()
-        self.timeline_view_action.setText("Audio Timeline")
+        self.assistant_view_action.toggled.connect(
+            lambda visible: self._animate_drawer(self.assistant_dock, visible, "width")
+        )
+        self.timeline_view_action = QAction("Audio Timeline", self)
+        self.timeline_view_action.setCheckable(True)
+        self.timeline_view_action.setChecked(self.timeline_dock.isVisible())
         self.timeline_view_action.setShortcut(QKeySequence("Ctrl+Shift+T"))
         self.timeline_view_action.setShortcutContext(Qt.WindowShortcut)
+        self.timeline_view_action.toggled.connect(
+            lambda visible: self._animate_drawer(self.timeline_dock, visible, "height")
+        )
         for action in (self.assistant_view_action, self.timeline_view_action):
             view_menu.addAction(action)
             panels_menu.addAction(action)
             self._register_command(action.text(), "View", action.trigger, action.shortcut().toString())
-        self.assistant_dock.visibilityChanged.connect(
-            lambda visible: self.settings_store.update(inspector_visible=bool(visible))
-        )
-        self.timeline_dock.visibilityChanged.connect(
-            lambda visible: self.settings_store.update(timeline_visible=bool(visible))
-        )
         self._add_menu_action(view_menu, "Restore Default Layout", self.restore_default_layout)
 
         tools_menu = bar.addMenu("&Tools")
@@ -495,8 +650,14 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
         self.assistant_dock.setFloating(False)
         self.timeline_dock.setFloating(False)
+        self.assistant_dock.setMinimumWidth(280)
+        self.timeline_dock.setMinimumHeight(140)
+        self.assistant_dock.setMaximumWidth(16777215)
+        self.timeline_dock.setMaximumHeight(16777215)
         self.assistant_dock.show()
         self.timeline_dock.show()
+        self._sync_drawer_controls(self.assistant_dock, True)
+        self._sync_drawer_controls(self.timeline_dock, True)
         self.sidebar.show()
         self._sidebar_collapsed = False
         self.sidebar.setMinimumWidth(190)
@@ -842,6 +1003,14 @@ class MainWindow(QMainWindow):
         self._waveform_generation += 1
         generation = self._waveform_generation
         self._audio_duration_ms = 0
+        if not audio_path:
+            self.waveform_status = "No audio loaded"
+            self.timeline.set_waveform([], 0.0)
+            self.timeline.set_segments(self.transcription_page.segments)
+            self.timeline.set_position(0.0)
+            self.inspector_title.setText("No active audio")
+            self.inspector_details.setText("Open an audio file to inspect its waveform and properties.")
+            return
         self.waveform_status = "Loading waveform…"
         worker = FunctionWorker(lambda emit: build_waveform(Path(audio_path), self.paths.cache / "waveforms", bins=4096, progress=lambda value: emit(value)))
         worker.signals.progress.connect(lambda _value: None)
@@ -1107,7 +1276,7 @@ class MainWindow(QMainWindow):
         self.operation_manager.shutdown(wait=False)
         for cancel_event in self.model_page._downloads.values():
             cancel_event.set()
-        self.model_manager.downloader.cancel_all()
+        self.model_manager.cancel_all_downloads()
         # Do not clear queued workers here: cancellable workers have been signalled,
         # and queued cleanup tasks (notably microphone release) must be allowed to run.
         if not self.thread_pool.waitForDone(15000):
