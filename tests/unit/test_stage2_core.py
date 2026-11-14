@@ -438,16 +438,30 @@ def test_settings_agent_permissions_are_validated_and_default_safe(tmp_path):
 
 
 def test_packaged_mcp_entrypoint_does_not_import_qt(monkeypatch):
+    import builtins
     import sys
     import types
 
     from transcriber import __main__ as app_entry
 
     called = []
+    attempted_qt_imports = []
     fake_module = types.ModuleType("transcriber.mcp_server")
     fake_module.main = lambda: called.append("mcp") or 17
     monkeypatch.setitem(sys.modules, "transcriber.mcp_server", fake_module)
     monkeypatch.setattr(sys, "argv", ["Transcriber", "--mcp-server"])
+
+    original_import = builtins.__import__
+
+    def reject_qt_import(name, *args, **kwargs):
+        if name == "PySide6" or name.startswith("PySide6."):
+            attempted_qt_imports.append(name)
+            raise AssertionError(f"MCP entrypoint must not import Qt: {name}")
+        return original_import(name, *args, **kwargs)
+
+    # Test attempted imports rather than sys.modules: UI tests may have loaded
+    # PySide6 during collection, which must not affect this entrypoint test.
+    monkeypatch.setattr(builtins, "__import__", reject_qt_import)
     assert app_entry.main() == 17
     assert called == ["mcp"]
-    assert "PySide6" not in sys.modules
+    assert attempted_qt_imports == []
