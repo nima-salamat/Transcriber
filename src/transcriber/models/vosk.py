@@ -46,6 +46,12 @@ class VoskCompatibilityReport:
 
 
 @dataclass(frozen=True, slots=True)
+class VoskArchiveFile:
+    name: str
+    size: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class VoskModelInfo:
     repo_id: str
     name: str
@@ -63,6 +69,10 @@ class VoskModelInfo:
     task: str = "automatic-speech-recognition"
     author: str = "AlphaCephei"
     description: str = ""
+
+    @property
+    def files(self) -> tuple[VoskArchiveFile, ...]:
+        return (VoskArchiveFile(f"{self.name}.zip", self.size_bytes),)
 
     @property
     def revision(self) -> str:
@@ -426,7 +436,8 @@ class VoskModelDownloader:
             self._condition.notify_all()
             task_id = self._job_ids.get(model_id)
         if task_id and self.job_repository:
-            self.job_repository.update(task_id, state=f"{kind}ling")
+            state = {"cancel": "cancelling", "pause": "pausing", "stop": "stopping"}[kind]
+            self.job_repository.update(task_id, state=state)
         return True
 
     def cancel(self, model_id: str) -> bool:
