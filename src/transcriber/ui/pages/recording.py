@@ -416,6 +416,8 @@ class RecordingPage(QWidget):
         self.preview_player.stop()
         self.preview_player.clear_source()
         self._preview_path = None
+        self._preview_duration = 0.0
+        self._preview_position = position
         self.waveform.set_interactive(False)
         try:
             self.recorder.resume_from(position)
@@ -433,7 +435,13 @@ class RecordingPage(QWidget):
             self.status_message.emit("No audio samples were captured; the empty take was discarded")
 
     def _load_paused_preview(self):
-        preview = self.recorder.preview_snapshot()
+        if self.recorder._state != "paused":
+            return
+        try:
+            preview = self.recorder.preview_snapshot()
+        except (OSError, RuntimeError) as exc:
+            preview = None
+            self.transport_hint.setText(f"Preview could not be prepared: {exc}")
         self._preview_duration = self.recorder.duration()
         self._preview_position = self._preview_duration
         self.position_label.setText(_clock(self._preview_position))
