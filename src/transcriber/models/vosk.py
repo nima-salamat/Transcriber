@@ -613,50 +613,52 @@ class VoskModelCatalog:
                 )
             ]
         models.sort(key=lambda item: (
-            item.language != "fa",
-            item.source != "official",
             item.model_type != "small",
             item.size_bytes if item.size_bytes else 10**18,
+            item.language_name.casefold(),
+            item.source != "official",
             item.name.casefold(),
         ))
         return models[:max(1, min(int(limit), 200))]
 
-    def curated(self, language: str = "fa") -> list[VoskModelInfo]:
-        """Return the two actively recommended Persian models, not obsolete variants."""
+    def curated(self, language: str = "") -> list[VoskModelInfo]:
+        """Return a catalogue-driven shortlist across languages, ordered by download size."""
         selected = str(language or "").strip().casefold()
-        if selected in {"fa", "farsi", "persian", "فارسی", "ایرانی"}:
-            try:
-                official = {
-                    item.name: item
-                    for item in self.list_models(include_obsolete=False)
-                    if item.language.casefold() == "fa"
-                }
-            except RuntimeError:
-                official = {
-                    item.name: item
-                    for item in self._pinned_persian_official_models()
-                }
-            mirror = self._huggingface_curated_models()
-            small_mirror = next(
-                item for item in mirror
-                if item.name == "vosk-model-small-fa-0.42"
-            )
-            large_official = official.get("vosk-model-fa-0.42")
-            if large_official is None:
-                large_official = next(
-                    item for item in self._pinned_persian_official_models()
-                    if item.name == "vosk-model-fa-0.42"
-                )
-            # Exactly two choices: lightweight HF mirror and the full-size official model.
-            return [small_mirror, large_official]
-        models = self.search(language=selected, limit=100)
-        models.sort(key=lambda item: (
+        aliases = {
+            "persian": "fa", "farsi": "fa", "فارسی": "fa", "ایرانی": "fa",
+            "english": "en", "german": "de", "french": "fr", "spanish": "es",
+            "arabic": "ar", "russian": "ru", "chinese": "cn", "hindi": "hi",
+            "italian": "it", "turkish": "tr",
+        }
+        selected = aliases.get(selected, selected)
+        models = self.list_all_models(include_obsolete=False)
+        if selected and selected not in {"all", "*"}:
+            models = [
+                item for item in models
+                if item.language.casefold().startswith(selected)
+            ]
+
+        # Prefer the upstream official entry when a mirror contains the same named
+        # archive. Mirrors remain searchable via the source filter, but recommendations
+        # should not waste a slot on a duplicate download.
+        unique: dict[str, VoskModelInfo] = {}
+        for item in models:
+            key = item.name.casefold()
+            previous = unique.get(key)
+            if previous is None or (
+                previous.source != "official" and item.source == "official"
+            ):
+                unique[key] = item
+
+        recommendations = list(unique.values())
+        recommendations.sort(key=lambda item: (
             item.model_type != "small",
             item.size_bytes if item.size_bytes else 10**18,
+            item.language_name.casefold(),
             item.source != "official",
             item.name.casefold(),
         ))
-        return models
+        return recommendations[:200]
 
     def inspect(self, model_id: str) -> tuple[VoskModelInfo, VoskCompatibilityReport]:
         model = self.by_name(model_id, include_obsolete=True)
