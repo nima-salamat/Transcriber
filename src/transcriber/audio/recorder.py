@@ -21,6 +21,7 @@ class QtAudioRecorder(QObject):
     duration_changed = Signal(float)
     recording_saved = Signal(str)
     error_occurred = Signal(str)
+    waveform_changed = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,6 +36,8 @@ class QtAudioRecorder(QObject):
         self._elapsed_before_pause = 0.0
         self._state = "idle"
         self._last_duration_emit = 0.0
+        self._peaks: list[float] = []
+        self._preview_path: Path | None = None
         # Avoid QAudioSource.stateChanged(QAudio::State) Python slot conversion.
         # The error enum is polled on the GUI event loop instead.
         self._state_watchdog = QTimer(self)
@@ -78,6 +81,8 @@ class QtAudioRecorder(QObject):
             raise ValueError("The Qt microphone recorder writes PCM WAV only. Choose a .wav destination.")
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.recording.tmp")
+        self._peaks = []
+        self._preview_path = None
         self._path = temporary
         self._target_path = target
         self._format = audio_format
@@ -87,7 +92,7 @@ class QtAudioRecorder(QObject):
         self._elapsed_before_pause = 0.0
         self._started = time.monotonic()
         try:
-            self._stream = temporary.open("xb")
+            self._stream = temporary.open("x+b")
             self._stream.write(b"\0" * 44)
             source = QAudioSource(selected, audio_format, self)
             source.setBufferSize(max(4096, audio_format.bytesPerFrame() * audio_format.sampleRate() // 5))
@@ -151,8 +156,13 @@ class QtAudioRecorder(QObject):
             samples = memoryview(chunk[:sample_bytes]).cast("h")
             if samples:
                 rms = math.sqrt(sum(float(sample) ** 2 for sample in samples) / len(samples))
+                peak = max(abs(int(sample)) for sample in samples) / 32768.0
                 level = max(0, min(100, int(rms / 32768.0 * 330)))
                 self.level_changed.emit(level)
+                self._peaks.append(max(0.015, min(1.0, peak)))
+                if len(self._peaks) > 1800:
+                    self._peaks = self._peaks[::2]
+                self.waveform_changed.emit(list(self._peaks))
             now = time.monotonic()
             if now - self._last_duration_emit >= 0.1:
                 self._last_duration_emit = now
@@ -165,9 +175,46 @@ class QtAudioRecorder(QObject):
         current = time.monotonic() - self._started if self._state == "recording" else 0.0
         return max(0.0, self._elapsed_before_pause + current)
 
+    @property
+    def waveform(self) -> list[float]:
+        return list(self._peaks)
+
+    @staticmethod
+    def _wav_header(audio_format: QAudioFormat, data_bytes: int) -> bytes:
+        sample_rate = audio_format.sampleRate()
+        channels = audio_format.channelCount()
+        byte_rate = sample_rate * channels * 2
+        block_align = channels * 2
+        return struct.pack(
+            "<4sI4s4sIHHIIHH4sI",
+            b"RIFF", 36 + data_bytes, b"WAVE", b"fmt ", 16,
+            1, channels, sample_rate, byte_rate, block_align, 16,
+            b"data", data_bytes,
+        )
+
+    def preview_snapshot(self) -> Path | None:
+        """Write a stable WAV snapshot of the paused take for auditioning."""
+        if self._state != "paused" or not self._stream or not self._path or not self._format:
+            return None
+        self._stream.flush()
+        cursor = self._stream.tell()
+        self._stream.seek(44)
+        payload = self._stream.read(self._data_bytes)
+        self._stream.seek(cursor)
+        if not payload:
+            return None
+        preview = self._path.with_name(f"{self._path.name}.preview.wav")
+        with preview.open("wb") as output:
+            output.write(self._wav_header(self._format, len(payload)))
+            output.write(payload)
+            output.flush()
+        self._preview_path = preview
+        return preview
+
     def pause(self) -> None:
         if self._state != "recording" or not self._source:
             return
+        self._read_audio()
         self._elapsed_before_pause += time.monotonic() - self._started
         self._source.suspend()
         self._state = "paused"
@@ -175,12 +222,39 @@ class QtAudioRecorder(QObject):
         self.duration_changed.emit(self.duration())
 
     def resume(self) -> None:
-        if self._state != "paused" or not self._source:
+        self.resume_from(self.duration())
+
+    def resume_from(self, position_seconds: float) -> None:
+        """Continue capture at a point in the take, replacing everything after it."""
+        if self._state != "paused" or not self._source or not self._stream or not self._format:
             return
+        frame_bytes = self._format.bytesPerFrame()
+        byte_rate = self._format.sampleRate() * frame_bytes
+        if frame_bytes <= 0 or byte_rate <= 0:
+            raise RuntimeError("The active microphone format cannot be resumed safely.")
+        requested = max(0.0, float(position_seconds))
+        byte_count = int(requested * byte_rate)
+        byte_count -= byte_count % frame_bytes
+        byte_count = min(self._data_bytes, byte_count)
+        self._stream.flush()
+        self._stream.seek(44 + byte_count)
+        self._stream.truncate()
+        self._data_bytes = byte_count
+        self._elapsed_before_pause = byte_count / byte_rate
+        if self._peaks:
+            peak_count = max(0, min(len(self._peaks), round(
+                len(self._peaks) * self._elapsed_before_pause / max(0.001, self.duration())
+            )))
+            self._peaks = self._peaks[:peak_count]
+            self.waveform_changed.emit(list(self._peaks))
+        if self._preview_path:
+            self._preview_path.unlink(missing_ok=True)
+            self._preview_path = None
         self._started = time.monotonic()
         self._source.resume()
         self._state = "recording"
         self.state_changed.emit(self._state)
+        self.duration_changed.emit(self.duration())
 
     def stop(self) -> Path | None:
         return self._finish_recording(publish=True)
@@ -211,19 +285,9 @@ class QtAudioRecorder(QObject):
                 self._stream.flush()
                 audio_format = self._format
                 if audio_format:
-                    sample_rate = audio_format.sampleRate()
-                    channels = audio_format.channelCount()
-                    byte_rate = sample_rate * channels * 2
-                    block_align = channels * 2
                     # The file header is written only after capture has stopped.
-                    header = struct.pack(
-                        "<4sI4s4sIHHIIHH4sI",
-                        b"RIFF", 36 + self._data_bytes, b"WAVE", b"fmt ", 16,
-                        1, channels, sample_rate, byte_rate, block_align, 16,
-                        b"data", self._data_bytes,
-                    )
                     self._stream.seek(0)
-                    self._stream.write(header)
+                    self._stream.write(self._wav_header(audio_format, self._data_bytes))
                     self._stream.flush()
                     os.fsync(self._stream.fileno())
             except (OSError, ValueError) as exc:
@@ -251,14 +315,22 @@ class QtAudioRecorder(QObject):
         elif temporary:
             temporary.unlink(missing_ok=True)
         self._format = None
+        if self._preview_path:
+            self._preview_path.unlink(missing_ok=True)
+            self._preview_path = None
         if saved_path:
             self.recording_saved.emit(str(saved_path))
         return saved_path
 
     def cancel(self) -> None:
         self._finish_recording(publish=False)
+        if self._preview_path:
+            self._preview_path.unlink(missing_ok=True)
+            self._preview_path = None
         self._path = None
         self._format = None
+        self._peaks = []
+        self.waveform_changed.emit([])
         self.state_changed.emit("cancelled")
 
     def device_disconnected(self) -> None:
