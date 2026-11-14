@@ -132,6 +132,83 @@ class ModelDownloader:
     def list_jobs(self, limit: int = 500) -> list[dict]:
         return self.job_repository.list(limit=limit) if self.job_repository else []
 
+    @staticmethod
+    def _remove_path(path: Path) -> bool:
+        """Remove one app-owned staging path without following symbolic links."""
+        if path.is_symlink():
+            path.unlink()
+            return True
+        if path.is_dir():
+            shutil.rmtree(path)
+            return True
+        if path.is_file():
+            path.unlink()
+            return True
+        return False
+
+    def remove_download_artifacts(self, job: dict) -> int:
+        """Delete this task's staging data and incomplete/revision-pinned HF cache.
+
+        Hugging Face blobs shared with other model revisions are retained by the
+        cache manager's delete strategy. Only incomplete files under this model's
+        cache namespace are removed directly.
+        """
+        repo_id = validate_repo_id(str(job.get("repo_id") or ""))
+        task_id = str(job.get("task_id") or "")
+        if not task_id:
+            raise ValueError("Download task identifier is missing.")
+
+        with self._condition:
+            if (
+                repo_id in self._active or repo_id in self._pending
+                or repo_id in self._cancel_events
+            ):
+                raise RuntimeError(f"Cannot delete files while {repo_id} is downloading.")
+
+        removed_bytes = 0
+        staging_root = self.registry.root / ".staging"
+        staging = staging_root / f"{self.registry.directory_name(repo_id)}-{task_id}"
+        if staging.parent == staging_root and self._remove_path(staging):
+            removed_bytes += 1
+
+        if not self.cache_dir.exists() or self.cache_dir.is_symlink():
+            return removed_bytes
+
+        try:
+            from huggingface_hub import scan_cache_dir
+        except ImportError:
+            return removed_bytes
+
+        cache_info = scan_cache_dir(cache_dir=self.cache_dir)
+        repo_cache = self.cache_dir / f"models--{repo_id.replace('/', '--')}"
+        blobs_dir = repo_cache / "blobs"
+        for incomplete in cache_info.incomplete_files:
+            partial = Path(incomplete.file_path)
+            # The path must be an immediate file in this model's blobs folder.
+            # This avoids touching incomplete downloads belonging to another repo.
+            if partial.parent == blobs_dir and partial.name.endswith(".incomplete"):
+                if partial.is_symlink():
+                    partial.unlink()
+                elif partial.is_file():
+                    partial.unlink()
+                    removed_bytes += 1
+
+        revision = str(job.get("revision") or "").strip()
+        if revision:
+            matching = [
+                revision_info.commit_hash
+                for cached_repo in cache_info.repos
+                if cached_repo.repo_id == repo_id
+                for revision_info in cached_repo.revisions
+                if revision_info.commit_hash == revision
+            ]
+            if matching:
+                # The Hugging Face cache manager preserves any blob referenced by
+                # another revision/repository.
+                scan_cache_dir(cache_dir=self.cache_dir).delete_revisions(*matching).execute()
+                removed_bytes += 1
+        return removed_bytes
+
     def resume(self, task_id: str, *, progress=None, cancel_event=None) -> Path:
         if self.job_repository is None:
             raise RuntimeError("Persistent download history is unavailable.")
