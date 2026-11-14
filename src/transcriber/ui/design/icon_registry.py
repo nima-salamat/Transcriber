@@ -13,6 +13,7 @@ class IconRegistry:
         "settings": "settings-2.svg",
         "search": "search.svg",
         "assistant": "sparkles.svg",
+        "waveform": "audio-waveform.svg",
         "back": "chevron-left.svg",
         "forward": "chevron-right.svg",
         "activity": "list-checks.svg",
