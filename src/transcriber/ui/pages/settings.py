@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Signal
+from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -34,6 +35,7 @@ class SettingsPage(QWidget):
     permission_changed = Signal(str, bool)
     agent_settings_saved = Signal()
     status_message = Signal(str)
+    audio_devices_changed = Signal(str, str)
 
     def __init__(self, paths, settings_store, database, thread_pool, model_manager, parent=None):
         super().__init__(parent)
@@ -43,8 +45,12 @@ class SettingsPage(QWidget):
         self.thread_pool = thread_pool
         self.model_manager = model_manager
         self._workers: list[FunctionWorker] = []
+        self._sections: dict[str, QWidget] = {}
+        self.media_devices = QMediaDevices(self)
         self._storage_worker: FunctionWorker | None = None
         self._build()
+        self.media_devices.audioInputsChanged.connect(self.refresh_audio_devices)
+        self.media_devices.audioOutputsChanged.connect(self.refresh_audio_devices)
 
     def _build(self):
         outer = QVBoxLayout(self)
@@ -72,7 +78,33 @@ class SettingsPage(QWidget):
         self.language.setCurrentIndex(max(0, self.language.findData(current.language)))
         self.language.currentIndexChanged.connect(lambda: self._save(language=self.language.currentData()))
         form.addRow("Application language", self.language)
-        layout.addWidget(self._section("General", general))
+        layout.addWidget(self._section("General", general, "general"))
+
+        devices = Card()
+        devices_form = QFormLayout(devices)
+        devices_form.setContentsMargins(18, 16, 18, 16)
+        self.audio_input_device = QComboBox()
+        self.audio_input_device.setMinimumWidth(320)
+        self.audio_input_device.currentIndexChanged.connect(self._audio_input_changed)
+        self.audio_output_device = QComboBox()
+        self.audio_output_device.setMinimumWidth(320)
+        self.audio_output_device.currentIndexChanged.connect(self._audio_output_changed)
+        devices_form.addRow("Microphone / recording input", self.audio_input_device)
+        devices_form.addRow("Speaker / playback output", self.audio_output_device)
+        device_actions = QHBoxLayout()
+        self.refresh_audio_devices_button = QPushButton("Refresh audio devices")
+        self.refresh_audio_devices_button.clicked.connect(self.refresh_audio_devices)
+        device_actions.addWidget(self.refresh_audio_devices_button)
+        device_actions.addStretch(1)
+        devices_form.addRow("Device list", device_actions)
+        self.audio_device_status = QLabel(
+            "The selected microphone is also used by Live recording. Playback uses the selected output device."
+        )
+        self.audio_device_status.setObjectName("Muted")
+        self.audio_device_status.setWordWrap(True)
+        devices_form.addRow("Audio routing", self.audio_device_status)
+        layout.addWidget(self._section("Audio devices", devices, "devices"))
+        self.refresh_audio_devices()
 
         recognition = Card()
         recog_form = QFormLayout(recognition)
@@ -114,7 +146,7 @@ class SettingsPage(QWidget):
         recog_form.addRow("Beam size", self.beam)
         recog_form.addRow("Voice activity detection", self.vad)
         recog_form.addRow("Word-level timestamps", self.word_timestamps)
-        layout.addWidget(self._section("Recognition", recognition))
+        layout.addWidget(self._section("Recognition", recognition, "recognition"))
 
         cloud = Card()
         cloud_form = QFormLayout(cloud)
@@ -154,7 +186,7 @@ class SettingsPage(QWidget):
         cloud_note.setWordWrap(True)
         cloud_note.setObjectName("Muted")
         cloud_form.addRow("Requirements", cloud_note)
-        layout.addWidget(self._section("Google Cloud Speech-to-Text V2", cloud))
+        layout.addWidget(self._section("Google Cloud Speech-to-Text V2", cloud, "cloud"))
 
         jobs = Card()
         jobs_form = QFormLayout(jobs)
@@ -164,7 +196,7 @@ class SettingsPage(QWidget):
         self.download_workers.setValue(current.download_concurrency)
         self.download_workers.valueChanged.connect(self._concurrency_changed)
         jobs_form.addRow("Concurrent background downloads", self.download_workers)
-        layout.addWidget(self._section("Background jobs", jobs))
+        layout.addWidget(self._section("Background jobs", jobs, "jobs"))
 
         runtime = Card()
         runtime_form = QFormLayout(runtime)
@@ -196,7 +228,7 @@ class SettingsPage(QWidget):
         runtime_note.setWordWrap(True)
         runtime_note.setObjectName("Muted")
         runtime_form.addRow("Current integration", runtime_note)
-        layout.addWidget(self._section("Model runtime policy", runtime))
+        layout.addWidget(self._section("Model runtime policy", runtime, "runtime"))
 
         agent = Card()
         agent_layout = QVBoxLayout(agent)
@@ -268,7 +300,7 @@ class SettingsPage(QWidget):
             self.agent_permission_checks[permission] = check
             permission_grid.addRow(check)
         agent_layout.addLayout(permission_grid)
-        layout.addWidget(self._section("OpenCode & Voice Agent", agent))
+        layout.addWidget(self._section("OpenCode & Voice Agent", agent, "agent"))
 
         privacy = Card()
         privacy_form = QFormLayout(privacy)
@@ -285,7 +317,7 @@ class SettingsPage(QWidget):
         note.setWordWrap(True)
         note.setObjectName("Muted")
         privacy_form.addRow("Privacy", note)
-        layout.addWidget(self._section("Privacy", privacy))
+        layout.addWidget(self._section("Privacy", privacy, "privacy"))
 
         storage = Card()
         storage_layout = QVBoxLayout(storage)
@@ -308,22 +340,150 @@ class SettingsPage(QWidget):
         for button in (self.backup_button, self.restore_button, self.clear_cache_button):
             actions.addWidget(button)
         storage_layout.addLayout(actions)
-        layout.addWidget(self._section("Storage", storage))
+        layout.addWidget(self._section("Storage", storage, "storage"))
         layout.addStretch(1)
         scroll.setWidget(body)
+        self.scroll = scroll
         outer.addWidget(scroll, 1)
         self._refresh_storage_usage()
 
-    @staticmethod
-    def _section(title: str, content: QWidget) -> QWidget:
+    def _section(self, title: str, content: QWidget, key: str) -> QWidget:
         outer = QWidget()
+        outer.setObjectName(f"SettingsSection_{key}")
         layout = QVBoxLayout(outer)
         layout.setContentsMargins(0, 0, 0, 0)
         label = QLabel(title)
         label.setStyleSheet("font-size: 16px; font-weight: 650; padding: 2px 0;")
         layout.addWidget(label)
         layout.addWidget(content)
+        self._sections[key] = outer
         return outer
+
+    @staticmethod
+    def _device_id(device) -> str:
+        try:
+            return bytes(device.id()).decode("utf-8", "replace")
+        except (AttributeError, TypeError, ValueError):
+            return str(device.id())
+
+    def refresh_audio_devices(self):
+        if not hasattr(self, "audio_input_device"):
+            return
+        current = self.settings_store.settings
+        inputs = list(QMediaDevices.audioInputs())
+        outputs = list(QMediaDevices.audioOutputs())
+        default_input = QMediaDevices.defaultAudioInput()
+        default_output = QMediaDevices.defaultAudioOutput()
+
+        input_blocker = self.audio_input_device.blockSignals(True)
+        output_blocker = self.audio_output_device.blockSignals(True)
+        try:
+            self.audio_input_device.clear()
+            self.audio_input_device.addItem("System default microphone", "")
+            input_ids = set()
+            for device in inputs:
+                device_id = self._device_id(device)
+                input_ids.add(device_id)
+                label = device.description()
+                if not default_input.isNull() and device == default_input:
+                    label += " · System default"
+                self.audio_input_device.addItem(label, device_id)
+            if current.audio_input_device_id and current.audio_input_device_id not in input_ids:
+                self.audio_input_device.addItem(
+                    f"Unavailable microphone · {current.audio_input_device_id}",
+                    current.audio_input_device_id,
+                )
+            input_index = self.audio_input_device.findData(current.audio_input_device_id)
+            self.audio_input_device.setCurrentIndex(max(0, input_index))
+
+            self.audio_output_device.clear()
+            self.audio_output_device.addItem("System default speakers", "")
+            output_ids = set()
+            for device in outputs:
+                device_id = self._device_id(device)
+                output_ids.add(device_id)
+                label = device.description()
+                if not default_output.isNull() and device == default_output:
+                    label += " · System default"
+                self.audio_output_device.addItem(label, device_id)
+            if current.audio_output_device_id and current.audio_output_device_id not in output_ids:
+                self.audio_output_device.addItem(
+                    f"Unavailable output · {current.audio_output_device_id}",
+                    current.audio_output_device_id,
+                )
+            output_index = self.audio_output_device.findData(current.audio_output_device_id)
+            self.audio_output_device.setCurrentIndex(max(0, output_index))
+        finally:
+            self.audio_input_device.blockSignals(input_blocker)
+            self.audio_output_device.blockSignals(output_blocker)
+
+        if not inputs:
+            self.audio_device_status.setText("No microphone input detected. Connect a microphone or check Windows sound settings.")
+        elif not outputs:
+            self.audio_device_status.setText("No playback output detected. Connect speakers or headphones.")
+        else:
+            self.audio_device_status.setText(
+                "Device preferences are saved automatically. Missing devices remain selected until you choose another device or the system default."
+            )
+        self.audio_devices_changed.emit(
+            current.audio_input_device_id, current.audio_output_device_id
+        )
+
+    def _audio_input_changed(self, _index: int):
+        device_id = str(self.audio_input_device.currentData() or "")
+        self._save(audio_input_device_id=device_id)
+        self.audio_devices_changed.emit(
+            device_id, self.settings_store.settings.audio_output_device_id
+        )
+
+    def _audio_output_changed(self, _index: int):
+        device_id = str(self.audio_output_device.currentData() or "")
+        self._save(audio_output_device_id=device_id)
+        self.audio_devices_changed.emit(
+            self.settings_store.settings.audio_input_device_id, device_id
+        )
+
+    def focus_section(self, key: str):
+        section = self._sections.get(str(key))
+        if section is not None:
+            self.scroll.ensureWidgetVisible(section, 12, 12)
+
+    def search_entries(self) -> list[dict]:
+        """Return searchable settings destinations for global search and Ctrl+K."""
+        entries = [
+            ("Appearance", "General", "theme dark light color UI", "general"),
+            ("Application language", "General", "language locale translation", "general"),
+            ("Microphone input device", "Audio devices", "microphone mic input recording capture headset", "devices"),
+            ("Playback output device", "Audio devices", "speaker headphones audio output playback sound", "devices"),
+            ("Refresh audio devices", "Audio devices", "rescan detect microphone speakers hardware", "devices"),
+            ("Recognition engine", "Recognition", "faster whisper offline google cloud speech engine", "recognition"),
+            ("Compute device · CPU / CUDA GPU", "Recognition", "device processor CPU GPU graphics acceleration cuda", "recognition"),
+            ("Compute precision", "Recognition", "compute type int8 float16 precision", "recognition"),
+            ("CPU thread count", "Recognition", "threads performance processor", "recognition"),
+            ("Beam size", "Recognition", "decoding accuracy search", "recognition"),
+            ("Voice activity detection", "Recognition", "VAD silence speech filter", "recognition"),
+            ("Word-level timestamps", "Recognition", "word timing timestamps alignment", "recognition"),
+            ("Google Cloud configuration", "Cloud", "online speech project region model", "cloud"),
+            ("Verify cloud credentials", "Cloud", "ADC authentication credentials google", "cloud"),
+            ("Background download concurrency", "Background jobs", "parallel downloads workers", "jobs"),
+            ("Model runtime limits", "Model runtime", "loaded models RAM VRAM memory budget", "runtime"),
+            ("OpenCode executable and project", "OpenCode & Voice Agent", "agent executable path project directory", "agent"),
+            ("Voice wake phrase and model", "OpenCode & Voice Agent", "microphone wake word vosk voice assistant", "agent"),
+            ("Agent permissions", "OpenCode & Voice Agent", "permissions access microphone file export destructive", "agent"),
+            ("Local-only and cloud consent", "Privacy", "privacy internet online offline audio consent", "privacy"),
+            ("Model and recording folders", "Storage", "paths directories recordings models", "storage"),
+            ("Backup and restore", "Storage", "backup metadata restore database", "storage"),
+            ("Clear model cache", "Storage", "delete cache disk space models", "storage"),
+        ]
+        return [
+            {
+                "title": title,
+                "category": category,
+                "keywords": keywords,
+                "callback": lambda section=section: self.focus_section(section),
+            }
+            for title, category, keywords, section in entries
+        ]
 
     def _path_row(self, label: str, value: str, parent_layout: QVBoxLayout) -> QLineEdit:
         row = QHBoxLayout()
