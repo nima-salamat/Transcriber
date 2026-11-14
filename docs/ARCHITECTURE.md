@@ -2,7 +2,7 @@
 
 ## Runtime composition
 
-`python -m transcriber` (or the `transcriber` console command) enters through `transcriber.__main__` and `transcriber.bootstrap.build_services()`. Bootstrap resolves per-user paths, loads validated settings, configures rotating logs, initializes SQLite and wires the Hugging Face client, model registry, downloader and Faster-Whisper model manager. The UI receives these services through constructors; it does not create its own database or model registry.
+`python -m transcriber` (or the `transcriber` console command) enters through `transcriber.__main__` and `transcriber.bootstrap.build_services()`. Bootstrap resolves per-user paths, loads validated settings, configures rotating logs, initializes SQLite and wires transcript history, independent recording history, the Hugging Face client, model registry, downloader and Faster-Whisper model manager. The UI receives these services through constructors; it does not create its own database or model registry.
 
 `python -m transcriber.mcp_server` (or packaged `Transcriber.exe --mcp-server`) is a separate stdio process. The MCP entry point does not construct the GUI. It exposes a compact discovery/action surface and talks to the running desktop app through authenticated local IPC. If the GUI is closed, MCP returns an explicit unavailable response instead of fabricated application state.
 
@@ -20,7 +20,7 @@
 - `assistant`: semantic action registry, permission enforcement, voice state machine and optional local Vosk command capture.
 - `opencode`: ACP stdio client and persistent session handling. The external OpenCode executable is not bundled.
 - `mcp` / `ipc`: stdio MCP server, compact tool definitions, versioned JSON protocol, per-user local endpoint and authentication token.
-- `storage`: SQLite schema migration, transcript/history repository and metadata backup/restore.
+- `storage`: SQLite schema migration, transcript/history repository, independent recording metadata repository and metadata backup/restore.
 - `ui`: native `QMainWindow`, dockable inspector/timeline, sidebar, page widgets, theme tokens, SVG icon registry and worker adapters.
 
 The dependency direction is UI → application services/repositories/engine interfaces. The ASR adapter does not import UI code, editor and subtitle domain models are testable without Qt, and persistence does not depend on widgets.
@@ -43,7 +43,7 @@ The production Faster-Whisper application service still uses its existing single
 
 ## Persistence
 
-SQLite is the source of truth for persisted transcript history and ordered timed segments. Within a running workspace, one `TranscriptDocument` instance is shared by New Transcription and Transcript Editor; subtitle and timeline widgets are projections rather than competing domain documents. Schema versions are explicit; migrations add editor metadata, including stable IDs, speaker, comments, review flags and word timings. Transcript autosaves capture immutable snapshots and are coalesced per project. The metadata backup archive excludes large audio and model directories.
+SQLite is the source of truth for persisted transcript history, ordered timed segments and independent recording metadata. The `recordings` table is not a child of `transcripts`, so deleting a transcript does not delete a saved recording. Within a running workspace, one `TranscriptDocument` instance is shared by New Transcription and Transcript Editor; subtitle and timeline widgets are projections rather than competing domain documents. Schema versions are explicit; migrations add editor metadata, including stable IDs, speaker, comments, review flags and word timings. Transcript autosaves capture immutable snapshots and are coalesced per project. The metadata backup archive excludes large audio and model directories.
 
 The Batch UI currently keeps its queue in memory and processes one file at a time. Restart recovery and a unified persistent application job database remain future work.
 

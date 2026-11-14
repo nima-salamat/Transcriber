@@ -116,7 +116,12 @@ class RecordingRepository:
         source = Path(current["file_path"])
         if not source.is_file():
             raise FileNotFoundError(f"Recording file is missing: {source}")
-        if not Path(name).suffix:
+        requested_suffix = Path(name).suffix
+        if requested_suffix and requested_suffix.casefold() != source.suffix.casefold():
+            raise ValueError(
+                f"Recording format is {source.suffix.lower()}; renaming cannot change its media format."
+            )
+        if not requested_suffix:
             name += source.suffix
         target = source.with_name(name)
         if target.exists():

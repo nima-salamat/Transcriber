@@ -10,7 +10,7 @@ The optional Google adapter uses the official Google Cloud Speech-to-Text V2 Pyt
 
 The Recording page enumerates `QMediaDevices.audioInputs()` and listens for device-list changes. Capture is implemented with `QAudioSource`. It selects a device-supported 16-bit PCM format from common 48/44.1/16 kHz mono/stereo candidates; if the device exposes no supported PCM16 format, the app reports an actionable error rather than writing an incorrectly described WAV file.
 
-Raw PCM is written incrementally to a temporary target with a reserved 44-byte header. On stop, the recorder finalizes RIFF/WAV sizes, flushes and syncs the file, then offers it to the transcription workspace. Pause/resume, elapsed duration, RMS input level, device disconnect/error handling, save, and discard are implemented. The user chooses the output path; imported external audio is referenced by path and is not copied into the app's storage by default.
+Raw PCM is written incrementally to a uniquely named temporary file beside the selected destination with a reserved 44-byte header. On stop, the recorder finalizes RIFF/WAV sizes, flushes and syncs the file, then atomically replaces the final destination. A failed or discarded capture removes only the temporary file, preserving any pre-existing destination. Pause/resume, elapsed duration, RMS input level, device disconnect/error handling, save, and discard are implemented. The default output directory is the user's Music directory under `Transcriber Recordings`; an existing Settings override takes precedence. Each saved capture is indexed independently in SQLite with file/device metadata, whether or not it is transcribed. WAV/PCM is the only recording output format currently exposed; no MP3/M4A/FLAC encoder is advertised.
 
 ## Playback
 
