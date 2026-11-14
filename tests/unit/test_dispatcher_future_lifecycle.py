@@ -19,9 +19,16 @@ def test_cancelled_queued_dispatch_never_runs_handler():
 
 def test_dispatch_transitions_future_to_running_before_result():
     future = Future()
-    MainThreadDispatcher._execute(lambda payload: payload["value"] + 1, {"value": 2}, future)
+    states = []
 
-    assert future.running()
+    def handler(payload):
+        states.append(future.running())
+        return payload["value"] + 1
+
+    MainThreadDispatcher._execute(handler, {"value": 2}, future)
+
+    assert states == [True]
+    assert future.done()
     assert future.result() == 3
 
 
