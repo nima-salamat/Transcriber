@@ -294,12 +294,10 @@ class MainWindow(QMainWindow):
         self.assistant_dock = QDockWidget("Inspector / AI Assistant", self)
         self.assistant_dock.setObjectName("AssistantDock")
         self.assistant_dock.setLayoutDirection(Qt.LeftToRight)
-        self.assistant_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.assistant_dock.setFeatures(
-            QDockWidget.DockWidgetFeature.DockWidgetClosable
-            | QDockWidget.DockWidgetFeature.DockWidgetMovable
-            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
-        )
+        # Keep the Inspector attached to the physical right edge; users resize it
+        # with the splitter instead of accidentally dragging the drawer elsewhere.
+        self.assistant_dock.setAllowedAreas(Qt.RightDockWidgetArea)
+        self.assistant_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.assistant_dock.setMinimumWidth(280)
         inspector_tabs = QTabWidget()
         properties = QWidget()
@@ -327,11 +325,8 @@ class MainWindow(QMainWindow):
         self.timeline_dock.setObjectName("TimelineDock")
         self.timeline_dock.setLayoutDirection(Qt.LeftToRight)
         self.timeline_dock.setAllowedAreas(Qt.BottomDockWidgetArea)
-        self.timeline_dock.setFeatures(
-            QDockWidget.DockWidgetFeature.DockWidgetClosable
-            | QDockWidget.DockWidgetFeature.DockWidgetMovable
-            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
-        )
+        # The waveform is a bottom drawer, not a movable/floating dock window.
+        self.timeline_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.timeline_dock.setMinimumHeight(140)
         self.timeline = WaveformTimeline()
         self.timeline.seek_requested.connect(lambda value: self.transcription_page.player.seek(int(value * 1000)))
