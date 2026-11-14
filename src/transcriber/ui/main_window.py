@@ -514,6 +514,9 @@ class MainWindow(QMainWindow):
         self.model_page.default_model_changed.connect(
             lambda _repo_id: self.transcription_page.refresh_models(select_default=True)
         )
+        self.model_page.installed_models_changed.connect(
+            lambda: self.transcription_page.refresh_models()
+        )
 
 
     def _register_command(self, title, category, callback, shortcut=None, keywords=""):
@@ -1210,6 +1213,8 @@ class MainWindow(QMainWindow):
         settings = self.settings_store.settings
         self.assistant_dock.setVisible(settings.inspector_visible)
         self.timeline_dock.setVisible(settings.timeline_visible)
+        self._sync_drawer_controls(self.assistant_dock, settings.inspector_visible)
+        self._sync_drawer_controls(self.timeline_dock, settings.timeline_visible)
         self.sidebar.setVisible(settings.sidebar_visible)
         self.sidebar_action.setChecked(settings.sidebar_visible)
 
