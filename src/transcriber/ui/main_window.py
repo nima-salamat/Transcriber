@@ -350,7 +350,7 @@ class MainWindow(QMainWindow):
             lambda visible: self._animate_drawer(self.assistant_dock, visible, "width")
         )
         self.timeline_drawer_button = QPushButton("Waveform")
-        self.timeline_drawer_button.setIcon(self.icon_registry.icon("activity", color="#55b99a", size=14))
+        self.timeline_drawer_button.setIcon(self.icon_registry.icon("waveform", color="#55b99a", size=14))
         self.timeline_drawer_button.setIconSize(QSize(14, 14))
         self.timeline_drawer_button.setCheckable(True)
         self.timeline_drawer_button.setChecked(not self.timeline_dock.isHidden())
