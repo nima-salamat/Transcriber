@@ -38,3 +38,28 @@ def test_main_window_builder_uses_instance_dependencies() -> None:
         and node.value.id == "self"
     }
     assert dependency_names <= attributes
+
+
+
+def test_drawer_controls_are_compact_and_permanently_right_aligned() -> None:
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "src" / "transcriber" / "ui" / "main_window.py"
+    ).read_text(encoding="utf-8")
+
+    assert "status.addPermanentWidget(self.assistant_drawer_button)" in source
+    assert "status.addPermanentWidget(self.timeline_drawer_button)" in source
+    assert "status.addWidget(self.assistant_drawer_button)" not in source
+    assert "status.addWidget(self.timeline_drawer_button)" not in source
+    assert "drawer_button.setFixedHeight(25)" in source
+
+
+def test_dock_geometry_uses_physical_left_to_right_direction() -> None:
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "src" / "transcriber" / "ui" / "main_window.py"
+    ).read_text(encoding="utf-8")
+
+    assert "self.setLayoutDirection(Qt.LeftToRight)" in source
+    assert "self.assistant_dock.setLayoutDirection(Qt.LeftToRight)" in source
+    assert "self.timeline_dock.setLayoutDirection(Qt.LeftToRight)" in source
