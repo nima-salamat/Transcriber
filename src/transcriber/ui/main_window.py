@@ -341,12 +341,14 @@ class MainWindow(QMainWindow):
         self.status_bar = status
         self.assistant_drawer_button = QPushButton("☷ Inspector")
         self.assistant_drawer_button.setCheckable(True)
+        self.assistant_drawer_button.setChecked(not self.assistant_dock.isHidden())
         self.assistant_drawer_button.setToolTip("Show or hide the Inspector / AI Assistant drawer")
         self.assistant_drawer_button.toggled.connect(
             lambda visible: self._animate_drawer(self.assistant_dock, visible, "width")
         )
         self.timeline_drawer_button = QPushButton("〰 Waveform")
         self.timeline_drawer_button.setCheckable(True)
+        self.timeline_drawer_button.setChecked(not self.timeline_dock.isHidden())
         self.timeline_drawer_button.setToolTip("Show or hide the audio waveform timeline drawer")
         self.timeline_drawer_button.toggled.connect(
             lambda visible: self._animate_drawer(self.timeline_dock, visible, "height")
@@ -421,7 +423,6 @@ class MainWindow(QMainWindow):
             old.deleteLater()
         property_name = b"maximumWidth" if dimension == "width" else b"maximumHeight"
         maximum = dock.width() if dimension == "width" else dock.height()
-        minimum = dock.minimumWidth() if dimension == "width" else dock.minimumHeight()
         target_size = 360 if dimension == "width" else 220
 
         if visible:
@@ -572,7 +573,7 @@ class MainWindow(QMainWindow):
 
         self.assistant_view_action = QAction("Inspector / AI Assistant", self)
         self.assistant_view_action.setCheckable(True)
-        self.assistant_view_action.setChecked(self.assistant_dock.isVisible())
+        self.assistant_view_action.setChecked(not self.assistant_dock.isHidden())
         self.assistant_view_action.setShortcut(QKeySequence("Ctrl+Shift+I"))
         self.assistant_view_action.setShortcutContext(Qt.WindowShortcut)
         self.assistant_view_action.toggled.connect(
@@ -580,7 +581,7 @@ class MainWindow(QMainWindow):
         )
         self.timeline_view_action = QAction("Audio Timeline", self)
         self.timeline_view_action.setCheckable(True)
-        self.timeline_view_action.setChecked(self.timeline_dock.isVisible())
+        self.timeline_view_action.setChecked(not self.timeline_dock.isHidden())
         self.timeline_view_action.setShortcut(QKeySequence("Ctrl+Shift+T"))
         self.timeline_view_action.setShortcutContext(Qt.WindowShortcut)
         self.timeline_view_action.toggled.connect(
