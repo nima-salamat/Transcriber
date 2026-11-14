@@ -524,6 +524,10 @@ class ModelLibraryPage(QWidget):
                 pending = QLabel("Applying…")
                 pending.setObjectName("Muted")
                 row_layout.addWidget(pending)
+            elif state in {"validating", "installing"}:
+                pending = QLabel("Finishing atomic install…")
+                pending.setObjectName("Muted")
+                row_layout.addWidget(pending)
 
             item.setSizeHint(row.sizeHint())
             self.download_list.addItem(item)
@@ -589,7 +593,6 @@ class ModelLibraryPage(QWidget):
             task_id, cancel_event=event, progress=emit,
         ))
         self._wire_download_worker(worker, repo_id, task_id)
-        self._downloads[repo_id] = event
         self._download_workers[repo_id] = worker
         self.thread_pool.start(worker)
         self.status_message.emit(f"Resuming {repo_id} at revision {str(job.get('revision') or '')[:12]}.")
@@ -703,6 +706,8 @@ class ModelLibraryPage(QWidget):
             except Exception:
                 job = None
         state = str(job.get("state") if job else "failed").casefold()
+        if job and job.get("error"):
+            message = str(job["error"])
         state_label = {
             "paused": "Paused",
             "stopped": "Stopped",

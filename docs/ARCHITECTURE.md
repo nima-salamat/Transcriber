@@ -13,7 +13,7 @@
 - `core`: validated settings, application paths, logging and domain configuration. It does not import Qt widgets.
 - `audio`: device enumeration, microphone capture, playback, waveform generation/cache and FFmpeg processing helpers.
 - `engines`: the `TranscriptionEngine` interface plus concrete Faster-Whisper and opt-in Google Cloud Speech-to-Text V2 adapters. Engines accept paths/options/cancellation/progress and return typed results; they do not know about widgets or SQLite.
-- `models`: Hugging Face API access, CTranslate2 compatibility checks, pinned-revision downloads, registry persistence, the current single-active Faster-Whisper lifecycle, plus a generic resource-aware runtime and priority scheduler for future adapters.
+- `models`: task-aware ASR/Whisper Hub candidate search, conservative CTranslate2 compatibility checks, safe local directory/ZIP import, pinned-revision downloads with SQLite task ledger and recovery, registry persistence, the current single-active Faster-Whisper lifecycle, plus a generic resource-aware runtime and priority scheduler for future adapters.
 - `transcription`: shared transcript/word/segment types, service orchestration, jobs, quality report, and export adapters.
 - `editor`: Qt-independent segment-aware document, word timing validation, snapshot undo/redo, search/replace and preview/apply cleanup.
 - `subtitles`: SRT/WebVTT/ASS/SSA codecs plus timing transforms and validation.

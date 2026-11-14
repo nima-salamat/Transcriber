@@ -94,26 +94,66 @@ class HuggingFaceHubClient:
             url=f"https://huggingface.co/{repo_id}",
         )
 
+    @staticmethod
+    def _is_asr_candidate(info: Any, query: str = "") -> bool:
+        """Prefer speech/Whisper candidates without treating tags as compatibility proof."""
+        repo_id = str(getattr(info, "id", "") or "").casefold()
+        pipeline = str(getattr(info, "pipeline_tag", "") or "").casefold()
+        tags = " ".join(str(item).casefold() for item in (getattr(info, "tags", None) or []))
+        card = getattr(info, "card_data", None)
+        card_data = card.to_dict() if card and hasattr(card, "to_dict") else {}
+        description = str(card_data.get("description") or "").casefold()
+        model_text = " ".join((repo_id, pipeline, tags, description))
+        if pipeline == "automatic-speech-recognition" or "automatic-speech-recognition" in tags:
+            return True
+        speech_markers = (
+            "whisper", "faster-whisper", "ctranslate2", "ct2", "speech-to-text",
+            "speech recognition", "automatic speech recognition", "asr",
+        )
+        if any(marker in model_text for marker in speech_markers):
+            return True
+        # Exact/partial repository queries remain inspectable even when Hub tags
+        # are absent; real CTranslate2 file checks still gate installation.
+        normalized_query = str(query or "").strip().casefold()
+        return bool(normalized_query and normalized_query in repo_id)
+
     def search(self, query: str = "", *, sort: str = "downloads", limit: int = 30) -> list[HubModel]:
         sort_key = {"lastModified": "last_modified", "last_modified": "last_modified"}.get(sort, sort)
         if sort_key not in {"downloads", "likes", "last_modified"}:
             sort_key = "downloads"
+        normalized_query = str(query or "").strip()
+        result_limit = max(1, min(int(limit), 100))
+
+        # When searching by text, do not filter at the API boundary by a single
+        # pipeline tag: many converted CTranslate2 repositories have incomplete
+        # or non-standard Hub metadata. Candidates are filtered locally below.
         models = self.api.list_models(
-            search=query.strip() or None,
-            pipeline_tag="automatic-speech-recognition",
+            search=normalized_query or None,
+            pipeline_tag=None if normalized_query else "automatic-speech-recognition",
             sort=sort_key,
-            limit=max(1, min(limit, 100)), full=True, cardData=True,
+            limit=result_limit,
+            full=True,
+            cardData=True,
         )
         results: list[HubModel] = []
+        seen: set[str] = set()
         for model in models:
             model_id = getattr(model, "id", None)
             if not model_id:
                 continue
             try:
                 validate_repo_id(model_id)
-                results.append(self._metadata(model))
             except ValueError:
                 continue
+            if not self._is_asr_candidate(model, normalized_query):
+                continue
+            normalized_id = str(model_id).casefold()
+            if normalized_id in seen:
+                continue
+            seen.add(normalized_id)
+            results.append(self._metadata(model))
+            if len(results) >= result_limit:
+                break
         return results
 
     def inspect(self, repo_id: str, revision: str | None = None) -> HubModel:

@@ -1,40 +1,55 @@
-# Model Library and installation
+# Model Library, compatibility, import and downloads
 
 ## Discovery
 
-`HuggingFaceHubClient` uses `huggingface_hub.HfApi` for model search and repository inspection. It does not scrape Hub HTML. Search is limited to the automatic-speech-recognition task and supports name/publisher text plus download, like, and last-modified sorting. Curated IDs are shortcuts only: every card's repository details are fetched live. Missing descriptions, licenses, language tags, file sizes, and statistics remain unknown instead of being fabricated.
+`HuggingFaceHubClient` uses the official Hugging Face Hub API; it does not scrape HTML or fetch arbitrary URLs. An empty search uses the Hub's Automatic Speech Recognition task filter. A text search deliberately removes that API-level task filter and locally retains likely speech candidates based on pipeline metadata, repository names, tags and descriptions. This allows converted CTranslate2 repositories with incomplete/non-standard pipeline tags to be found.
 
-## Compatibility gate
+Search results are candidates, not compatibility claims. The Inspect action reads the live repository file list, exact revision, sizes and model metadata. Install remains disabled until the CTranslate2 validator confirms the required root-level files. Missing descriptions, licenses, language tags and sizes remain unknown rather than being inferred from model names. Curated repository IDs are shortcuts, not compatibility guarantees.
 
-The Faster-Whisper adapter expects a CTranslate2 Whisper repository layout. The validator currently requires root-level `model.bin`, `config.json`, `tokenizer.json`, and one supported vocabulary file (`vocabulary.txt`, `vocabulary.json`, or `vocab.json`). A regular Transformers/PyTorch checkpoint such as `pytorch_model.bin` is not accepted as a Faster-Whisper model. Nested model artefacts are intentionally rejected by this first validator rather than interpreted heuristically.
+## Faster-Whisper compatibility gate
 
-This is an engine-specific gate, not a general statement that a repository cannot work with another engine. Future engines need their own validators.
+The production local ASR adapter currently supports Faster-Whisper / CTranslate2 repositories. The validator requires root-level `model.bin`, `config.json`, `tokenizer.json`, and one supported vocabulary file (`vocabulary.txt`, `vocabulary.json`, or `vocab.json`). A regular Transformers/PyTorch checkpoint such as `pytorch_model.bin` is not accepted as a Faster-Whisper model. Nested model artefacts are not interpreted heuristically.
 
-## Download lifecycle
+This is an engine-specific gate, not a statement that a repository cannot work with another runtime. Vosk, whisper.cpp and other model formats need their own adapters and validators. Hub metadata or a model name never bypasses local file inspection.
 
-1. The user explicitly confirms the repository, pinned revision, and license information before installation.
-2. Transcriber inspects repository metadata and chooses only the required compatible model artefacts.
-3. A per-model reservation prevents duplicate downloads. The download gate limits simultaneous Hub transfers; queued work can be cancelled before it gets a transfer slot.
-4. `hf_hub_download` downloads to a model-specific staging folder at the Hub commit SHA. The Hub cache is used to support retry/resume behavior.
-5. `tqdm` updates are converted into byte counts, percentage when size metadata is available, transfer speed, and ETA when calculable.
-6. Required files are checked again locally. A manifest records repository ID, pinned revision, engine ID, selected files, and license.
-7. The staging directory is atomically published into the managed model directory and registered. Reinstall keeps a recoverable previous directory until registry persistence succeeds.
+## Inspect and install
 
-A model is not installed merely because a folder exists. A compatible manifest and required files are required. Failed or cancelled staging folders are removed. A currently loaded model cannot be deleted or replaced; unload it first.
+Inspect runs in a background worker. The card shows the returned file list, measured sizes, license, revision and the compatibility validator's reason. Network, access, metadata and compatibility errors are shown on the card. Installation is explicit and requires an inspected compatible result and a pinned revision.
+
+The download service inspects again, pins the returned Hub commit, chooses only the compatible file set and writes into a per-task staging directory. After revalidation, it writes a local manifest, atomically publishes the directory and updates the registry. A model is not marked installed merely because a folder exists. If registry persistence fails, the previous directory is restored.
+
+## Persistent Downloads
+
+Every download has a SQLite task ID, repository ID, exact pinned revision once inspection succeeds, managed target, state, byte counts, model metadata, timestamps and sanitized error text. The Downloads tab is backed by this ledger, not only an in-memory worker map.
+
+States include Queued, Inspecting, Downloading, Validating, Installing, Installed, Paused, Stopped, Cancelled and Failed.
+
+- **Pause** requests a stop at the next safe transfer boundary. It does not pretend that an active HTTP request can be suspended at an arbitrary byte.
+- **Resume** reruns the same logical task ID at the same pinned revision. The temporary staging directory is rebuilt, and `hf_hub_download` reuses reusable blobs/partial data in the shared Hugging Face cache.
+- **Stop** ends the current task while preserving the same logical task and the shared cache; the user can resume it later.
+- **Cancel** marks the task cancelled. It keeps the shared cache too; cancelling a ledger task does not purge a cache shared with other downloads.
+- **Restart** creates a new task ID after cancellation.
+- **Application restart** changes queued/in-flight tasks to Stopped. They appear in Downloads and are never resumed silently.
+
+The application does not run a background daemon. Active transfers stop when the process exits. The cache is not deleted by Pause, Stop or Cancel. There is no per-task cache purger because the Hub cache may contain blobs shared by multiple repositories/tasks.
+
+Progress is persisted on state changes, each roughly 1 MiB of transfer progress, or once per second. Some cache hits do not generate network byte progress; the UI may therefore show a lower byte count before the validation/install stages complete. Unknown repository file sizes remain unknown, not zero.
+
+## Local import
+
+The Import tab accepts a local directory or ZIP archive and a local registry ID in `owner/model-name` form (for example `local/my-whisper-small`). Import copies only the validated root-level Faster-Whisper artefacts into managed storage and writes a `local-<content digest>` revision manifest. It rejects symbolic links, invalid layouts, unsafe ZIP paths, ZIP symbolic-link entries, excessive ZIP entry counts and archives whose declared uncompressed size exceeds the import limit. It does not overwrite an existing managed model ID.
+
+Private or public Hub repository IDs are imported through Discover → Inspect → Install. Transcriber never bypasses gated repository access; users must satisfy Hub terms and provide credentials securely outside the UI.
 
 ## Authentication and trust
 
-Public models do not require a token. For gated/private repositories, the user must accept the publisher's terms on Hugging Face and configure `HF_TOKEN` in the environment. Transcriber does not bypass gates or fetch arbitrary URLs. Tokens are not displayed in the UI or intentionally written to logs. Model files are treated as data and are never executed by Transcriber.
+Public models do not require a token. For gated/private repositories, users must accept the publisher's terms on Hugging Face and configure `HF_TOKEN` in the process environment. Transcriber does not display the token, put it in command-line arguments, or intentionally persist it. Downloader error messages are redacted before being displayed or stored; logs record the repository and exception type rather than arbitrary Hub exception text. Model files are treated as data and never executed.
 
-Users remain responsible for reviewing repository license terms and model-card provenance before installing a model. Pinning the inspected commit makes the downloaded revision reproducible; it does not certify the model as safe or accurate.
-
-## Built-in curated repository IDs
-
-The curated shortcuts include Faster-Whisper tiny/base/small/medium/large-v3, a Faster-Distil Whisper large variant, a Distil-Whisper CTranslate2 repository, and a Turbo community repository. A shortcut may become unavailable, gated, or incompatible over time; the application shows the live inspection result and does not assume a curated ID is still valid.
+Users remain responsible for reviewing licenses and model-card provenance. Pinning a commit makes the downloaded revision reproducible; it does not certify the model as safe or accurate.
 
 ## Current boundaries
 
-- Search currently supports task filtering and text search, but not a dedicated language or hardware-requirements filter.
-- Resource/RAM/VRAM estimates are not inferred from model names. They are not displayed unless the Hub supplies measurable repository file sizes.
-- The app supports the Faster-Whisper/CTranslate2 validator only. Vosk and other model formats require a separate engine and validator.
-- A retry uses the Hub cache; there is no separate UI to inspect or selectively purge individual cached blobs.
+- Discovery is currently optimized for ASR / Whisper / CTranslate2. Non-ASR categories such as VAD, diarization, TTS, LLM and multimodal models are not installable through this registry.
+- The import validator only supports Faster-Whisper / CTranslate2 root-level files; other model formats require a separate runtime/validator.
+- No RAM/VRAM requirement is inferred from a model name. The size shown is the repository file size supplied by the Hub, not a guarantee of the memory needed at inference.
+- The production application still uses a single-active Faster-Whisper model; the generic multi-model runtime is not yet the global inference service.

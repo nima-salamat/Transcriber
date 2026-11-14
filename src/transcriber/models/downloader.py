@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import threading
 import time
@@ -18,6 +19,19 @@ from transcriber.models.hub_client import HuggingFaceHubClient
 from transcriber.models.registry import ModelRegistry
 
 logger = logging.getLogger("transcriber.models.downloader")
+
+
+def _redact_error(message: str) -> str:
+    """Remove common credential and URL-secret forms from user-facing diagnostics."""
+    value = str(message)[:1000]
+    value = re.sub(
+        r"(?i)(authorization|access[_-]?token|api[_-]?key|password|token)\\s*[:=]\\s*[^,;\\s]+",
+        r"\1=[redacted]",
+        value,
+    )
+    value = re.sub(r"(?i)bearer\\s+[A-Za-z0-9._~+/=-]+", "Bearer [redacted]", value)
+    value = re.sub(r"(?i)(https?://)[^/@:\\s]+:[^/@\\s]+@", r"\1[redacted]@", value)
+    return value
 
 
 class DownloadPaused(Exception):
@@ -421,13 +435,16 @@ class ModelDownloader:
                 )
             raise
         except Exception as exc:
-            logger.exception("Model download failed for %s", repo_id)
-            emit("Failed", message=str(exc))
+            safe_message = _redact_error(str(exc))
+            # Keep logs useful without recording arbitrary Hub exception text,
+            # which may contain authorization headers or signed request URLs.
+            logger.error("Model download failed for %s (%s)", repo_id, type(exc).__name__)
+            emit("Failed", message=safe_message)
             if self.job_repository:
                 self.job_repository.update(
-                    task_id, state="failed", revision=pinned_revision, error=str(exc),
+                    task_id, state="failed", revision=pinned_revision, error=safe_message,
                 )
-            raise
+            raise RuntimeError(safe_message) from exc
         finally:
             shutil.rmtree(staging, ignore_errors=True)
             with self._condition:

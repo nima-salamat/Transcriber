@@ -98,13 +98,10 @@ class ModelManager:
         repo_id = validate_repo_id(repo_id)
         if source.is_symlink() or not source.is_dir():
             raise ValueError("Choose a real local model directory, not a symbolic link.")
-        for item in source.rglob("*"):
-            if item.is_symlink():
-                raise ValueError(f"Symbolic links are not allowed in an imported model: {item.name}")
-            if not (item.is_file() or item.is_dir()):
-                raise ValueError(f"Unsupported filesystem entry in imported model: {item.name}")
-
-        root_files = [item.name for item in source.iterdir() if item.is_file()]
+        root_files = [
+            item.name for item in source.iterdir()
+            if item.is_file() and not item.is_symlink()
+        ]
         report = validate_faster_whisper_files(root_files)
         if not report.compatible:
             raise ValueError(
@@ -161,12 +158,27 @@ class ModelManager:
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
+    def _reserve_import(self, repo_id: str) -> str:
+        repo_id = validate_repo_id(repo_id)
+        with self._lock:
+            if repo_id == self._active_model_id:
+                raise RuntimeError("Unload the active model before replacing it with a local import.")
+            if repo_id in self._installing:
+                raise RuntimeError(f"A model operation for {repo_id} is already active.")
+            self._installing.add(repo_id)
+        return repo_id
+
     def import_directory(self, source: str | Path, repo_id: str) -> Path:
         """Import a local Faster-Whisper/CTranslate2 directory."""
-        path = Path(source).expanduser()
-        if path.is_symlink():
-            raise ValueError("Importing a symbolic-link directory is not allowed.")
-        return self._publish_imported_directory(path.resolve(), repo_id)
+        repo_id = self._reserve_import(repo_id)
+        try:
+            path = Path(source).expanduser()
+            if path.is_symlink():
+                raise ValueError("Importing a symbolic-link directory is not allowed.")
+            return self._publish_imported_directory(path.resolve(), repo_id)
+        finally:
+            with self._lock:
+                self._installing.discard(repo_id)
 
     def import_zip(self, archive_path: str | Path, repo_id: str) -> Path:
         """Safely extract and import a ZIP without path traversal or symlink entries."""
@@ -176,10 +188,23 @@ class ModelManager:
         import zipfile
         from pathlib import PurePosixPath
 
+        repo_id = self._reserve_import(repo_id)
+        try:
+            return self._import_zip_contents(archive_path, repo_id)
+        finally:
+            with self._lock:
+                self._installing.discard(repo_id)
+
+    def _import_zip_contents(self, archive_path: str | Path, repo_id: str) -> Path:
+        import shutil
+        import stat
+        import uuid
+        import zipfile
+        from pathlib import PurePosixPath
+
         archive = Path(archive_path).expanduser()
         if archive.is_symlink() or not archive.is_file():
             raise FileNotFoundError(f"Model ZIP archive does not exist: {archive}")
-        repo_id = validate_repo_id(repo_id)
         staging_root = self.registry.root / ".staging"
         staging_root.mkdir(parents=True, exist_ok=True)
         extraction = staging_root / f"zip-import-{uuid.uuid4().hex}"
