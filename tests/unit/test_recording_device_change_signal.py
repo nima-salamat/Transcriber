@@ -55,3 +55,44 @@ def test_audio_input_change_signal_is_connected_from_qmediadevices_instance() ->
     assert not invalid_class_connection_found, "Do not connect audioInputsChanged through the class"
     assert assignment_found, "RecordingPage must own a QMediaDevices instance"
     assert connection_found, "audioInputsChanged must be connected from the instance signal"
+
+
+
+def test_device_list_refresh_does_not_abort_active_capture() -> None:
+    source = RECORDING_SOURCE.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(RECORDING_SOURCE))
+    recording_page = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RecordingPage"
+    )
+    refresh = next(
+        node for node in recording_page.body
+        if isinstance(node, ast.FunctionDef) and node.name == "refresh_devices"
+    )
+    called_methods = {
+        node.func.attr
+        for node in ast.walk(refresh)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "device_disconnected" not in called_methods
+
+
+def test_empty_saved_input_preference_uses_system_default() -> None:
+    source = RECORDING_SOURCE.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(RECORDING_SOURCE))
+    recording_page = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "RecordingPage"
+    )
+    resolver = next(
+        node for node in recording_page.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_selected_input_device"
+    )
+    default_lookup_found = any(
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "QMediaDevices"
+        and node.attr == "defaultAudioInput"
+        for node in ast.walk(resolver)
+    )
+    assert default_lookup_found, "An empty custom preference must follow the OS default input"
