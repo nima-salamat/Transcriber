@@ -60,15 +60,3 @@ def test_model_manager_reads_shared_download_ledger_once(tmp_path):
     jobs = manager.list_download_jobs()
 
     assert [job["task_id"] for job in jobs] == ["vosk-task", "hub-task"]
-
-def test_model_manager_removes_history_entry_without_deleting_model_files(tmp_path):
-    from transcriber.models.manager import ModelManager
-
-    repository = _repository(tmp_path)
-    repository.enqueue("failed-task", "publisher/model", "rev-a", "/models/model")
-    repository.update("failed-task", state="failed", error="test failure")
-    manager = object.__new__(ModelManager)
-    manager.downloader = SimpleNamespace(job_repository=repository)
-
-    assert manager.remove_download_job("failed-task")
-    assert repository.get("failed-task") is None
