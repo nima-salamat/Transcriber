@@ -35,6 +35,15 @@ def stylesheet(theme: str) -> str:
     QSlider::handle:horizontal {{ width: 13px; margin: -5px 0; border-radius: 6px; background: {c['accent']}; }}
     QStatusBar {{ background: {c['surface']}; color: {c['muted']}; border-top: 1px solid {c['border']}; }}
     QScrollArea {{ border: 0; background: transparent; }}
+    QScrollArea > QWidget > QWidget {{ background: transparent; }}
+    QScrollBar:vertical {{ background: transparent; width: 10px; margin: 3px 1px 3px 1px; }}
+    QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 1px 3px 1px 3px; }}
+    QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{ background: {c['border']}; border-radius: 4px; min-height: 34px; min-width: 34px; }}
+    QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{ background: {c['muted']}; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; height: 0; border: 0; background: transparent; }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
     QTabWidget::pane {{ border: 1px solid {c['border']}; border-radius: 10px; }}
     QTabBar::tab {{ background: {c['surface_2']}; padding: 9px 15px; margin-right: 4px; border-radius: 7px; }}
     QTabBar::tab:selected {{ background: {c['accent']}; color: white; }}
