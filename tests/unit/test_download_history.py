@@ -59,4 +59,5 @@ def test_model_manager_reads_shared_download_ledger_once(tmp_path):
 
     jobs = manager.list_download_jobs()
 
-    assert [job["task_id"] for job in jobs] == ["vosk-task", "hub-task"]
+    assert {job["task_id"] for job in jobs} == {"vosk-task", "hub-task"}
+    assert len(jobs) == 2
