@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import urllib.error
-
 import pytest
 
 from transcriber.models import vosk
