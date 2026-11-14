@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt, QUrl, Signal, QSize
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -92,11 +92,13 @@ class AudioLibraryPage(QWidget):
         self.search.textChanged.connect(lambda: self.search_timer.start())
         search_row.addWidget(self.search, 1)
         self.refresh_button = QPushButton("Refresh")
-        self.refresh_button.setIcon(self.icons.icon("activity", size=17))
+        self.refresh_button.setIcon(
+            self.icons.icon("activity", self._neutral_icon_color(), 17)
+        )
         self.refresh_button.clicked.connect(self.refresh)
         search_row.addWidget(self.refresh_button)
         folder = QPushButton("Open folder")
-        folder.setIcon(self.icons.icon("projects", size=17))
+        folder.setIcon(self.icons.icon("projects", self._neutral_icon_color(), 17))
         folder.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.paths.recordings)))
         )
@@ -172,14 +174,16 @@ class AudioLibraryPage(QWidget):
         transport = QHBoxLayout()
         transport.addStretch(1)
         self.skip_back_button = QPushButton()
-        self.skip_back_button.setIcon(self.icons.icon("skip_back", size=18))
+        self.skip_back_button.setIcon(
+            self.icons.icon("skip_back", self._neutral_icon_color(), 18)
+        )
         self.skip_back_button.setIconSize(QSize(18, 18))
         self.skip_back_button.setToolTip("Back 15 seconds")
         self.skip_back_button.setFixedSize(42, 42)
         self.skip_back_button.clicked.connect(lambda: self._skip(-15))
         transport.addWidget(self.skip_back_button)
         self.play_button = QPushButton()
-        self.play_button.setIcon(self.icons.icon("play", size=20))
+        self.play_button.setIcon(self.icons.icon("play", "#ffffff", 20))
         self.play_button.setIconSize(QSize(20, 20))
         self.play_button.setMinimumSize(56, 48)
         self.play_button.setObjectName("Primary")
@@ -187,7 +191,9 @@ class AudioLibraryPage(QWidget):
         self.play_button.clicked.connect(self.player.play_pause)
         transport.addWidget(self.play_button)
         self.skip_forward_button = QPushButton()
-        self.skip_forward_button.setIcon(self.icons.icon("skip_forward", size=18))
+        self.skip_forward_button.setIcon(
+            self.icons.icon("skip_forward", self._neutral_icon_color(), 18)
+        )
         self.skip_forward_button.setIconSize(QSize(18, 18))
         self.skip_forward_button.setToolTip("Forward 15 seconds")
         self.skip_forward_button.setFixedSize(42, 42)
@@ -232,6 +238,9 @@ class AudioLibraryPage(QWidget):
             lambda message: self.status_message.emit(f"Playback error: {message}")
         )
         self.refresh()
+
+    def _neutral_icon_color(self) -> str:
+        return self.palette().color(QPalette.ColorRole.ButtonText).name()
 
     def refresh(self):
         self._generation += 1
@@ -324,7 +333,7 @@ class AudioLibraryPage(QWidget):
         row.setSpacing(10)
 
         play = QPushButton()
-        play.setIcon(self.icons.icon("play", size=16))
+        play.setIcon(self.icons.icon("play", self._neutral_icon_color(), 16))
         play.setIconSize(QSize(16, 16))
         play.setFixedSize(34, 34)
         play.setEnabled(exists)
@@ -440,7 +449,9 @@ class AudioLibraryPage(QWidget):
         self.duration_label.setText(f"/ {_format_duration(seconds)}")
 
     def _on_playback_changed(self, playing: bool):
-        self.play_button.setIcon(self.icons.icon("pause" if playing else "play", size=20))
+        self.play_button.setIcon(
+            self.icons.icon("pause" if playing else "play", "#ffffff", 20)
+        )
         self.play_button.setToolTip("Pause playback" if playing else "Play recording")
 
     def _skip(self, seconds: int):
