@@ -63,3 +63,6 @@ def test_dock_geometry_uses_physical_left_to_right_direction() -> None:
     assert "self.setLayoutDirection(Qt.LeftToRight)" in source
     assert "self.assistant_dock.setLayoutDirection(Qt.LeftToRight)" in source
     assert "self.timeline_dock.setLayoutDirection(Qt.LeftToRight)" in source
+    assert "self.assistant_dock.setAllowedAreas(Qt.RightDockWidgetArea)" in source
+    assert "self.assistant_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)" in source
+    assert "self.timeline_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)" in source
