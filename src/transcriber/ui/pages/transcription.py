@@ -77,10 +77,21 @@ class TranscriptionPage(QWidget):
         self.file_name.setObjectName("Muted")
         self.open_button = QPushButton("Choose audio file")
         self.open_button.clicked.connect(self.choose_audio)
+        self.engine_combo = QComboBox()
+        self.engine_combo.addItem("Faster-Whisper · Local", "faster-whisper")
+        self.engine_combo.addItem("Google Cloud STT V2 · Online", "google-cloud")
+        self.engine_combo.setCurrentIndex(max(0, self.engine_combo.findData(self.settings_store.settings.default_engine)))
+        self.engine_combo.currentIndexChanged.connect(self._update_engine_controls)
+        source_layout.addWidget(self.open_button)
+        source_layout.addWidget(self.file_name, 1)
+        source_layout.addWidget(QLabel("Engine"))
+        source_layout.addWidget(self.engine_combo)
+
+        recognition_options = QHBoxLayout()
         self.model_combo = QComboBox()
         self.refresh_models()
         self.language_combo = QComboBox()
-        self.language_combo.addItem("Auto detect", "auto")
+        self.language_combo.addItem("Auto detect (local engines)", "auto")
         for code, name in [("en", "English"), ("fa", "Persian"), ("de", "German"),
                            ("fr", "French"), ("es", "Spanish"), ("ar", "Arabic"),
                            ("ru", "Russian"), ("zh", "Chinese"), ("ja", "Japanese")]:
@@ -90,33 +101,35 @@ class TranscriptionPage(QWidget):
         self.beam_spin.setValue(self.settings_store.settings.beam_size)
         self.vad_check = QCheckBox("Voice activity detection")
         self.vad_check.setChecked(self.settings_store.settings.vad_filter)
-        source_layout.addWidget(self.open_button)
-        source_layout.addWidget(self.file_name, 1)
-        source_layout.addWidget(QLabel("Model"))
-        source_layout.addWidget(self.model_combo, 1)
-        source_layout.addWidget(QLabel("Language"))
-        source_layout.addWidget(self.language_combo)
-        source_layout.addWidget(QLabel("Beam"))
-        source_layout.addWidget(self.beam_spin)
-        source_layout.addWidget(self.vad_check)
+        recognition_options.addWidget(QLabel("Model"))
+        recognition_options.addWidget(self.model_combo, 2)
+        recognition_options.addWidget(QLabel("Language"))
+        recognition_options.addWidget(self.language_combo)
+        recognition_options.addWidget(QLabel("Beam"))
+        recognition_options.addWidget(self.beam_spin)
+        recognition_options.addWidget(self.vad_check)
+
         advanced_options = QHBoxLayout()
         self.task_combo = QComboBox()
         self.task_combo.addItem("Transcribe in source language", "transcribe")
         self.task_combo.addItem("Translate to English", "translate")
         self.word_timestamps = QCheckBox("Word timings")
         self.word_timestamps.setChecked(self.settings_store.settings.word_timestamps)
-        self.word_timestamps.toggled.connect(
-            lambda value: self.settings_store.update(word_timestamps=value)
-        )
+        self.word_timestamps.toggled.connect(lambda value: self.settings_store.update(word_timestamps=value))
         self.initial_prompt = QLineEdit()
         self.initial_prompt.setPlaceholderText("Optional vocabulary or context to guide recognition…")
         advanced_options.addWidget(QLabel("Task"))
         advanced_options.addWidget(self.task_combo)
         advanced_options.addWidget(self.word_timestamps)
         advanced_options.addWidget(self.initial_prompt, 1)
+        self.engine_privacy_hint = QLabel()
+        self.engine_privacy_hint.setObjectName("Muted")
+        self.engine_privacy_hint.setWordWrap(True)
         source_outer = QVBoxLayout(source_card)
         source_outer.addLayout(source_layout)
+        source_outer.addLayout(recognition_options)
         source_outer.addLayout(advanced_options)
+        source_outer.addWidget(self.engine_privacy_hint)
         layout.addWidget(source_card)
 
         player_card = Card()
@@ -201,6 +214,7 @@ class TranscriptionPage(QWidget):
         self.progress_label.setObjectName("Muted")
         self.start_button = primary_button("Start offline transcription")
         self.start_button.clicked.connect(self.start_transcription)
+        self._update_engine_controls()
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setVisible(False)
         self.cancel_button.clicked.connect(self.cancel_transcription)
@@ -217,6 +231,24 @@ class TranscriptionPage(QWidget):
         self.editor.textChanged.connect(self._update_word_count)
         self.player.position_changed.connect(self._sync_transcript_to_audio)
         self.player.error_occurred.connect(lambda message: self.status_message.emit(f"Audio player: {message}"))
+        self._update_engine_controls()
+
+    def _update_engine_controls(self, *_args):
+        cloud_selected = self.engine_combo.currentData() == "google-cloud"
+        self.model_combo.setEnabled(not cloud_selected)
+        self.beam_spin.setEnabled(not cloud_selected)
+        self.vad_check.setEnabled(not cloud_selected)
+        self.task_combo.setEnabled(not cloud_selected)
+        if cloud_selected and self.task_combo.currentData() != "transcribe":
+            self.task_combo.setCurrentIndex(self.task_combo.findData("transcribe"))
+        if hasattr(self, "start_button"):
+            self.start_button.setText("Send audio to Google Cloud" if cloud_selected else "Start offline transcription")
+        self.engine_privacy_hint.setText(
+            "Online processing: audio is sent to Google Cloud Speech-to-Text V2. A project ID, "
+            "Application Default Credentials and explicit Cloud consent are required. Choose a specific language."
+            if cloud_selected else
+            "Local processing: Faster-Whisper runs on this device. Audio is not uploaded by this engine."
+        )
 
     @property
     def segments(self) -> list[TranscriptSegment]:
@@ -276,42 +308,45 @@ class TranscriptionPage(QWidget):
             self.choose_audio()
             if self.audio_path is None:
                 return
+        engine_id = self.engine_combo.currentData()
         repo_id = self.model_combo.currentData()
         configured = self.settings_store.settings
-        if configured.default_engine != "google-cloud" and not repo_id:
+        cloud_selected = engine_id == "google-cloud"
+        if not cloud_selected and not repo_id:
             QMessageBox.information(self, "Model required", "Install a compatible Faster-Whisper model in Model Library first.")
             return
-        if configured.default_engine == "google-cloud":
+        if cloud_selected:
             if configured.local_only or not configured.cloud_consent:
                 QMessageBox.warning(
                     self, "Cloud recognition is disabled",
-                    "Cloud recognition sends audio to Google. Disable Local-only mode and explicitly grant cloud consent in Privacy settings first.",
+                    "Audio will be sent to Google Cloud. Disable Local-only mode and explicitly grant Cloud consent in Settings before starting this job.",
                 )
                 return
-            if self.task_combo.currentData() == "translate":
-                QMessageBox.information(self, "Translation unavailable", "The optional Google adapter does not implement Whisper translation mode.")
+            if self.language_combo.currentData() == "auto":
+                QMessageBox.information(
+                    self, "Choose a Cloud language",
+                    "Google Cloud Speech-to-Text V2 requires an explicit language for this workflow. Choose a language instead of Auto detect.",
+                )
                 return
-
-        changes = {
-            "beam_size": self.beam_spin.value(),
-            "vad_filter": self.vad_check.isChecked(),
-            "word_timestamps": self.word_timestamps.isChecked(),
-        }
-        if repo_id:
-            changes["default_model"] = repo_id
-        self.settings_store.update(**changes)
-
         language = None if self.language_combo.currentData() == "auto" else self.language_combo.currentData()
-        if configured.default_engine == "google-cloud" and language:
-            language = {"en": "en-US", "fa": "fa-IR", "de": "de-DE", "fr": "fr-FR",
-                        "es": "es-ES", "ar": "ar-SA", "ru": "ru-RU", "zh": "zh-CN",
-                        "ja": "ja-JP"}.get(language, language)
+        if cloud_selected:
+            language = {
+                "en": "en-US", "fa": "fa-IR", "de": "de-DE", "fr": "fr-FR",
+                "es": "es-ES", "ar": "ar-SA", "ru": "ru-RU", "zh": "cmn-Hans-CN",
+                "ja": "ja-JP",
+            }.get(language, language)
         options = TranscriptionOptions(
-            language=language, task=self.task_combo.currentData(),
-            beam_size=self.beam_spin.value(), vad_filter=self.vad_check.isChecked(),
+            language=language,
+            task="transcribe" if cloud_selected else self.task_combo.currentData(),
+            beam_size=self.beam_spin.value(),
+            vad_filter=self.vad_check.isChecked(),
             word_timestamps=self.word_timestamps.isChecked(),
             initial_prompt=self.initial_prompt.text().strip() or None,
         )
+        changes = {"word_timestamps": self.word_timestamps.isChecked()}
+        if not cloud_selected:
+            changes.update(beam_size=self.beam_spin.value(), vad_filter=self.vad_check.isChecked(), default_model=repo_id)
+        self.settings_store.update(**changes)
         audio_path = self.audio_path
         cancel_event = threading.Event()
         self.cancel_event = cancel_event
@@ -319,10 +354,13 @@ class TranscriptionPage(QWidget):
         self.cancel_button.setVisible(True)
         self.progress.setValue(0)
         self.progress.setVisible(True)
-        self.progress_label.setText("Preparing recognition engine…")
-        model_id = repo_id if configured.default_engine == "faster-whisper" else None
+        self.progress_label.setText(
+            "Preparing local recognition engine…" if not cloud_selected
+            else "Preparing local audio chunks for Google Cloud…"
+        )
+        model_id = repo_id if not cloud_selected else None
         worker = FunctionWorker(lambda emit: self._run_transcription(
-            emit, configured, repo_id, audio_path, options, cancel_event, model_id
+            emit, configured, engine_id, repo_id, audio_path, options, cancel_event, model_id
         ))
         worker.signals.progress.connect(self._on_progress)
         worker.signals.result.connect(self._on_transcription_complete)
@@ -330,23 +368,33 @@ class TranscriptionPage(QWidget):
         worker.signals.finished.connect(self._finish_worker)
         self.thread_pool.start(worker)
 
-    def _run_transcription(self, emit, configured, repo_id, audio_path, options, cancel_event, model_id):
+    def _run_transcription(
+        self, emit, configured, engine_id, repo_id, audio_path, options, cancel_event, model_id
+    ):
         if cancel_event.is_set():
             raise InterruptedError("Transcription cancelled before engine preparation")
-        if configured.default_engine == "google-cloud":
-            # Model unloading may wait for inference locks, so it belongs in this worker too.
+        if engine_id == "google-cloud":
             self.model_manager.unload_active()
             from transcriber.engines.cloud import GoogleCloudEngine
-            engine = GoogleCloudEngine(consent_granted=True)
+            engine = GoogleCloudEngine(
+                consent_granted=True,
+                project_id=configured.google_cloud_project or None,
+                location=configured.google_cloud_location,
+                model=configured.google_cloud_model,
+            )
         else:
             engine = self.model_manager.get_engine(repo_id, configured)
         service = TranscriptionService(engine, self.history)
-        result = service.transcribe(
-            audio_path, options, cancel_event=cancel_event,
-            progress=lambda percent, message: emit((percent, message)),
-            title=Path(audio_path).stem, model_id=model_id,
-        )
-        return engine, result
+        try:
+            result = service.transcribe(
+                audio_path, options, cancel_event=cancel_event,
+                progress=lambda percent, message: emit((percent, message)),
+                title=Path(audio_path).stem, model_id=model_id,
+            )
+            return engine, result
+        finally:
+            if engine_id == "google-cloud":
+                engine.unload()
 
     def cancel_transcription(self):
         if self.cancel_event:
@@ -397,6 +445,7 @@ class TranscriptionPage(QWidget):
         self.status_message.emit("Transcription failed")
 
     def _finish_worker(self):
+        self._update_engine_controls()
         self.start_button.setEnabled(True)
         self.cancel_button.setVisible(False)
         self.cancel_button.setEnabled(True)

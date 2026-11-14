@@ -79,7 +79,7 @@ class SettingsPage(QWidget):
         recog_form.setContentsMargins(18, 16, 18, 16)
         self.engine = QComboBox()
         self.engine.addItem("Faster-Whisper (offline)", "faster-whisper")
-        self.engine.addItem("Google Speech Recognition (online, optional)", "google-cloud")
+        self.engine.addItem("Google Cloud Speech-to-Text V2 (online)", "google-cloud")
         self.engine.setCurrentIndex(max(0, self.engine.findData(current.default_engine)))
         self.engine.currentIndexChanged.connect(lambda: self._save(default_engine=self.engine.currentData()))
         self.device = QComboBox()
@@ -115,6 +115,46 @@ class SettingsPage(QWidget):
         recog_form.addRow("Voice activity detection", self.vad)
         recog_form.addRow("Word-level timestamps", self.word_timestamps)
         layout.addWidget(self._section("Recognition", recognition))
+
+        cloud = Card()
+        cloud_form = QFormLayout(cloud)
+        cloud_form.setContentsMargins(18, 16, 18, 16)
+        self.google_cloud_project = QLineEdit(current.google_cloud_project)
+        self.google_cloud_project.setPlaceholderText("Google Cloud project ID (or GOOGLE_CLOUD_PROJECT)")
+        self.google_cloud_location = QComboBox()
+        for label, value in (("Europe multi-region", "eu"), ("United States multi-region", "us"), ("Global", "global")):
+            self.google_cloud_location.addItem(label, value)
+        self.google_cloud_location.setCurrentIndex(max(0, self.google_cloud_location.findData(current.google_cloud_location)))
+        self.google_cloud_model = QComboBox()
+        for label, value in (("Chirp 3", "chirp_3"), ("Long", "long"), ("Short", "short")):
+            self.google_cloud_model.addItem(label, value)
+        self.google_cloud_model.setCurrentIndex(max(0, self.google_cloud_model.findData(current.google_cloud_model)))
+        cloud_form.addRow("Google Cloud project", self.google_cloud_project)
+        cloud_form.addRow("API region", self.google_cloud_location)
+        cloud_form.addRow("V2 model", self.google_cloud_model)
+        cloud_actions = QHBoxLayout()
+        save_cloud = QPushButton("Save Cloud configuration")
+        save_cloud.clicked.connect(self._save_google_cloud_settings)
+        self.verify_cloud = QPushButton("Verify ADC credentials")
+        self.verify_cloud.clicked.connect(self._verify_google_cloud_credentials)
+        cloud_actions.addWidget(save_cloud)
+        cloud_actions.addWidget(self.verify_cloud)
+        cloud_actions.addStretch(1)
+        cloud_form.addRow("Configuration", cloud_actions)
+        self.cloud_status = QLabel(
+            "Uses Application Default Credentials. Verification checks local credentials only; API enablement and IAM permission are checked on the first request."
+        )
+        self.cloud_status.setObjectName("Muted")
+        self.cloud_status.setWordWrap(True)
+        cloud_form.addRow("Status", self.cloud_status)
+        cloud_note = QLabel(
+            "Requires a Google Cloud project, billing, Speech-to-Text API enabled and suitable IAM permissions. "
+            "No service-account key is stored by Transcriber. Audio is sent inline in chunks; this workflow does not upload files to Google Cloud Storage."
+        )
+        cloud_note.setWordWrap(True)
+        cloud_note.setObjectName("Muted")
+        cloud_form.addRow("Requirements", cloud_note)
+        layout.addWidget(self._section("Google Cloud Speech-to-Text V2", cloud))
 
         jobs = Card()
         jobs_form = QFormLayout(jobs)
@@ -303,6 +343,34 @@ class SettingsPage(QWidget):
     def _save(self, **changes):
         self.settings_store.update(**changes)
         self.status_message.emit("Settings saved")
+
+    def _save_google_cloud_settings(self):
+        self._save(
+            google_cloud_project=self.google_cloud_project.text().strip(),
+            google_cloud_location=self.google_cloud_location.currentData(),
+            google_cloud_model=self.google_cloud_model.currentData(),
+        )
+        self.cloud_status.setText("Configuration saved. Credential verification does not send audio.")
+
+    def _verify_google_cloud_credentials(self):
+        project_id = self.google_cloud_project.text().strip() or None
+        self.verify_cloud.setEnabled(False)
+        self.cloud_status.setText("Refreshing Application Default Credentials…")
+
+        def verify(_emit):
+            from transcriber.engines.cloud import GoogleCloudEngine
+            return GoogleCloudEngine.verify_credentials(project_id)
+
+        worker = FunctionWorker(verify)
+        self._track_worker(
+            worker,
+            lambda result: self.cloud_status.setText(
+                f"Credentials available for project {result['project_id']} ({result['credential_type']}). "
+                "Speech API access will be checked by the first real recognition request."
+            ),
+            lambda message: self.cloud_status.setText(f"Credential verification failed: {message}"),
+        )
+        worker.signals.finished.connect(lambda: self.verify_cloud.setEnabled(True))
 
     def _concurrency_changed(self, value: int):
         self._save(download_concurrency=value)
