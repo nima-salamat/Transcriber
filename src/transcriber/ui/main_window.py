@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStackedWidget,
     QStatusBar,
+    QSplitter,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -288,17 +289,25 @@ class MainWindow(QMainWindow):
         for _, page in self.pages.values():
             self.stack.addWidget(page)
         content_layout.addWidget(self.stack, 1)
-        root_layout.addWidget(content, 1)
+        self.workspace_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.workspace_splitter.setObjectName("WorkspaceSplitter")
+        self.workspace_splitter.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        self.workspace_splitter.setHandleWidth(6)
+        self.workspace_splitter.setChildrenCollapsible(False)
+        self.workspace_splitter.addWidget(content)
+        self.workspace_splitter.setStretchFactor(0, 1)
+        root_layout.addWidget(self.workspace_splitter, 1)
         self.setCentralWidget(root)
+        self._inspector_width = 430
 
         self.assistant_dock = QDockWidget("Inspector / AI Assistant", self)
         self.assistant_dock.setObjectName("AssistantDock")
         self.assistant_dock.setLayoutDirection(Qt.LeftToRight)
-        # Keep the Inspector attached to the physical right edge; users resize it
-        # with the splitter instead of accidentally dragging the drawer elsewhere.
-        self.assistant_dock.setAllowedAreas(Qt.RightDockWidgetArea)
+        # Inspector is the right-hand child of an explicit LTR splitter.
+        # Drag its left divider left to make the Inspector wider.
         self.assistant_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.assistant_dock.setMinimumWidth(320)
+        self.assistant_dock.setMaximumWidth(16777215)
         inspector_tabs = QTabWidget()
         inspector_tabs.setObjectName("InspectorTabs")
         self.inspector_tabs = inspector_tabs
@@ -321,7 +330,11 @@ class MainWindow(QMainWindow):
         self._install_drawer_title_bar(
             self.assistant_dock, "Inspector / AI Assistant", "☷", "width"
         )
-        self.addDockWidget(Qt.RightDockWidgetArea, self.assistant_dock)
+        self.workspace_splitter.addWidget(self.assistant_dock)
+        self.workspace_splitter.setStretchFactor(1, 0)
+        self.workspace_splitter.setSizes([850, self._inspector_width])
+        self.workspace_splitter.splitterMoved.connect(self._remember_inspector_width)
+        self.workspace_splitter.handle(1).setToolTip("Drag left to widen the Inspector")
 
         self.timeline_dock = QDockWidget("Audio Timeline", self)
         self.timeline_dock.setObjectName("TimelineDock")
@@ -437,46 +450,41 @@ class MainWindow(QMainWindow):
             self.settings_store.update(**{setting: bool(visible)})
             break
 
-    def _animate_drawer(self, dock, visible: bool, dimension: str):
-        """Show or hide an edge dock while leaving sizing to Qt's dock splitter.
+    def _remember_inspector_width(self, *_args):
+        """Remember the second (right-hand) splitter child's current width."""
+        if self.assistant_dock.isHidden():
+            return
+        sizes = self.workspace_splitter.sizes()
+        if len(sizes) == 2 and sizes[1] >= self.assistant_dock.minimumWidth():
+            self._inspector_width = sizes[1]
 
-        Animating maximumWidth/maximumHeight to zero while a non-zero minimum
-        size is active creates contradictory constraints. It can leave a dock
-        clipped, stuck at its minimum, or difficult to resize. QMainWindow
-        already handles dock insertion/removal and preserves the user's splitter
-        size, so this method deliberately uses native visibility instead.
-        """
+    def _apply_inspector_width(self):
+        """Restore a predictable right-pane width after the window is laid out."""
+        if self.assistant_dock.isHidden():
+            return
+        available = self.workspace_splitter.width()
+        target = max(self.assistant_dock.minimumWidth(), self._inspector_width)
+        if available > target:
+            self.workspace_splitter.setSizes([available - target, target])
+
+    def _animate_drawer(self, dock, visible: bool, dimension: str):
+        """Show or hide a drawer while keeping each panel's sizing rules explicit."""
         if dock not in (self.assistant_dock, self.timeline_dock):
             return
 
         if dimension == "width":
-            area = Qt.DockWidgetArea.RightDockWidgetArea
-            dock.setMinimumWidth(320)
-            dock.setMaximumWidth(16777215)
-            fallback_size = 430
-            too_small = dock.width() < 360
-            orientation = Qt.Orientation.Horizontal
+            if visible:
+                dock.show()
+                self._apply_inspector_width()
+            else:
+                self._remember_inspector_width()
+                dock.hide()
         elif dimension == "height":
-            area = Qt.DockWidgetArea.BottomDockWidgetArea
             # Waveform is a compact strip, not a vertically resizable workspace.
             dock.setFixedHeight(172)
-            fallback_size = 172
-            too_small = False
-            orientation = Qt.Orientation.Vertical
+            dock.setVisible(bool(visible))
         else:
-            raise ValueError(f"Unsupported dock dimension: {dimension}")
-
-        if visible:
-            if dock.isFloating():
-                dock.setFloating(False)
-            if self.dockWidgetArea(dock) != area:
-                self.addDockWidget(area, dock)
-            dock.show()
-            dock.raise_()
-            if too_small:
-                self.resizeDocks([dock], [fallback_size], orientation)
-        else:
-            dock.hide()
+            raise ValueError(f"Unsupported drawer dimension: {dimension}")
 
         self._sync_drawer_controls(dock, not dock.isHidden())
 
@@ -541,8 +549,7 @@ class MainWindow(QMainWindow):
 
     def show_ai_assistant(self):
         """Open the inspector directly on its AI conversation tab."""
-        self.assistant_dock.show()
-        self.assistant_dock.raise_()
+        self._animate_drawer(self.assistant_dock, True, "width")
         self.inspector_tabs.setCurrentWidget(self.assistant_panel)
         self.assistant_panel.prompt.setFocus()
 
@@ -660,16 +667,16 @@ class MainWindow(QMainWindow):
         self.settings_store.update(sidebar_visible=bool(visible))
 
     def restore_default_layout(self):
-        self.addDockWidget(Qt.RightDockWidgetArea, self.assistant_dock)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
-        self.assistant_dock.setFloating(False)
         self.timeline_dock.setFloating(False)
         self.assistant_dock.setMinimumWidth(320)
-        self.timeline_dock.setFixedHeight(172)
         self.assistant_dock.setMaximumWidth(16777215)
-        self.timeline_dock.setMaximumHeight(16777215)
+        # setFixedHeight sets both limits; never release the maximum again.
+        self.timeline_dock.setFixedHeight(172)
         self.assistant_dock.show()
         self.timeline_dock.show()
+        self._inspector_width = 430
+        self._apply_inspector_width()
         self._sync_drawer_controls(self.assistant_dock, True)
         self._sync_drawer_controls(self.timeline_dock, True)
         self.sidebar.show()
@@ -682,7 +689,6 @@ class MainWindow(QMainWindow):
         self.sidebar_toggle.setText("Collapse sidebar")
         for key, _icon, title in self.NAVIGATION:
             self.nav_buttons[key].setText(title)
-        self.resizeDocks([self.assistant_dock], [430], Qt.Horizontal)
         self.settings_store.update(
             sidebar_visible=True, sidebar_collapsed=False,
             inspector_visible=True, timeline_visible=True, window_state=None,
@@ -1218,26 +1224,26 @@ class MainWindow(QMainWindow):
         saved_state = self.settings_store.settings.window_state
         if saved_state:
             try:
-                state = __import__("PySide6.QtCore", fromlist=["QByteArray"]).QByteArray.fromBase64(saved_state.encode("ascii"))
+                state_text = saved_state
+                if saved_state.startswith("v2|"):
+                    _version, stored_width, state_text = saved_state.split("|", 2)
+                    self._inspector_width = max(320, int(stored_width))
+                state = __import__("PySide6.QtCore", fromlist=["QByteArray"]).QByteArray.fromBase64(
+                    state_text.encode("ascii")
+                )
                 self.restoreState(state)
-            except Exception:
+            except (TypeError, ValueError):
                 pass
         settings = self.settings_store.settings
-        # A saved/older Qt state must not leave either workspace dock floating
-        # or attached to the wrong edge.
-        for dock, area, minimum in (
-            (self.assistant_dock, Qt.DockWidgetArea.RightDockWidgetArea, 320),
-            (self.timeline_dock, Qt.DockWidgetArea.BottomDockWidgetArea, 172),
-        ):
-            dock.setFloating(False)
-            dock.setAllowedAreas(area)
-            if self.dockWidgetArea(dock) != area:
-                self.addDockWidget(area, dock)
-            if area == Qt.DockWidgetArea.RightDockWidgetArea:
-                dock.setMinimumWidth(minimum)
-                dock.setMaximumWidth(16777215)
-            else:
-                dock.setFixedHeight(minimum)
+        # Inspector is managed by WorkspaceSplitter; only the waveform remains
+        # a QMainWindow dock and is permanently constrained to a compact height.
+        self.assistant_dock.setMinimumWidth(320)
+        self.assistant_dock.setMaximumWidth(16777215)
+        self.timeline_dock.setFloating(False)
+        self.timeline_dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
+        if self.dockWidgetArea(self.timeline_dock) != Qt.DockWidgetArea.BottomDockWidgetArea:
+            self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.timeline_dock)
+        self.timeline_dock.setFixedHeight(172)
 
         self.assistant_dock.setVisible(settings.inspector_visible)
         self.timeline_dock.setVisible(settings.timeline_visible)
@@ -1245,6 +1251,7 @@ class MainWindow(QMainWindow):
         self._sync_drawer_controls(self.timeline_dock, settings.timeline_visible)
         self.sidebar.setVisible(settings.sidebar_visible)
         self.sidebar_action.setChecked(settings.sidebar_visible)
+        QTimer.singleShot(0, self._apply_inspector_width)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls() and any(url.isLocalFile() for url in event.mimeData().urls()):
@@ -1294,7 +1301,10 @@ class MainWindow(QMainWindow):
         self.batch_page.shutdown()
         self.settings_store.update(
             geometry=bytes(self.saveGeometry().toBase64()).decode("ascii"),
-            window_state=bytes(self.saveState().toBase64()).decode("ascii"),
+            window_state=(
+                f"v2|{max(320, self._inspector_width)}|"
+                f"{bytes(self.saveState().toBase64()).decode('ascii')}"
+            ),
             sidebar_collapsed=self._sidebar_collapsed,
             sidebar_visible=self.sidebar.isVisible(),
             inspector_visible=not self.assistant_dock.isHidden(),

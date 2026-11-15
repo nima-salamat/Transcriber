@@ -108,8 +108,10 @@ def test_restore_default_layout_restores_the_workspace_docks(qtbot, tmp_path, mo
     qtbot.wait(20)
     assert window.assistant_dock.isVisible()
     assert window.timeline_dock.isVisible()
-    assert window.dockWidgetArea(window.assistant_dock) == Qt.DockWidgetArea.RightDockWidgetArea
+    assert window.workspace_splitter.widget(1) is window.assistant_dock
+    assert window.workspace_splitter.layoutDirection() == Qt.LayoutDirection.LeftToRight
     assert window.dockWidgetArea(window.timeline_dock) == Qt.DockWidgetArea.BottomDockWidgetArea
+    assert window.timeline_dock.minimumHeight() == window.timeline_dock.maximumHeight() == 172
 
     window.close()
 
@@ -170,13 +172,21 @@ def test_inspector_can_grow_and_waveform_stays_compact(qtbot, tmp_path, monkeypa
     qtbot.wait(40)
 
     inspector = window.assistant_dock
-    assert inspector.minimumWidth() == 320
+    assert inspector.minimumWidth() >= 320
     assert inspector.maximumWidth() > 600
-    before_width = inspector.width()
-    window.resizeDocks([inspector], [500], Qt.Orientation.Horizontal)
+    assert window.workspace_splitter.widget(1) is inspector
+    assert window.workspace_splitter.layoutDirection() == Qt.LayoutDirection.LeftToRight
+    available_width = window.workspace_splitter.width()
+    window.workspace_splitter.setSizes([available_width - 500, 500])
     qtbot.wait(30)
-    assert inspector.width() >= before_width
-    assert inspector.width() >= 420
+    assert inspector.width() >= 480
+    remembered_width = inspector.width()
+    window._animate_drawer(inspector, False, "width")
+    assert inspector.isHidden()
+    window._animate_drawer(inspector, True, "width")
+    qtbot.wait(30)
+    assert not inspector.isHidden()
+    assert inspector.width() >= remembered_width - 10
 
     # Waveform has one compact size. It can be shown/hidden, not vertically
     # dragged, so the actual workspace keeps its available height.

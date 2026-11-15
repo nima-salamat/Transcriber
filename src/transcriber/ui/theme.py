@@ -221,7 +221,14 @@ def stylesheet(theme: str) -> str:
         font-weight: 700;
     }}
     QDockWidget {{ font-weight: 650; }}
-    /* A visible grab handle for widening the right-side inspector. */
+    /* Inspector uses an explicit LTR splitter: drag its handle left to widen. */
+    QSplitter#WorkspaceSplitter::handle:horizontal {{
+        background: {c['border']};
+        width: 6px;
+    }}
+    QSplitter#WorkspaceSplitter::handle:horizontal:hover {{
+        background: {c['accent']};
+    }}
     QMainWindow::separator {{
         background: {c['border']};
         width: 6px;
