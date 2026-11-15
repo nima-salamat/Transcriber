@@ -5,7 +5,18 @@ from __future__ import annotations
 from concurrent.futures import CancelledError, Future
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, QSize, Qt, QThread, QThreadPool, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QObject,
+    QPropertyAnimation,
+    QSize,
+    Qt,
+    QThread,
+    QThreadPool,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,

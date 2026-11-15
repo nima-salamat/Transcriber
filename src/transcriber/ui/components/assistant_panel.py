@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
