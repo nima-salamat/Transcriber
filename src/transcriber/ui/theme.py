@@ -221,6 +221,15 @@ def stylesheet(theme: str) -> str:
         font-weight: 700;
     }}
     QDockWidget {{ font-weight: 650; }}
+    /* A visible grab handle for widening the right-side inspector. */
+    QMainWindow::separator {{
+        background: {c['border']};
+        width: 6px;
+        height: 5px;
+    }}
+    QMainWindow::separator:hover {{
+        background: {c['accent']};
+    }}
     QDockWidget::title {{
         background: {c['surface']};
         padding: 9px 13px;

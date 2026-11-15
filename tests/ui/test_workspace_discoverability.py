@@ -162,33 +162,38 @@ def test_command_palette_is_an_in_window_popup_not_a_modal_dialog(qtbot, tmp_pat
     window.close()
 
 
-def test_drawer_open_close_keeps_native_resize_constraints(qtbot, tmp_path, monkeypatch):
+def test_inspector_can_grow_and_waveform_stays_compact(qtbot, tmp_path, monkeypatch):
     window, _settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
+    window.resize(1280, 850)
     window.show()
+    qtbot.wait(40)
+
+    inspector = window.assistant_dock
+    assert inspector.minimumWidth() == 320
+    assert inspector.maximumWidth() > 600
+    before_width = inspector.width()
+    window.resizeDocks([inspector], [500], Qt.Orientation.Horizontal)
     qtbot.wait(30)
+    assert inspector.width() >= before_width
+    assert inspector.width() >= 420
 
-    cases = (
-        (window.assistant_dock, "width", 360, Qt.Orientation.Horizontal, 300),
-        (window.timeline_dock, "height", 220, Qt.Orientation.Vertical, 160),
-    )
-    for dock, dimension, preferred, orientation, minimum in cases:
-        window._animate_drawer(dock, False, dimension)
-        assert dock.isHidden()
+    # Waveform has one compact size. It can be shown/hidden, not vertically
+    # dragged, so the actual workspace keeps its available height.
+    waveform = window.timeline_dock
+    assert waveform.minimumHeight() == 172
+    assert waveform.maximumHeight() == 172
+    fixed_height = waveform.height()
+    window.resize(window.width(), window.height() + 120)
+    qtbot.wait(30)
+    assert waveform.height() == fixed_height
 
-        for _ in range(3):
-            window._animate_drawer(dock, True, dimension)
-            qtbot.wait(10)
-            assert not dock.isHidden()
-            if dimension == "width":
-                assert dock.minimumWidth() == minimum
-                assert dock.maximumWidth() >= dock.minimumWidth()
-            else:
-                assert dock.minimumHeight() == minimum
-                assert dock.maximumHeight() >= dock.minimumHeight()
-            window.resizeDocks([dock], [preferred], orientation)
-            window._animate_drawer(dock, False, dimension)
-            assert dock.isHidden()
+    for _ in range(3):
+        window._animate_drawer(waveform, False, "height")
+        assert waveform.isHidden()
+        window._animate_drawer(waveform, True, "height")
+        assert not waveform.isHidden()
+        assert waveform.height() == fixed_height
 
     window.close()
 

@@ -298,7 +298,7 @@ class MainWindow(QMainWindow):
         # with the splitter instead of accidentally dragging the drawer elsewhere.
         self.assistant_dock.setAllowedAreas(Qt.RightDockWidgetArea)
         self.assistant_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        self.assistant_dock.setMinimumWidth(300)
+        self.assistant_dock.setMinimumWidth(320)
         inspector_tabs = QTabWidget()
         inspector_tabs.setObjectName("InspectorTabs")
         self.inspector_tabs = inspector_tabs
@@ -329,7 +329,7 @@ class MainWindow(QMainWindow):
         self.timeline_dock.setAllowedAreas(Qt.BottomDockWidgetArea)
         # The waveform is a bottom drawer, not a movable/floating dock window.
         self.timeline_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        self.timeline_dock.setMinimumHeight(160)
+        self.timeline_dock.setFixedHeight(172)
         self.timeline = WaveformTimeline()
         self.timeline.set_interactive(True)
         self.timeline.seek_requested.connect(lambda value: self.transcription_page.player.seek(int(value * 1000)))
@@ -451,17 +451,17 @@ class MainWindow(QMainWindow):
 
         if dimension == "width":
             area = Qt.DockWidgetArea.RightDockWidgetArea
-            dock.setMinimumWidth(300)
+            dock.setMinimumWidth(320)
             dock.setMaximumWidth(16777215)
-            fallback_size = 360
-            too_small = dock.width() < 300
+            fallback_size = 430
+            too_small = dock.width() < 360
             orientation = Qt.Orientation.Horizontal
         elif dimension == "height":
             area = Qt.DockWidgetArea.BottomDockWidgetArea
-            dock.setMinimumHeight(160)
-            dock.setMaximumHeight(16777215)
-            fallback_size = 220
-            too_small = dock.height() < 160
+            # Waveform is a compact strip, not a vertically resizable workspace.
+            dock.setFixedHeight(172)
+            fallback_size = 172
+            too_small = False
             orientation = Qt.Orientation.Vertical
         else:
             raise ValueError(f"Unsupported dock dimension: {dimension}")
@@ -664,8 +664,8 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
         self.assistant_dock.setFloating(False)
         self.timeline_dock.setFloating(False)
-        self.assistant_dock.setMinimumWidth(300)
-        self.timeline_dock.setMinimumHeight(160)
+        self.assistant_dock.setMinimumWidth(320)
+        self.timeline_dock.setFixedHeight(172)
         self.assistant_dock.setMaximumWidth(16777215)
         self.timeline_dock.setMaximumHeight(16777215)
         self.assistant_dock.show()
@@ -682,8 +682,7 @@ class MainWindow(QMainWindow):
         self.sidebar_toggle.setText("Collapse sidebar")
         for key, _icon, title in self.NAVIGATION:
             self.nav_buttons[key].setText(title)
-        self.resizeDocks([self.assistant_dock], [340], Qt.Horizontal)
-        self.resizeDocks([self.timeline_dock], [220], Qt.Vertical)
+        self.resizeDocks([self.assistant_dock], [430], Qt.Horizontal)
         self.settings_store.update(
             sidebar_visible=True, sidebar_collapsed=False,
             inspector_visible=True, timeline_visible=True, window_state=None,
@@ -1227,8 +1226,8 @@ class MainWindow(QMainWindow):
         # A saved/older Qt state must not leave either workspace dock floating
         # or attached to the wrong edge.
         for dock, area, minimum in (
-            (self.assistant_dock, Qt.DockWidgetArea.RightDockWidgetArea, 300),
-            (self.timeline_dock, Qt.DockWidgetArea.BottomDockWidgetArea, 160),
+            (self.assistant_dock, Qt.DockWidgetArea.RightDockWidgetArea, 320),
+            (self.timeline_dock, Qt.DockWidgetArea.BottomDockWidgetArea, 172),
         ):
             dock.setFloating(False)
             dock.setAllowedAreas(area)
@@ -1238,8 +1237,7 @@ class MainWindow(QMainWindow):
                 dock.setMinimumWidth(minimum)
                 dock.setMaximumWidth(16777215)
             else:
-                dock.setMinimumHeight(minimum)
-                dock.setMaximumHeight(16777215)
+                dock.setFixedHeight(minimum)
 
         self.assistant_dock.setVisible(settings.inspector_visible)
         self.timeline_dock.setVisible(settings.timeline_visible)
