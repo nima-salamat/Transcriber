@@ -238,8 +238,9 @@ class MainWindow(QMainWindow):
         self.global_search.setMaximumWidth(250)
         self.command_button = QPushButton("Ctrl+K  Commands")
         self.command_button.clicked.connect(self.show_command_palette)
-        self.assistant_button = QPushButton("AI Assistant")
-        self.assistant_button.clicked.connect(lambda: self.assistant_dock.show())
+        self.assistant_button = QPushButton("AI workspace")
+        self.assistant_button.setToolTip("Open the AI assistant in the inspector")
+        self.assistant_button.clicked.connect(self.show_ai_assistant)
         new_button = QPushButton("＋  New transcription")
         new_button.setObjectName("Primary")
         new_button.clicked.connect(lambda: self.navigate("transcription"))
@@ -298,8 +299,10 @@ class MainWindow(QMainWindow):
         # with the splitter instead of accidentally dragging the drawer elsewhere.
         self.assistant_dock.setAllowedAreas(Qt.RightDockWidgetArea)
         self.assistant_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        self.assistant_dock.setMinimumWidth(280)
+        self.assistant_dock.setMinimumWidth(320)
         inspector_tabs = QTabWidget()
+        inspector_tabs.setObjectName("InspectorTabs")
+        self.inspector_tabs = inspector_tabs
         properties = QWidget()
         properties_layout = QVBoxLayout(properties)
         properties_layout.setContentsMargins(14, 12, 14, 12)
@@ -554,6 +557,13 @@ class MainWindow(QMainWindow):
         menu.addAction(action)
         self._register_command(title, menu.title(), callback, shortcut)
         return action
+
+    def show_ai_assistant(self):
+        """Open the inspector directly on its AI conversation tab."""
+        self.assistant_dock.show()
+        self.assistant_dock.raise_()
+        self.inspector_tabs.setCurrentWidget(self.assistant_panel)
+        self.assistant_panel.prompt.setFocus()
 
     def _build_menus(self):
         bar = self.menuBar()
