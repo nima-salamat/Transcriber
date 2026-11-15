@@ -194,8 +194,6 @@ def test_drawer_open_close_keeps_native_resize_constraints(qtbot, tmp_path, monk
 
 
 def test_waveform_is_interactive_and_emits_seek_positions(qtbot):
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication
     from transcriber.ui.components.waveform import WaveformTimeline
 
     app = QApplication.instance() or QApplication([])
