@@ -153,7 +153,7 @@ class MainWindow(QMainWindow):
         self._waveform_generation = 0
         self.thread_pool.setMaxThreadCount(max(2, min(8, settings_store.settings.download_concurrency + 2)))
         self.setWindowTitle("Transcriber")
-        self.setMinimumSize(720, 500)
+        self.setMinimumSize(760, 500)
         self.setAcceptDrops(True)
         self._build_ui()
         self._connect_pages()
