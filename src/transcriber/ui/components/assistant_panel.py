@@ -8,8 +8,8 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QKeySequence, QTimer, Qt, Signal
-from PySide6.QtGui import QPalette, QShortcut
+from PySide6.QtCore import QObject, QTimer, Qt, Signal
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -174,7 +174,7 @@ class AssistantPanel(QWidget):
         self.prompt.setMinimumHeight(68)
         self.prompt.setMaximumHeight(126)
         self.prompt.setTabChangesFocus(True)
-        self.prompt.setMaximumBlockCount(80)
+        self.prompt.document().setMaximumBlockCount(80)
         composer_layout.addWidget(self.prompt)
 
         composer_actions = QHBoxLayout()
