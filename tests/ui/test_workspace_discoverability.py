@@ -177,9 +177,18 @@ def test_inspector_can_grow_and_waveform_stays_compact(qtbot, tmp_path, monkeypa
     assert window.workspace_splitter.widget(1) is inspector
     assert window.workspace_splitter.layoutDirection() == Qt.LayoutDirection.LeftToRight
     available_width = window.workspace_splitter.width()
-    window.workspace_splitter.setSizes([available_width - 500, 500])
+    target_width = min(500, max(inspector.minimumWidth(), available_width - 186))
+    window.workspace_splitter.setSizes([available_width - target_width, target_width])
     qtbot.wait(30)
-    assert inspector.width() >= 480
+    assert inspector.width() >= target_width - 5
+    before_drag = window.workspace_splitter.sizes()
+    handle_left = window.workspace_splitter.handle(1).x()
+    window.workspace_splitter.moveSplitter(max(0, handle_left - 12), 1)
+    qtbot.wait(20)
+    after_drag = window.workspace_splitter.sizes()
+    assert after_drag[1] >= before_drag[1], (
+        "Moving the vertical divider left must widen the right-hand Inspector."
+    )
     remembered_width = inspector.width()
     window._animate_drawer(inspector, False, "width")
     assert inspector.isHidden()

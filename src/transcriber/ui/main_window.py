@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -294,6 +295,10 @@ class MainWindow(QMainWindow):
         self.workspace_splitter.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
         self.workspace_splitter.setHandleWidth(6)
         self.workspace_splitter.setChildrenCollapsible(False)
+        # Let the main workspace yield horizontal room to the Inspector when
+        # needed, while keeping a useful minimum visible content width.
+        content.setMinimumWidth(180)
+        content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.workspace_splitter.addWidget(content)
         self.workspace_splitter.setStretchFactor(0, 1)
         root_layout.addWidget(self.workspace_splitter, 1)
