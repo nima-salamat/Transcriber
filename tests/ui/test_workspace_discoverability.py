@@ -160,3 +160,56 @@ def test_command_palette_is_an_in_window_popup_not_a_modal_dialog(qtbot, tmp_pat
     assert all(child.window() is window for child in popups)
     assert QApplication.activeModalWidget() is None
     window.close()
+
+
+def test_drawer_open_close_keeps_native_resize_constraints(qtbot, tmp_path, monkeypatch):
+    window, _settings = make_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(30)
+
+    cases = (
+        (window.assistant_dock, "width", 360, Qt.Orientation.Horizontal, 300),
+        (window.timeline_dock, "height", 220, Qt.Orientation.Vertical, 160),
+    )
+    for dock, dimension, preferred, orientation, minimum in cases:
+        window._animate_drawer(dock, False, dimension)
+        assert dock.isHidden()
+
+        for _ in range(3):
+            window._animate_drawer(dock, True, dimension)
+            qtbot.wait(10)
+            assert not dock.isHidden()
+            if dimension == "width":
+                assert dock.minimumWidth() == minimum
+                assert dock.maximumWidth() >= dock.minimumWidth()
+            else:
+                assert dock.minimumHeight() == minimum
+                assert dock.maximumHeight() >= dock.minimumHeight()
+            window.resizeDocks([dock], [preferred], orientation)
+            window._animate_drawer(dock, False, dimension)
+            assert dock.isHidden()
+
+    window.close()
+
+
+def test_waveform_is_interactive_and_emits_seek_positions(qtbot):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+    from transcriber.ui.components.waveform import WaveformTimeline
+
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    timeline = WaveformTimeline()
+    timeline.resize(500, 150)
+    timeline.set_waveform([0.25, 0.5, 0.75], 100.0)
+    qtbot.addWidget(timeline)
+    timeline.show()
+
+    received = []
+    timeline.seek_requested.connect(received.append)
+    qtbot.mouseClick(timeline, Qt.MouseButton.LeftButton, pos=timeline.rect().center())
+
+    assert timeline._interactive
+    assert len(received) == 1
+    assert 49.0 <= received[0] <= 51.0

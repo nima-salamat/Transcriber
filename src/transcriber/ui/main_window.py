@@ -5,18 +5,7 @@ from __future__ import annotations
 from concurrent.futures import CancelledError, Future
 from pathlib import Path
 
-from PySide6.QtCore import (
-    QEasingCurve,
-    QEvent,
-    QObject,
-    QPropertyAnimation,
-    QSize,
-    Qt,
-    QThread,
-    QThreadPool,
-    QTimer,
-    Signal,
-)
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QThread, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -302,7 +291,6 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(content, 1)
         self.setCentralWidget(root)
 
-        self._drawer_animations = {}
         self.assistant_dock = QDockWidget("Inspector / AI Assistant", self)
         self.assistant_dock.setObjectName("AssistantDock")
         self.assistant_dock.setLayoutDirection(Qt.LeftToRight)
@@ -310,7 +298,7 @@ class MainWindow(QMainWindow):
         # with the splitter instead of accidentally dragging the drawer elsewhere.
         self.assistant_dock.setAllowedAreas(Qt.RightDockWidgetArea)
         self.assistant_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        self.assistant_dock.setMinimumWidth(320)
+        self.assistant_dock.setMinimumWidth(300)
         inspector_tabs = QTabWidget()
         inspector_tabs.setObjectName("InspectorTabs")
         self.inspector_tabs = inspector_tabs
@@ -341,8 +329,9 @@ class MainWindow(QMainWindow):
         self.timeline_dock.setAllowedAreas(Qt.BottomDockWidgetArea)
         # The waveform is a bottom drawer, not a movable/floating dock window.
         self.timeline_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        self.timeline_dock.setMinimumHeight(140)
+        self.timeline_dock.setMinimumHeight(160)
         self.timeline = WaveformTimeline()
+        self.timeline.set_interactive(True)
         self.timeline.seek_requested.connect(lambda value: self.transcription_page.player.seek(int(value * 1000)))
         self.timeline_dock.setWidget(self.timeline)
         self._install_drawer_title_bar(self.timeline_dock, "Audio Timeline", "〰", "height")
@@ -417,6 +406,7 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(icon)
         title_layout.addWidget(title_label, 1)
         close_button = QPushButton("×")
+        close_button.setObjectName(f"DrawerCloseButton_{dock.objectName()}")
         close_button.setFixedSize(28, 28)
         close_button.setToolTip("Close drawer")
         close_button.setAccessibleName(f"Close {title}")
@@ -448,67 +438,47 @@ class MainWindow(QMainWindow):
             break
 
     def _animate_drawer(self, dock, visible: bool, dimension: str):
-        """Reveal a dock as an edge-attached drawer while retaining QMainWindow resizing."""
-        key = dock.objectName()
-        old = self._drawer_animations.pop(key, None)
-        if old is not None:
-            old.stop()
-            old.deleteLater()
-        property_name = b"maximumWidth" if dimension == "width" else b"maximumHeight"
-        maximum = dock.width() if dimension == "width" else dock.height()
-        target_size = 360 if dimension == "width" else 220
+        """Show or hide an edge dock while leaving sizing to Qt's dock splitter.
+
+        Animating maximumWidth/maximumHeight to zero while a non-zero minimum
+        size is active creates contradictory constraints. It can leave a dock
+        clipped, stuck at its minimum, or difficult to resize. QMainWindow
+        already handles dock insertion/removal and preserves the user's splitter
+        size, so this method deliberately uses native visibility instead.
+        """
+        if dock not in (self.assistant_dock, self.timeline_dock):
+            return
+
+        if dimension == "width":
+            area = Qt.DockWidgetArea.RightDockWidgetArea
+            dock.setMinimumWidth(300)
+            dock.setMaximumWidth(16777215)
+            fallback_size = 360
+            too_small = dock.width() < 300
+            orientation = Qt.Orientation.Horizontal
+        elif dimension == "height":
+            area = Qt.DockWidgetArea.BottomDockWidgetArea
+            dock.setMinimumHeight(160)
+            dock.setMaximumHeight(16777215)
+            fallback_size = 220
+            too_small = dock.height() < 160
+            orientation = Qt.Orientation.Vertical
+        else:
+            raise ValueError(f"Unsupported dock dimension: {dimension}")
 
         if visible:
             if dock.isFloating():
                 dock.setFloating(False)
-            if not dock.isVisible():
-                if dimension == "width":
-                    dock.setMinimumWidth(0)
-                    dock.setMaximumWidth(0)
-                else:
-                    dock.setMinimumHeight(0)
-                    dock.setMaximumHeight(0)
-                dock.show()
-                dock.raise_()
-                start_size = 0
-            else:
-                start_size = maximum
+            if self.dockWidgetArea(dock) != area:
+                self.addDockWidget(area, dock)
+            dock.show()
+            dock.raise_()
+            if too_small:
+                self.resizeDocks([dock], [fallback_size], orientation)
         else:
-            if not dock.isVisible():
-                self._sync_drawer_controls(dock, False)
-                return
-            start_size = max(1, maximum)
-            target_size = 0
+            dock.hide()
 
-        animation = QPropertyAnimation(dock, property_name, self)
-        animation.setDuration(190)
-        animation.setEasingCurve(
-            QEasingCurve.Type.OutCubic if visible else QEasingCurve.Type.InCubic
-        )
-        animation.setStartValue(start_size)
-        animation.setEndValue(target_size)
-
-        def finished():
-            if visible:
-                if dimension == "width":
-                    dock.setMaximumWidth(16777215)
-                    dock.setMinimumWidth(280)
-                else:
-                    dock.setMaximumHeight(16777215)
-                    dock.setMinimumHeight(140)
-            else:
-                dock.hide()
-                if dimension == "width":
-                    dock.setMaximumWidth(16777215)
-                    dock.setMinimumWidth(280)
-                else:
-                    dock.setMaximumHeight(16777215)
-                    dock.setMinimumHeight(140)
-            self._drawer_animations.pop(key, None)
-
-        animation.finished.connect(finished)
-        self._drawer_animations[key] = animation
-        animation.start()
+        self._sync_drawer_controls(dock, not dock.isHidden())
 
     def _connect_pages(self):
         self.home_page.navigate.connect(self.navigate)
@@ -694,8 +664,8 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
         self.assistant_dock.setFloating(False)
         self.timeline_dock.setFloating(False)
-        self.assistant_dock.setMinimumWidth(280)
-        self.timeline_dock.setMinimumHeight(140)
+        self.assistant_dock.setMinimumWidth(300)
+        self.timeline_dock.setMinimumHeight(160)
         self.assistant_dock.setMaximumWidth(16777215)
         self.timeline_dock.setMaximumHeight(16777215)
         self.assistant_dock.show()
@@ -1254,6 +1224,23 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         settings = self.settings_store.settings
+        # A saved/older Qt state must not leave either workspace dock floating
+        # or attached to the wrong edge.
+        for dock, area, minimum in (
+            (self.assistant_dock, Qt.DockWidgetArea.RightDockWidgetArea, 300),
+            (self.timeline_dock, Qt.DockWidgetArea.BottomDockWidgetArea, 160),
+        ):
+            dock.setFloating(False)
+            dock.setAllowedAreas(area)
+            if self.dockWidgetArea(dock) != area:
+                self.addDockWidget(area, dock)
+            if area == Qt.DockWidgetArea.RightDockWidgetArea:
+                dock.setMinimumWidth(minimum)
+                dock.setMaximumWidth(16777215)
+            else:
+                dock.setMinimumHeight(minimum)
+                dock.setMaximumHeight(16777215)
+
         self.assistant_dock.setVisible(settings.inspector_visible)
         self.timeline_dock.setVisible(settings.timeline_visible)
         self._sync_drawer_controls(self.assistant_dock, settings.inspector_visible)
@@ -1312,8 +1299,8 @@ class MainWindow(QMainWindow):
             window_state=bytes(self.saveState().toBase64()).decode("ascii"),
             sidebar_collapsed=self._sidebar_collapsed,
             sidebar_visible=self.sidebar.isVisible(),
-            inspector_visible=self.assistant_dock.isVisible(),
-            timeline_visible=self.timeline_dock.isVisible(),
+            inspector_visible=not self.assistant_dock.isHidden(),
+            timeline_visible=not self.timeline_dock.isHidden(),
         )
         # Signal all cancellable tasks before draining the bounded pool.
         self.transcription_page.shutdown()

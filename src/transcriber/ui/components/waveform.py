@@ -16,10 +16,13 @@ class WaveformTimeline(QWidget):
         self.duration = 0.0
         self.position = 0.0
         self.markers: list[tuple[float, float, str]] = []
-        self._interactive = False
+        # This widget is a transport control, not a passive preview. An
+        # unloaded waveform remains harmless because a zero duration cannot seek.
+        self._interactive = True
         self.setMinimumHeight(112)
         self.setMouseTracking(True)
-        self.setToolTip("Click or drag the waveform to choose a position")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Click or drag the waveform to seek")
 
     def set_waveform(self, peaks, duration: float):
         self.peaks = [max(0.0, min(1.0, float(value))) for value in (peaks or [])]
@@ -34,7 +37,9 @@ class WaveformTimeline(QWidget):
 
     def set_interactive(self, enabled: bool):
         self._interactive = bool(enabled)
-        self.setCursor(Qt.PointingHandCursor if self._interactive else Qt.ArrowCursor)
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor if self._interactive else Qt.CursorShape.ArrowCursor
+        )
 
     def set_position(self, seconds: float):
         self.position = max(0.0, min(self.duration, float(seconds))) if self.duration else 0.0
