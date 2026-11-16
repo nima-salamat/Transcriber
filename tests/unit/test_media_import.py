@@ -78,7 +78,6 @@ def test_invalid_path_syntax_is_reported_not_raised():
     assert report.rejected[0][0] == "bad\\0path.wav"
 
 
-
 def test_collects_supported_video_containers_for_transcription(tmp_path):
     from transcriber.audio.decoder import is_video_file
 
