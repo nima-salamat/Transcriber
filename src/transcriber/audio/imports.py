@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from transcriber.audio.decoder import validate_audio_file
+from transcriber.audio.decoder import SUPPORTED_MEDIA_SUFFIXES, validate_audio_file
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,24 +56,8 @@ def collect_media_paths(paths, *, existing_paths=()) -> MediaImportReport:
                     continue
                 supported = []
                 for item in discovered:
-                    if item.suffix.casefold() in {
-                        ".wav",
-                        ".mp3",
-                        ".m4a",
-                        ".aac",
-                        ".flac",
-                        ".ogg",
-                        ".opus",
-                        ".wma",
-                        ".aiff",
-                        ".aif",
-                        ".mp4",
-                        ".m4v",
-                        ".mkv",
-                        ".mov",
-                        ".webm",
-                        ".avi",
-                    }:
+                    if item.suffix.casefold() in SUPPORTED_MEDIA_SUFFIXES:
+                        supported.append(item)
                         supported.append(item)
                 if not supported:
                     rejected.append((display, "Directory contains no supported media files"))

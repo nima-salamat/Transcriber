@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -24,7 +25,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from transcriber.audio.decoder import decoder_help, validate_audio_file
+from transcriber.audio.decoder import (
+    SUPPORTED_MEDIA_SUFFIXES,
+    decoder_help,
+    inspect_video_audio_stream,
+    is_video_file,
+    validate_audio_file,
+)
 from transcriber.audio.player import AudioPlayer
 from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
@@ -36,6 +43,7 @@ from transcriber.transcription.segments import (
     reconcile_segments,
 )
 from transcriber.transcription.service import TranscriptionService
+from transcriber.subtitles.formats import export_subtitles
 from transcriber.ui.widgets import Card, page_header, primary_button
 from transcriber.ui.workers import FunctionWorker
 
@@ -45,6 +53,7 @@ class TranscriptionPage(QWidget):
     audio_changed = Signal(str)
     transcript_changed = Signal(object, str, str, float, str)
     segments_edited = Signal(object)
+    job_state_changed = Signal(bool)
 
     def __init__(self, paths, settings_store, history, model_manager, thread_pool, parent=None, *, document=None, command_history=None):
         super().__init__(parent)
@@ -71,18 +80,22 @@ class TranscriptionPage(QWidget):
         self._save_inflight = False
         self._save_queue: list[dict] = []
         self._load_generation = 0
+        self._history_load_pending = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(16)
-        layout.addWidget(page_header("New transcription", "Choose a local or explicitly consented cloud recognition engine for each job."))
+        layout.addWidget(page_header(
+            "New transcription",
+            "Transcribe audio or the first audio track in a video, edit the result and export subtitles.",
+        ))
 
         source_card = Card()
         source_layout = QHBoxLayout()
         source_layout.setContentsMargins(16, 14, 16, 14)
-        self.file_name = QLabel("No audio selected")
+        self.file_name = QLabel("No media selected")
         self.file_name.setObjectName("Muted")
-        self.open_button = QPushButton("Choose audio file")
+        self.open_button = QPushButton("Choose audio / video…")
         self.open_button.clicked.connect(self.choose_audio)
         self.close_audio_button = QPushButton("×")
         self.close_audio_button.setFixedSize(34, 34)
@@ -96,6 +109,7 @@ class TranscriptionPage(QWidget):
         self.engine_combo.addItem("Google Cloud STT V2 · Online", "google-cloud")
         self.engine_combo.setCurrentIndex(max(0, self.engine_combo.findData(self.settings_store.settings.default_engine)))
         self.engine_combo.currentIndexChanged.connect(self._update_engine_controls)
+        self.open_button.setToolTip("Import an audio file or a video that contains an audio track.")
         source_layout.addWidget(self.open_button)
         source_layout.addWidget(self.file_name, 1)
         source_layout.addWidget(self.close_audio_button)
@@ -230,12 +244,19 @@ class TranscriptionPage(QWidget):
         self.word_count.setObjectName("Muted")
         self.include_timestamps = QCheckBox("Include timestamps when exporting")
         self.include_timestamps.setChecked(True)
-        self.export_button = QPushButton("Export…")
+        self.export_button = QPushButton("Export text…")
         self.export_button.clicked.connect(self.export)
+        self.subtitle_export_button = primary_button("Export subtitles…")
+        self.subtitle_export_button.setToolTip(
+            "Export timed transcript segments as SRT, WebVTT, ASS or SSA."
+        )
+        self.subtitle_export_button.setEnabled(False)
+        self.subtitle_export_button.clicked.connect(self.export_subtitles)
         footer.addWidget(self.word_count)
         footer.addStretch(1)
         footer.addWidget(self.include_timestamps)
         footer.addWidget(self.export_button)
+        footer.addWidget(self.subtitle_export_button)
         editor_layout.addLayout(footer)
         layout.addWidget(editor_card, 1)
 
@@ -265,7 +286,36 @@ class TranscriptionPage(QWidget):
         self.editor.textChanged.connect(self._update_word_count)
         self.player.position_changed.connect(self._sync_transcript_to_audio)
         self.player.error_occurred.connect(lambda message: self.status_message.emit(f"Audio player: {message}"))
+        self._busy_controls = (
+            self.open_button, self.engine_combo, self.model_combo,
+            self.default_model_button, self.language_combo, self.beam_spin,
+            self.vad_check, self.task_combo, self.word_timestamps,
+            self.initial_prompt, self.search_input, self.find_button,
+            self.replace_input, self.replace_button, self.copy_button,
+            self.editor, self.include_timestamps, self.export_button,
+            self.subtitle_export_button,
+        )
         self._update_engine_controls()
+        self._refresh_busy_controls()
+
+    @property
+    def is_busy(self) -> bool:
+        return self.cancel_event is not None or self._history_load_pending
+
+    def _has_timed_subtitles(self) -> bool:
+        return any(item.text.strip() and item.end > item.start for item in self.segments)
+
+    def _refresh_busy_controls(self):
+        busy = self.is_busy
+        for control in self._busy_controls:
+            control.setEnabled(not busy)
+        self.start_button.setEnabled(not busy)
+        self.close_audio_button.setEnabled(not busy and self.audio_path is not None)
+        self.export_button.setEnabled(not busy and bool(self.editor.toPlainText().strip()))
+        self.subtitle_export_button.setEnabled(not busy and self._has_timed_subtitles())
+        self.cancel_button.setVisible(self.cancel_event is not None)
+        self.cancel_button.setEnabled(self.cancel_event is not None and not self.cancel_event.is_set())
+        self.job_state_changed.emit(busy)
 
     def _update_engine_controls(self, *_args):
         engine_id = self.engine_combo.currentData()
@@ -400,19 +450,27 @@ class TranscriptionPage(QWidget):
         self.status_message.emit(f"Default {engine_name} model set to {repo_id}")
 
     def choose_audio(self):
+        if self.is_busy:
+            self.status_message.emit("Finish the current operation before selecting another media file.")
+            return False
+        suffixes = " ".join(f"*{suffix}" for suffix in sorted(SUPPORTED_MEDIA_SUFFIXES))
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import audio", str(self.paths.recordings),
-            "Media files (*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus *.wma *.aiff *.aif *.mp4 *.mkv *.mov *.webm *.avi);;All files (*)",
+            self, "Choose audio or video", str(self.paths.recordings),
+            f"Audio and video ({suffixes});;All files (*)",
         )
-        if path:
-            self.set_audio(path)
+        return self.set_audio(path) if path else False
 
-    def set_audio(self, path: str | Path):
+    def set_audio(self, path: str | Path) -> bool:
+        if self.is_busy:
+            self.status_message.emit(
+                "The current transcription must finish before another media file can be loaded."
+            )
+            return False
         try:
             audio = validate_audio_file(Path(path))
         except Exception as exc:
-            QMessageBox.warning(self, "Cannot import audio", f"{exc}\n\n{decoder_help()}")
-            return
+            QMessageBox.warning(self, "Cannot import media", f"{exc}\n\n{decoder_help()}")
+            return False
         if self.audio_path is not None and self.audio_path.resolve() != audio.resolve():
             self._autosave()
             self.command_history.clear()
@@ -429,38 +487,42 @@ class TranscriptionPage(QWidget):
         self.audio_path = audio
         self.close_audio_button.setEnabled(True)
         self.play_button.setEnabled(True)
-        self.file_name.setText(audio.name)
+        media_kind = "Video" if is_video_file(audio) else "Audio"
+        self.file_name.setText(f"{media_kind} · {audio.name}")
         self.file_name.setToolTip(str(audio))
         self.player.set_source(str(audio))
-        self.progress_label.setText("Audio ready")
+        self.progress_label.setText(f"{media_kind} ready")
         self.audio_changed.emit(str(audio))
+        self._refresh_busy_controls()
+        return True
 
-    def close_audio(self):
-        """Unload the current media source while preserving the transcript text and edits."""
-        if self.cancel_event is not None and not self.cancel_event.is_set():
-            QMessageBox.information(
-                self, "Transcription in progress",
-                "Cancel or finish the active transcription before closing its audio source.",
-            )
-            return
+    def close_audio(self) -> bool:
+        if self.is_busy:
+            self.status_message.emit("The current operation must finish before its media source can be closed.")
+            return False
         self._autosave()
         self.player.stop()
         self.player.clear_source()
         self.audio_path = None
         self._audio_duration_ms = 0
-        self.file_name.setText("No audio selected")
+        self.file_name.setText("No media selected")
         self.file_name.setToolTip("")
         self.close_audio_button.setEnabled(False)
-        self.player_status.setText("No audio loaded")
+        self.player_status.setText("No media loaded")
         self.play_button.setEnabled(False)
         self.seek_slider.setRange(0, 0)
         self.seek_slider.setValue(0)
         self.time_label.setText("00:00 / 00:00")
         self.audio_changed.emit("")
-        self.progress_label.setText("Audio closed · transcript preserved")
-        self.status_message.emit("Audio closed; transcript and edits were kept.")
+        self.progress_label.setText("Media closed · transcript preserved")
+        self.status_message.emit("Media closed; transcript and edits were kept.")
+        self._refresh_busy_controls()
+        return True
 
     def start_transcription(self):
+        if self.is_busy:
+            self.status_message.emit("A transcription or history operation is already running.")
+            return
         if self.audio_path is None:
             self.choose_audio()
             if self.audio_path is None:
@@ -514,10 +576,7 @@ class TranscriptionPage(QWidget):
         cancel_event = threading.Event()
         self.cancel_event = cancel_event
         self._job_engine_id = engine_id
-        self.start_button.setEnabled(False)
-        self.open_button.setEnabled(False)
-        self.close_audio_button.setEnabled(False)
-        self.cancel_button.setVisible(True)
+        self._refresh_busy_controls()
         self.progress.setValue(0)
         self.progress.setVisible(True)
         self.progress_label.setText(
@@ -539,6 +598,13 @@ class TranscriptionPage(QWidget):
     ):
         if cancel_event.is_set():
             raise InterruptedError("Transcription cancelled before engine preparation")
+        if is_video_file(audio_path):
+            emit((0.0, "Inspecting the video's audio track…"))
+            media_info = inspect_video_audio_stream(audio_path)
+            if media_info.audio_stream_count > 1:
+                emit((0.0, f"Video contains {media_info.audio_stream_count} audio tracks · using the first track"))
+            else:
+                emit((0.0, "Reading the video's audio track for transcription…"))
         if engine_id == "google-cloud":
             self.model_manager.unload_active()
             from transcriber.engines.cloud import GoogleCloudEngine
@@ -640,17 +706,14 @@ class TranscriptionPage(QWidget):
         self.status_message.emit("Transcription failed")
 
     def _finish_worker(self):
-        self._update_engine_controls()
-        self.start_button.setEnabled(True)
-        self.open_button.setEnabled(True)
-        self.close_audio_button.setEnabled(self.audio_path is not None)
-        self.cancel_button.setVisible(False)
-        self.cancel_button.setEnabled(True)
+        was_cancelled = self.cancel_event is not None and self.cancel_event.is_set()
         self.progress.setVisible(False)
-        if self.cancel_event and self.cancel_event.is_set():
+        if was_cancelled:
             self.progress_label.setText("Transcription cancelled")
         self.cancel_event = None
         self._job_engine_id = None
+        self._update_engine_controls()
+        self._refresh_busy_controls()
 
     def _sync_editor_text_to_document(self):
         current = self.editor.toPlainText()
@@ -763,19 +826,39 @@ class TranscriptionPage(QWidget):
         for snapshot in queued:
             self._persist_snapshot(snapshot)
 
-    def open_history_item(self, transcript_id: str):
-        # Capture edits before an async history load changes the selected project.
+    def open_history_item(self, transcript_id: str) -> bool:
+        if self.is_busy:
+            self.status_message.emit("Finish or cancel the current operation before opening another transcript.")
+            return False
         self._autosave()
         self._load_generation += 1
         generation = self._load_generation
+        self._history_load_pending = True
         self.progress_label.setText("Loading transcript from local history…")
+        self._refresh_busy_controls()
         worker = FunctionWorker(lambda _emit: self.history.get(transcript_id))
         worker.signals.result.connect(lambda record, g=generation: self._apply_history_record(g, record))
-        worker.signals.error.connect(lambda message: self.status_message.emit(f"Could not open transcript: {message}"))
+        worker.signals.error.connect(lambda message, g=generation: self._history_load_failed(g, message))
+        worker.signals.finished.connect(lambda g=generation: self._finish_history_load(g))
         self.thread_pool.start(worker)
+        return True
+
+    def _history_load_failed(self, generation: int, message: str):
+        if generation == self._load_generation:
+            self.progress_label.setText("Could not load transcript")
+            self.status_message.emit(f"Could not open transcript: {message}")
+
+    def _finish_history_load(self, generation: int):
+        if generation == self._load_generation:
+            self._history_load_pending = False
+            self._refresh_busy_controls()
 
     def _apply_history_record(self, generation: int, record):
-        if generation != self._load_generation or not record:
+        if generation != self._load_generation:
+            return
+        if not record:
+            self.progress_label.setText("Transcript was not found in local history.")
+            self.status_message.emit("Transcript was not found in local history.")
             return
         self.transcript_id = record["id"]
         self._record_metadata = {
@@ -789,23 +872,20 @@ class TranscriptionPage(QWidget):
             Path(record["source_path"]).expanduser().resolve()
             if record["source_path"] else None
         )
-        # History loading must not call set_audio(): that user-import path
-        # intentionally saves and clears the current draft, whereas this
-        # record is already the new project. Calling it here could persist the
-        # previous editor text under the newly assigned transcript ID.
         self.player.player.stop()
         self._audio_duration_ms = 0
         if self.audio_path and self.audio_path.is_file():
             self.close_audio_button.setEnabled(True)
             self.play_button.setEnabled(True)
-            self.file_name.setText(self.audio_path.name)
+            media_kind = "Video" if is_video_file(self.audio_path) else "Audio"
+            self.file_name.setText(f"{media_kind} · {self.audio_path.name}")
             self.file_name.setToolTip(str(self.audio_path))
             self.player.set_source(str(self.audio_path))
             self.audio_changed.emit(str(self.audio_path))
         else:
             self.close_audio_button.setEnabled(False)
             self.play_button.setEnabled(False)
-            self.file_name.setText("Source audio is unavailable")
+            self.file_name.setText("Source media is unavailable")
             self.file_name.setToolTip(str(self.audio_path) if self.audio_path else "")
             self.player.clear_source()
             self.audio_changed.emit("")
@@ -822,9 +902,11 @@ class TranscriptionPage(QWidget):
         self._rebuild_segment_ranges()
         self._update_word_count()
         self.progress_label.setText("Transcript loaded · edits auto-save")
-        self.transcript_changed.emit(list(self.segments), str(self.audio_path) if self.audio_path else "",
-                                     record.get("language") or "", float(record.get("duration") or 0.0),
-                                     record.get("original_text") or record.get("text") or "")
+        self.transcript_changed.emit(
+            list(self.segments), str(self.audio_path) if self.audio_path else "",
+            record.get("language") or "", float(record.get("duration") or 0.0),
+            record.get("original_text") or record.get("text") or "",
+        )
 
     def _rebuild_segment_ranges(self):
         self._segment_ranges = []
@@ -869,6 +951,10 @@ class TranscriptionPage(QWidget):
         text = self.editor.toPlainText()
         words = len(text.split())
         self.word_count.setText(f"{words:,} words · {len(text):,} characters")
+        if hasattr(self, "subtitle_export_button"):
+            self.subtitle_export_button.setEnabled(not self.is_busy and self._has_timed_subtitles())
+        if hasattr(self, "export_button"):
+            self.export_button.setEnabled(not self.is_busy and bool(text.strip()))
 
     def find_next(self):
         query = self.search_input.text()
@@ -896,13 +982,12 @@ class TranscriptionPage(QWidget):
             return
         path, selected_filter = QFileDialog.getSaveFileName(
             self, "Export transcript", str(self.paths.data / "transcript.txt"),
-            "Text (*.txt);;Markdown (*.md);;SubRip subtitles (*.srt);;WebVTT (*.vtt);;JSON (*.json);;Word document (*.docx);;PDF (*.pdf)",
+            "Text (*.txt);;Markdown (*.md);;JSON (*.json);;Word document (*.docx);;PDF (*.pdf)",
         )
         if not path:
             return
         extension_by_filter = {
             "Text (*.txt)": ".txt", "Markdown (*.md)": ".md",
-            "SubRip subtitles (*.srt)": ".srt", "WebVTT (*.vtt)": ".vtt",
             "JSON (*.json)": ".json", "Word document (*.docx)": ".docx",
             "PDF (*.pdf)": ".pdf",
         }
@@ -924,6 +1009,42 @@ class TranscriptionPage(QWidget):
         worker.signals.result.connect(lambda output: self._export_complete(output))
         worker.signals.error.connect(lambda message: QMessageBox.critical(self, "Export failed", message))
         worker.signals.finished.connect(lambda: self.export_button.setEnabled(True))
+        self.thread_pool.start(worker)
+
+    def export_subtitles(self):
+        if self.is_busy:
+            return
+        self._sync_editor_text_to_document()
+        segments = [item for item in self.segments if item.text.strip() and item.end > item.start]
+        if not segments:
+            QMessageBox.information(
+                self, "No timed subtitle cues",
+                "This transcript has no usable segment timings. Subtitle export requires timed transcript segments.",
+            )
+            return
+        source_name = self.audio_path.stem if self.audio_path else "transcript"
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self, "Export subtitles", str(self.paths.data / f"{source_name}.srt"),
+            "SubRip (*.srt);;WebVTT (*.vtt);;Advanced SubStation Alpha (*.ass);;SubStation Alpha (*.ssa)",
+        )
+        if not path:
+            return
+        suffix_by_filter = {
+            "SubRip (*.srt)": ".srt", "WebVTT (*.vtt)": ".vtt",
+            "Advanced SubStation Alpha (*.ass)": ".ass", "SubStation Alpha (*.ssa)": ".ssa",
+        }
+        target = Path(path)
+        if target.suffix.casefold() not in {".srt", ".vtt", ".ass", ".ssa"}:
+            target = target.with_suffix(suffix_by_filter.get(selected_filter, ".srt"))
+        snapshot = deepcopy(segments)
+        self.subtitle_export_button.setEnabled(False)
+        self.status_message.emit(f"Exporting subtitles to {target.name}…")
+        worker = FunctionWorker(lambda _emit: export_subtitles(target, snapshot, title=source_name))
+        worker.signals.result.connect(self._export_complete)
+        worker.signals.error.connect(
+            lambda message: QMessageBox.critical(self, "Subtitle export failed", message)
+        )
+        worker.signals.finished.connect(self._update_word_count)
         self.thread_pool.start(worker)
 
     def _export_complete(self, path):

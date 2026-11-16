@@ -75,3 +75,15 @@ def test_invalid_path_syntax_is_reported_not_raised():
     assert report.accepted == ()
     assert len(report.rejected) == 1
     assert report.rejected[0][0] == "bad\\0path.wav"
+
+
+
+def test_collects_supported_video_containers_for_transcription(tmp_path):
+    from transcriber.audio.decoder import is_video_file
+
+    video = _write(tmp_path / "lecture.mp4")
+    report = collect_media_paths([video])
+
+    assert report.accepted == (video.resolve(),)
+    assert report.rejected == ()
+    assert is_video_file(report.accepted[0])

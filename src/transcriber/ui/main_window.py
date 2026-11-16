@@ -493,6 +493,17 @@ class MainWindow(QMainWindow):
 
         self._sync_drawer_controls(dock, not dock.isHidden())
 
+    def _set_transcription_job_busy(self, busy: bool):
+        """Lock alternate document entry points while an operation owns the transcript."""
+        enabled = not bool(busy)
+        self.home_page.recent.setEnabled(enabled)
+        self.history_page.items.setEnabled(enabled)
+        self.editor_page.setEnabled(enabled)
+        self.subtitle_page.setEnabled(enabled)
+        tip = "Finish or cancel the current operation before opening another transcript." if busy else ""
+        self.home_page.recent.setToolTip(tip)
+        self.history_page.items.setToolTip(tip)
+
     def _connect_pages(self):
         self.home_page.navigate.connect(self.navigate)
         self.home_page.open_transcript.connect(self.open_transcript)
@@ -501,6 +512,7 @@ class MainWindow(QMainWindow):
         self.recording_page.open_library.connect(self._show_recordings_library)
         self.audio_page.open_audio.connect(self.open_audio_library_file)
         self.audio_cleanup_page.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
+        self.transcription_page.job_state_changed.connect(self._set_transcription_job_busy)
         self.transcription_page.audio_changed.connect(self._load_waveform)
         self.transcription_page.transcript_changed.connect(self._on_transcript_changed)
         self.transcription_page.segments_edited.connect(self._on_transcription_text_edited)
@@ -1142,7 +1154,8 @@ class MainWindow(QMainWindow):
             button.setChecked(key == page_id)
         self.settings_store.update(last_page=page_id)
         if page_id == "transcription":
-            self.transcription_page.refresh_models()
+            if not self.transcription_page.is_busy:
+                self.transcription_page.refresh_models()
         elif page_id == "home":
             self.home_page.refresh()
         elif page_id == "models":
@@ -1163,22 +1176,28 @@ class MainWindow(QMainWindow):
                 self.subtitle_page.load_segments(self.transcription_page.segments)
 
     def open_transcript(self, transcript_id: str):
-        self.transcription_page.open_history_item(transcript_id)
+        if not self.transcription_page.open_history_item(transcript_id):
+            return False
         self.navigate("transcription")
+        return True
 
     def open_recording_in_transcriber(self, path: str):
-        self.transcription_page.set_audio(path)
+        if not self.transcription_page.set_audio(path):
+            return False
         self.navigate("transcription")
         if self.recording_page.auto_transcribe.isChecked():
             QTimer.singleShot(0, self.transcription_page.start_transcription)
+        return True
 
     def _show_recordings_library(self):
         self.audio_page.refresh()
         self.navigate("audio")
 
     def open_audio_library_file(self, path: str):
-        self.transcription_page.set_audio(path)
+        if not self.transcription_page.set_audio(path):
+            return False
         self.navigate("transcription")
+        return True
 
     def release_active_model(self):
         # Unloading may wait for an in-flight CTranslate2 inference. Never do
@@ -1265,6 +1284,13 @@ class MainWindow(QMainWindow):
             event.ignore()
 
     def dropEvent(self, event: QDropEvent):
+        if self.transcription_page.is_busy:
+            self.status_bar.showMessage(
+                "Finish or cancel the current transcription before importing another media job.",
+                7000,
+            )
+            event.ignore()
+            return
         raw_paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
         if not raw_paths:
             event.ignore()
