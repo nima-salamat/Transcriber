@@ -579,7 +579,7 @@ class MainWindow(QMainWindow):
             lambda path: self.close_audio_action.setEnabled(bool(path))
         )
         self._add_menu_action(file_menu, "Save Transcript", self.transcription_page._autosave, "Ctrl+S")
-        self._add_menu_action(file_menu, "Export Transcript…", self.transcription_page.export_button.click)
+        self._add_menu_action(file_menu, "Export Transcript…", self.transcription_page.export_button.click, "Ctrl+Shift+E")
         file_menu.addSeparator()
         self._add_menu_action(file_menu, "Exit", self.close, "Ctrl+Q")
 
@@ -591,7 +591,7 @@ class MainWindow(QMainWindow):
         self._add_menu_action(edit_menu, "Copy", lambda: self._edit_focused_widget("copy"), "Ctrl+C")
         self._add_menu_action(edit_menu, "Paste", lambda: self._edit_focused_widget("paste"), "Ctrl+V")
         self._add_menu_action(edit_menu, "Select All", lambda: self._edit_focused_widget("selectAll"), "Ctrl+A")
-        self._add_menu_action(edit_menu, "Find", self.global_search.setFocus, "Ctrl+F")
+        self._add_menu_action(edit_menu, "Find in Transcript", self._focus_current_transcript_search, "Ctrl+F")
         self._add_menu_action(edit_menu, "Replace", self._focus_replace, "Ctrl+H")
 
         view_menu = bar.addMenu("&View")
@@ -651,6 +651,13 @@ class MainWindow(QMainWindow):
         method = getattr(widget, operation, None) if widget is not None else None
         if callable(method):
             method()
+
+    def _focus_current_transcript_search(self):
+        """Put Ctrl+F in the active transcript editor, not the project search."""
+        if self.workspace.current_view == "editor":
+            self.editor_page.search_input.setFocus()
+        else:
+            self.transcription_page.search_input.setFocus()
 
     def _focus_replace(self):
         self.navigate("editor")
