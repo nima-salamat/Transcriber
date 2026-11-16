@@ -23,6 +23,7 @@ These modes live inside one `UnifiedWorkspace` widget. The existing `TranscriptD
 - Model Library opens in a dedicated large dialog so discovery, compatibility inspection, installation and download progress are not compressed into a small panel.
 - Preferences opens in a dedicated dialog with the existing settings groups.
 - Inspector / AI Assistant remains optional and hidden by default.
+- A single playback transport (play/pause, seek, speed, volume and mute) is bound to the shared AudioPlayer and presented above the waveform; the duplicate player controls inside the Transcribe view are hidden.
 - The waveform timeline is fixed-height and hidden when no media is loaded. Its visibility preference is retained so it appears again when media is opened.
 - The global command palette and search remain available from the application toolbar.
 
