@@ -167,58 +167,11 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        sidebar = QFrame()
-        sidebar.setObjectName("Sidebar")
-        sidebar.setMinimumWidth(190)
-        sidebar.setMaximumWidth(230)
-        side_layout = QVBoxLayout(sidebar)
-        side_layout.setContentsMargins(15, 22, 15, 16)
-        side_layout.setSpacing(6)
-        brand = QHBoxLayout()
-        mark = QLabel("T")
-        mark.setStyleSheet("font-size: 22px; color: #75a7ff; font-weight: 800;")
-        self.brand_name = QLabel("Transcriber")
-        self.brand_name.setStyleSheet("font-size: 18px; font-weight: 700;")
-        brand.addWidget(mark)
-        brand.addWidget(self.brand_name)
-        brand.addStretch(1)
-        side_layout.addLayout(brand)
-        self.tagline = QLabel("VOICE  /  TEXT  /  LOCAL AI")
-        self.tagline.setObjectName("Muted")
-        self.tagline.setStyleSheet("font-size: 9px; letter-spacing: 1px; margin: 2px 0 18px 3px;")
-        side_layout.addWidget(self.tagline)
+        # The old permanent feature sidebar is intentionally removed.
+        # Keep a hidden compatibility widget for older settings/state helpers.
+        self.sidebar = QFrame()
+        self.sidebar.hide()
         self.nav_buttons: dict[str, QPushButton] = {}
-        for key, icon_name, title in self.NAVIGATION:
-            button = QPushButton(title)
-            button.setObjectName("Nav")
-            button.setIcon(self.icon_registry.icon(icon_name, size=18))
-            button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
-            button.setToolTip({
-                "Record audio": "Capture and save a microphone recording; this page does not perform live transcription.",
-                "Transcript editor": "Correct recognized words, speakers and timed transcript segments.",
-                "Subtitles & timing": "Edit subtitle cues, validate readability and export subtitle files.",
-                "AI models": "Discover, install and manage local speech-recognition models.",
-            }.get(title, title))
-            button.setCheckable(True)
-            button.setMinimumHeight(40)
-            button.clicked.connect(lambda _checked=False, page=key: self.navigate(page))
-            self.nav_buttons[key] = button
-            side_layout.addWidget(button)
-        side_layout.addStretch(1)
-        self.sidebar_toggle = QPushButton("Collapse sidebar")
-        self.sidebar_toggle.setObjectName("Nav")
-        self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
-        side_layout.addWidget(self.sidebar_toggle)
-        local_status = QLabel("●  LOCAL-FIRST")
-        local_status.setStyleSheet("color: #43b68b; font-size: 10px; font-weight: 700; margin: 4px;")
-        side_layout.addWidget(local_status)
-        self.local_status = local_status
-        version = QLabel("Version 2.1.4")
-        version.setObjectName("Muted")
-        version.setStyleSheet("font-size: 10px; margin: 4px;")
-        side_layout.addWidget(version)
-        self.sidebar = sidebar
-        sidebar.hide()
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
