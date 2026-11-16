@@ -1258,32 +1258,16 @@ class MainWindow(QMainWindow):
             "cleanup": "cleanup",
         }
         view = aliases.get(page_id, "transcription")
+        previous_view = self.workspace.current_view
         self.stack.setCurrentWidget(self.workspace)
         self.workspace.set_view(view)
         self.page_title.setText("Workspace")
         self.settings_store.update(last_page=view)
 
-        if view == "transcription":
-            if not self.transcription_page.is_busy:
-                self.transcription_page.refresh_models()
-        elif view == "recording":
-            self.recording_page.refresh_devices()
-        elif view == "batch":
-            self.batch_page.refresh()
-        elif view == "history":
-            self.history_page.refresh()
-        elif view == "audio":
-            self.audio_page.refresh()
-        elif view == "editor":
-            if not self.editor_page.document.segments and self.transcription_page.segments:
-                self.editor_page.load_segments(
-                    self.transcription_page.segments,
-                    source_path=self.transcription_page.audio_path,
-                    duration=self._audio_duration_seconds(),
-                )
-        elif view == "subtitles":
-            if not self.subtitle_page.segments and self.transcription_page.segments:
-                self.subtitle_page.load_segments(self.transcription_page.segments)
+        # Changing tabs emits view_changed and refreshes the destination once.
+        # Re-selecting the already active tab emits no signal, so refresh it here.
+        if previous_view == self.workspace.current_view:
+            self._refresh_workspace_view(view)
 
     def _open_media(self):
         self.navigate("transcription")
@@ -1304,7 +1288,13 @@ class MainWindow(QMainWindow):
             handler()
 
     def _on_workspace_view_changed(self, view: str):
-        if view == "recording":
+        self._refresh_workspace_view(view)
+
+    def _refresh_workspace_view(self, view: str):
+        if view == "transcription":
+            if not self.transcription_page.is_busy:
+                self.transcription_page.refresh_models()
+        elif view == "recording":
             self.recording_page.refresh_devices()
         elif view == "batch":
             self.batch_page.refresh()
