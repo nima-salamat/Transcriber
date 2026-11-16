@@ -140,14 +140,9 @@ class TranscriptionPage(QWidget):
         self.vad_check.setChecked(self.settings_store.settings.vad_filter)
         recognition_options.addWidget(QLabel("Model"))
         recognition_options.addWidget(self.model_combo, 2)
-        recognition_options.addWidget(self.default_model_button)
         recognition_options.addWidget(QLabel("Language"))
         recognition_options.addWidget(self.language_combo)
-        recognition_options.addWidget(QLabel("Beam"))
-        recognition_options.addWidget(self.beam_spin)
-        recognition_options.addWidget(self.vad_check)
 
-        advanced_options = QHBoxLayout()
         self.task_combo = QComboBox()
         self.task_combo.addItem("Transcribe in source language", "transcribe")
         self.task_combo.addItem("Translate to English", "translate")
@@ -157,17 +152,48 @@ class TranscriptionPage(QWidget):
         self.initial_prompt = QLineEdit()
         self.initial_prompt.setPlaceholderText("Whisper initial prompt (local engine only)…")
         self.initial_prompt.setToolTip("This setting is supported by Faster-Whisper, not Google Cloud Speech-to-Text V2.")
-        advanced_options.addWidget(QLabel("Task"))
-        advanced_options.addWidget(self.task_combo)
-        advanced_options.addWidget(self.word_timestamps)
-        advanced_options.addWidget(self.initial_prompt, 1)
+
+        advanced_row_one = QHBoxLayout()
+        advanced_row_one.addWidget(self.default_model_button)
+        advanced_row_one.addWidget(QLabel("Task"))
+        advanced_row_one.addWidget(self.task_combo)
+        advanced_row_one.addWidget(QLabel("Beam size"))
+        advanced_row_one.addWidget(self.beam_spin)
+        advanced_row_one.addWidget(self.vad_check)
+
+        advanced_row_two = QHBoxLayout()
+        advanced_row_two.addWidget(self.word_timestamps)
+        advanced_row_two.addWidget(self.initial_prompt, 1)
+
+        advanced_options = QVBoxLayout()
+        advanced_options.setContentsMargins(0, 0, 0, 0)
+        advanced_options.setSpacing(6)
+        advanced_options.addLayout(advanced_row_one)
+        advanced_options.addLayout(advanced_row_two)
+        self.advanced_options_widget = QWidget(source_card)
+        self.advanced_options_widget.setLayout(advanced_options)
+        self.advanced_options_widget.hide()
+        self.advanced_toggle = QPushButton("Advanced recognition options")
+        self.advanced_toggle.setObjectName("Disclosure")
+        self.advanced_toggle.setCheckable(True)
+        self.advanced_toggle.setToolTip(
+            "Show less frequently used recognition controls such as beam size, VAD and initial prompt."
+        )
+        self.advanced_toggle.toggled.connect(self.advanced_options_widget.setVisible)
+        self.advanced_toggle.toggled.connect(
+            lambda visible: self.advanced_toggle.setText(
+                "Hide advanced options" if visible else "Advanced recognition options"
+            )
+        )
+
         self.engine_privacy_hint = QLabel()
         self.engine_privacy_hint.setObjectName("Muted")
         self.engine_privacy_hint.setWordWrap(True)
         source_outer = QVBoxLayout(source_card)
         source_outer.addLayout(source_layout)
         source_outer.addLayout(recognition_options)
-        source_outer.addLayout(advanced_options)
+        source_outer.addWidget(self.advanced_toggle)
+        source_outer.addWidget(self.advanced_options_widget)
         source_outer.addWidget(self.engine_privacy_hint)
         layout.addWidget(source_card)
 
