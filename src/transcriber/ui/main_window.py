@@ -1292,6 +1292,16 @@ class MainWindow(QMainWindow):
             self.history_page.refresh()
         elif view == "audio":
             self.audio_page.refresh()
+        elif view == "editor":
+            if not self.editor_page.document.segments and self.transcription_page.segments:
+                self.editor_page.load_segments(
+                    self.transcription_page.segments,
+                    source_path=self.transcription_page.audio_path,
+                    duration=self._audio_duration_seconds(),
+                )
+        elif view == "subtitles":
+            if not self.subtitle_page.segments and self.transcription_page.segments:
+                self.subtitle_page.load_segments(self.transcript_document.segments)
 
     def open_transcript(self, transcript_id: str):
         if not self.transcription_page.open_history_item(transcript_id):
