@@ -49,7 +49,6 @@ from transcriber.ui.pages.audio_cleanup import AudioCleanupPage
 from transcriber.ui.pages.audio_library import AudioLibraryPage
 from transcriber.ui.pages.batch_processing import BatchProcessingPage
 from transcriber.ui.pages.history import HistoryPage
-from transcriber.ui.pages.home import HomePage
 from transcriber.ui.pages.models import ModelLibraryPage
 from transcriber.ui.pages.recording import RecordingPage
 from transcriber.ui.pages.settings import SettingsPage
@@ -256,7 +255,6 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(toolbar)
 
         self.stack = QStackedWidget()
-        self.home_page = HomePage(self.history, self.model_manager, self.thread_pool)
         self.transcription_page = TranscriptionPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool, document=self.transcript_document, command_history=self.transcript_history)
         self.recording_page = RecordingPage(self.paths, self.recording_history, self.settings_store)
         self.history_page = HistoryPage(self.history, self.thread_pool)
@@ -516,17 +514,13 @@ class MainWindow(QMainWindow):
     def _set_transcription_job_busy(self, busy: bool):
         """Lock alternate document entry points while an operation owns the transcript."""
         enabled = not bool(busy)
-        self.home_page.recent.setEnabled(enabled)
         self.history_page.items.setEnabled(enabled)
         self.editor_page.setEnabled(enabled)
         self.subtitle_page.setEnabled(enabled)
         tip = "Finish or cancel the current operation before opening another transcript." if busy else ""
-        self.home_page.recent.setToolTip(tip)
         self.history_page.items.setToolTip(tip)
 
     def _connect_pages(self):
-        self.home_page.navigate.connect(self.navigate)
-        self.home_page.open_transcript.connect(self.open_transcript)
         self.history_page.open_transcript.connect(self.open_transcript)
         self.recording_page.audio_ready.connect(self.open_recording_in_transcriber)
         self.recording_page.open_library.connect(self._show_recordings_library)
@@ -716,12 +710,11 @@ class MainWindow(QMainWindow):
         self.assistant_dock.setMaximumWidth(16777215)
         # setFixedHeight sets both limits; never release the maximum again.
         self.timeline_dock.setFixedHeight(172)
-        self.assistant_dock.show()
-        self.timeline_dock.show()
+        self.assistant_dock.hide()
+        self.timeline_dock.setVisible(bool(self.transcription_page.audio_path))
         self._inspector_width = 430
-        self._apply_inspector_width()
-        self._sync_drawer_controls(self.assistant_dock, True)
-        self._sync_drawer_controls(self.timeline_dock, True)
+        self._sync_drawer_controls(self.assistant_dock, False)
+        self._sync_drawer_controls(self.timeline_dock, bool(self.transcription_page.audio_path))
         self.sidebar.hide()
         self._sidebar_collapsed = False
         self.settings_store.update(
@@ -1004,9 +997,8 @@ class MainWindow(QMainWindow):
 
     def _app_state(self):
         return {
-            "available": True, "application": "Transcriber", "page": next(
-                (key for key, (_title, page) in self.pages.items() if page is self.stack.currentWidget()), "home"
-            ),
+            "available": True, "application": "Transcriber",
+            "page": self.workspace.current_view,
             "audio_path": str(self.transcription_page.audio_path) if self.transcription_page.audio_path else None,
             "transcript_id": self.transcription_page.transcript_id,
             "segment_count": len(self.transcription_page.segments),
@@ -1421,9 +1413,14 @@ class MainWindow(QMainWindow):
         self.timeline_dock.setFixedHeight(172)
 
         self.assistant_dock.setVisible(settings.inspector_visible)
-        self.timeline_dock.setVisible(settings.timeline_visible)
+        self.timeline_dock.setVisible(
+            bool(settings.timeline_visible and self.transcription_page.audio_path)
+        )
         self._sync_drawer_controls(self.assistant_dock, settings.inspector_visible)
-        self._sync_drawer_controls(self.timeline_dock, settings.timeline_visible)
+        self._sync_drawer_controls(
+            self.timeline_dock,
+            bool(settings.timeline_visible and self.transcription_page.audio_path),
+        )
         self.sidebar.hide()
         QTimer.singleShot(0, self._apply_inspector_width)
 
