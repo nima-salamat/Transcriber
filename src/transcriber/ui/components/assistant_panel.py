@@ -513,12 +513,12 @@ class AssistantPanel(QWidget):
         """Refresh the selector using installed and validated Vosk models."""
         if not hasattr(self, "wake_model_combo"):
             return
+        combo = self.wake_model_combo
         if selected_path is None:
             selected_path = combo.currentData()
             if not selected_path and self.settings_store:
                 selected_path = self.settings_store.settings.wake_model_directory
         selected_key = self._wake_model_path_key(selected_path)
-        combo = self.wake_model_combo
         combo.blockSignals(True)
         combo.clear()
         combo.addItem("Select a Vosk wake-word model…", "")
