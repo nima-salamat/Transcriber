@@ -6,7 +6,7 @@
 
 ## What is implemented
 
-- Native `QMainWindow` frame and workspace with collapsible sidebar, global search, command palette, resizable Inspector and bottom Waveform/Timeline docks; window geometry and panel state are persisted.
+- Native `QMainWindow` with a unified workspace for Transcribe, Segments, Captions, Record, Batch, Library and Audio Cleanup. The permanent feature sidebar is removed; model management and Preferences open in dedicated dialogs, while Inspector and the fixed-height timeline are optional panels.
 - Central semantic dark/light theme tokens and a bundled Lucide SVG icon subset. No runtime network access or QtAwesome dependency is required for icons.
 - Faster-Whisper local audio-file transcription with language detection/selection, task, VAD, beam size, compute device/type, CPU threads and optional word timestamps.
 - Hugging Face model discovery, compatibility inspection, pinned-revision download, validation, install/retry/cancel, default selection and active-model lifecycle.
@@ -96,7 +96,7 @@ The legacy `APP.py` file remains only as a compatibility launcher. It imports th
 
 ## Install an offline model
 
-1. Open **Model Library**.
+1. Open **Models** from the workspace's **More** menu.
 2. Choose **Curated models** or search the live Hugging Face Hub API.
 3. Open the repository page and inspect its license/model card.
 4. Select **Inspect compatibility**. Transcriber checks for a CTranslate2 `model.bin`, config, tokenizer and vocabulary artefact set. A normal PyTorch Transformers checkpoint is not treated as a Faster-Whisper model.
@@ -109,18 +109,18 @@ For gated repositories, open the model page and accept its terms with the model 
 
 ## Transcribe audio and video
 
-1. Open **New Transcription** and choose a supported audio file or video, or drag one into the application. Video transcription reads its first audio track; a video without audio is rejected before recognition. The workspace plays the audio but does not show video frames.
+1. Open the **Transcribe** workspace view and choose a supported audio file or video, or drag one into the application. Video transcription reads its first audio track; a video without audio is rejected before recognition. The workspace plays the audio but does not show video frames.
 2. Select an installed model and a language, or leave language detection on Auto.
 3. Adjust beam size and voice activity detection as needed.
 4. Start transcription. Local recognition stays on-device; a Cloud engine is used only after explicit consent. Inference runs in a worker and updates the status/progress controls.
-5. Edit segments in **New Transcription** or open **Transcript Editor** for speaker, timing and word-level edits.
-6. Use **Export subtitles…** on the transcription page to save timed cues as SRT, WebVTT, ASS or SSA. You can also open **Subtitle Studio** to adjust timing, validate cues and export the same formats.
+5. Switch to **Segments** in the same workspace to edit speakers, timing, word-level metadata and review state.
+6. Switch to **Captions** to adjust subtitle timing, validate cues and export SRT, WebVTT, ASS or SSA.
 
-While a transcription or history load is active, Transcriber locks media replacement and transcript switching. The Home/History pickers, Transcript Editor and Subtitle Studio stay unavailable until the worker has actually finished. Requesting Cancel does not release the lock early.
+While a transcription or history load is active, Transcriber locks media replacement and changes to the Library, Segments and Captions views until the worker has actually finished. Requesting Cancel does not release the lock early.
 
 ## Record audio
 
-Open **Live Recording**, choose an available microphone, select a WAV destination and press the circular record control. The recorder uses a supported 16-bit PCM input format, writes a WAV file, displays a live level meter and elapsed duration, and supports pause/resume, save and discard. The optional **Start transcription after saving** switch opens the saved recording in the transcription page and starts a job when a compatible model is installed.
+Open the **Record** workspace view, choose an available microphone, select a WAV destination and press the record control. The recorder uses a supported 16-bit PCM input format, writes a WAV file, displays a live level meter and elapsed duration, and supports pause/resume, save and discard. The optional **Start transcription after saving** switch opens the saved recording in the Transcribe view and starts a job when a compatible model is installed.
 
 This page records microphone audio; it does **not** claim to perform continuous Whisper streaming while the microphone is active. Incremental chunked Whisper/VAD reconciliation remains future work.
 
@@ -179,14 +179,14 @@ src/transcriber/
   assistant/     semantic actions, permissions and optional local voice input
   opencode/      ACP stdio client and persistent session handling
   mcp/ ipc/      MCP tools and authenticated local IPC bridge
-  ui/            native workspace, inspector/timeline docks, pages and theme
+  ui/            unified workspace, contextual inspector/timeline, dialogs and theme
 ```
 
 See [Architecture](docs/ARCHITECTURE.md), [Model manager](docs/MODEL_MANAGER.md), [Audio pipeline](docs/AUDIO_PIPELINE.md), [Storage policy](docs/STORAGE_POLICY.md) and [Known limitations](docs/KNOWN_LIMITATIONS.md).
 
 ## Troubleshooting
 
-- **No local model appears:** open Model Library and inspect a CTranslate2 model. PyTorch-only Whisper repositories are intentionally rejected.
+- **No local model appears:** open **Models** from the workspace's **More** menu and inspect a CTranslate2 model. PyTorch-only Whisper repositories are intentionally rejected.
 - **CUDA load failure:** on Windows run `python -m pip install -r requirements-windows-gpu.txt` from the repository root and the same activated environment used to launch Transcriber, then fully restart the application. This installs cuBLAS, CUDA Runtime, NVRTC, nvJitLink and cuDNN 9 wheels. Transcriber adds all `nvidia/*/bin` folders and CUDA Toolkit `bin` folders to the native DLL search path. The error dialog reports the active Python executable, installed NVIDIA wheel versions and whether core runtime DLL files were found. If DLL files exist but still cannot load, repair the Microsoft Visual C++ 2015–2022 x64 Redistributable and check for conflicting CUDA versions.
 - **OpenCode ACP fails with WinError 193 on Windows:** select the npm `opencode.cmd` launcher (normally `%APPDATA%\\npm\\opencode.cmd`) in Settings → OpenCode executable, or clear the field and let Transcriber resolve OpenCode from PATH. Do not point Settings at the extensionless npm JavaScript shim. Transcriber runs `.cmd`/`.bat` launchers through the Windows command processor and uses the same launcher logic for **Test OpenCode executable**.
 - **`open() got an unexpected keyword argument 'metadata_errors'`:** the current Faster-Whisper release calls a PyAV API parameter removed in PyAV 19. The project pins PyAV to `av>=11,<19`; repair an existing environment with `python -m pip install --upgrade "av>=11,<19"` and restart Transcriber.
