@@ -117,8 +117,11 @@ def test_empty_workspace_hides_optional_panels_without_forgetting_timeline_prefe
     assert window.timeline_dock.isHidden()
     assert settings.settings.inspector_visible is False
     assert settings.settings.timeline_visible is True
+    assert window.audio_transport.player is window.transcription_page.player
+    assert not window.audio_transport.play_button.isEnabled()
 
-    # Selecting media should reveal the timeline when its preference is on.
+    # Selecting media reveals the shared transport and waveform when preferred.
     window._load_waveform(str(tmp_path / "sample.wav"))
     assert not window.timeline_dock.isHidden()
+    assert window.audio_transport.play_button.isEnabled()
     window.close()
