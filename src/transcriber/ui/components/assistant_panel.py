@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.assistant.prompt_library import PromptLibrary
-from transcriber.assistant.ollama_client import OllamaClient
 from transcriber.opencode.acp_client import OpenCodeACPClient
 from transcriber.ui.components.prompt_library_dialog import PromptLibraryDialog
 from transcriber.ui.workers import FunctionWorker
@@ -45,11 +44,6 @@ class _AssistantSignals(QObject):
     voice_error = Signal(str)
     voice_asr_complete = Signal(str)
     voice_asr_error = Signal(str)
-    ollama_models_ready = Signal(object)
-    ollama_connected = Signal(object)
-    ollama_chunk = Signal(str)
-    ollama_complete = Signal(object)
-    ollama_error = Signal(str)
 
 
 class AssistantPanel(QWidget):
@@ -75,25 +69,15 @@ class AssistantPanel(QWidget):
 
     def __init__(
         self, paths, thread_pool, settings_store=None, parent=None, *,
-        voice_transcriber=None, model_manager=None, voice_model_loader=None,
+        voice_transcriber=None, model_manager=None,
     ):
         super().__init__(parent)
         self.paths = paths
         self.thread_pool = thread_pool
         self.settings_store = settings_store
         self.voice_transcriber = voice_transcriber
-        self.voice_model_loader = voice_model_loader
         self.model_manager = model_manager
         self.voice_agent = None
-        self.ollama_client: OllamaClient | None = None
-        self._ollama_connected = False
-        self._ollama_model = ""
-        self._ollama_messages: list[dict[str, str]] = []
-        self._chat_provider = (
-            self.settings_store.settings.chat_provider if self.settings_store else "opencode"
-        )
-        self._start_voice_after_connect = False
-        self._voice_conversation_mode = False
         self.prompt_library = PromptLibrary(self.paths.config / "agent_prompts")
         self._resume_voice_after_prompt = False
         self._voice_asr_active = False
@@ -108,11 +92,6 @@ class AssistantPanel(QWidget):
         self.signals.voice_error.connect(self._on_voice_error)
         self.signals.voice_asr_complete.connect(self._on_voice_asr_complete)
         self.signals.voice_asr_error.connect(self._on_voice_asr_error)
-        self.signals.ollama_models_ready.connect(self._on_ollama_models_ready)
-        self.signals.ollama_connected.connect(self._on_ollama_connected)
-        self.signals.ollama_chunk.connect(self._append_stream_chunk)
-        self.signals.ollama_complete.connect(self._on_ollama_chat_complete)
-        self.signals.ollama_error.connect(self._on_ollama_error)
 
         self.client: OpenCodeACPClient | None = None
         self._worker_active = False
@@ -148,51 +127,6 @@ class AssistantPanel(QWidget):
         header.addWidget(self.connection_state)
         root.addLayout(header)
 
-        provider_row = QHBoxLayout()
-        provider_row.addWidget(QLabel("Chat provider"))
-        self.provider_combo = QComboBox()
-        self.provider_combo.addItem("OpenCode Agent", "opencode")
-        self.provider_combo.addItem("Ollama · Local models", "ollama")
-        self.provider_combo.setCurrentIndex(max(0, self.provider_combo.findData(self._chat_provider)))
-        self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
-        provider_row.addWidget(self.provider_combo, 1)
-        root.addLayout(provider_row)
-
-        self.ollama_controls = QFrame()
-        self.ollama_controls.setObjectName("AssistantContext")
-        ollama_layout = QVBoxLayout(self.ollama_controls)
-        ollama_layout.setContentsMargins(10, 8, 10, 8)
-        ollama_layout.setSpacing(6)
-        ollama_url_row = QHBoxLayout()
-        ollama_url_row.addWidget(QLabel("Ollama URL"))
-        self.ollama_url = QLineEdit(
-            self.settings_store.settings.ollama_base_url
-            if self.settings_store else "http://127.0.0.1:11434"
-        )
-        self.ollama_url.setPlaceholderText("http://127.0.0.1:11434")
-        self.ollama_url.editingFinished.connect(self._provider_base_url_changed)
-        ollama_url_row.addWidget(self.ollama_url, 1)
-        ollama_layout.addLayout(ollama_url_row)
-        ollama_model_row = QHBoxLayout()
-        ollama_model_row.addWidget(QLabel("Model"))
-        self.ollama_model_combo = QComboBox()
-        self.ollama_model_combo.setMinimumWidth(130)
-        self.ollama_model_combo.setToolTip("Choose a model already installed in your local Ollama service.")
-        ollama_model_row.addWidget(self.ollama_model_combo, 1)
-        self.refresh_ollama_button = QPushButton("Refresh")
-        self.refresh_ollama_button.setObjectName("Subtle")
-        self.refresh_ollama_button.clicked.connect(self.refresh_ollama_models)
-        ollama_model_row.addWidget(self.refresh_ollama_button)
-        ollama_layout.addLayout(ollama_model_row)
-        self.ollama_help = QLabel(
-            "Connects to the local Ollama API. Install models with ollama pull <model> first."
-        )
-        self.ollama_help.setObjectName("Muted")
-        self.ollama_help.setWordWrap(True)
-        ollama_layout.addWidget(self.ollama_help)
-        self.ollama_controls.setVisible(self._chat_provider == "ollama")
-        root.addWidget(self.ollama_controls)
-
         project_card = QFrame()
         project_card.setObjectName("AssistantContext")
         project_layout = QHBoxLayout(project_card)
@@ -215,7 +149,6 @@ class AssistantPanel(QWidget):
         self.project_button.setToolTip("Choose the project directory for the OpenCode session")
         self.project_button.clicked.connect(self.choose_project)
         project_layout.addWidget(self.project_button)
-        self.project_card = project_card
         root.addWidget(project_card)
 
         self.chat_view = QTextBrowser()
@@ -223,16 +156,9 @@ class AssistantPanel(QWidget):
         self.chat_view.setOpenExternalLinks(False)
         self.chat_view.setOpenLinks(False)
         self.chat_view.setReadOnly(True)
-        self.chat_view.setPlaceholderText("Connect to OpenCode or Ollama to start a conversation.")
+        self.chat_view.setPlaceholderText("Connect to OpenCode to start a conversation.")
         self.chat_view.setMinimumHeight(150)
         root.addWidget(self.chat_view, 1)
-        self.voice_chat_button = QPushButton("Start voice chat")
-        self.voice_chat_button.setObjectName("Primary")
-        self.voice_chat_button.setToolTip(
-            "Connect the selected chat model, activate the microphone and start a continuous voice conversation."
-        )
-        self.voice_chat_button.clicked.connect(self.start_voice_chat)
-        root.addWidget(self.voice_chat_button)
         # Retain the old attribute name for integrations which inspect the panel.
         self.log = self.chat_view
 
@@ -307,10 +233,10 @@ class AssistantPanel(QWidget):
         connection_row.setSpacing(8)
         self.connect_button = QPushButton("Connect OpenCode")
         self.connect_button.setObjectName("Primary")
-        self.connect_button.clicked.connect(self.connect_provider)
+        self.connect_button.clicked.connect(self.connect_opencode)
         self.disconnect_button = QPushButton("Disconnect")
         self.disconnect_button.setObjectName("Subtle")
-        self.disconnect_button.clicked.connect(self.disconnect_provider)
+        self.disconnect_button.clicked.connect(self.disconnect_opencode)
         self.disconnect_button.setEnabled(False)
         connection_row.addWidget(self.connect_button, 1)
         connection_row.addWidget(self.disconnect_button)
@@ -349,18 +275,6 @@ class AssistantPanel(QWidget):
         )
         voice_layout.addWidget(self.wake_phrase)
 
-        asr_title = QLabel("Faster-Whisper speech-to-text model")
-        voice_layout.addWidget(asr_title)
-        self.voice_asr_combo = QComboBox()
-        self.voice_asr_combo.setToolTip(
-            "This local model turns each captured voice command into text before it is sent to the chat model."
-        )
-        self.voice_asr_combo.currentIndexChanged.connect(self._voice_asr_model_changed)
-        voice_layout.addWidget(self.voice_asr_combo)
-        self.refresh_voice_asr_models(
-            self.settings_store.settings.voice_asr_model if self.settings_store else ""
-        )
-
         model_title = QLabel("Vosk model used for wake-word detection")
         voice_layout.addWidget(model_title)
         model_row = QHBoxLayout()
@@ -396,7 +310,7 @@ class AssistantPanel(QWidget):
         self.ptt_button.setObjectName("Subtle")
         self.ptt_button.clicked.connect(self.push_to_talk)
         self.ptt_button.setEnabled(False)
-        self.wake_button.hide()
+        voice_actions.addWidget(self.wake_button, 1)
         voice_actions.addWidget(self.ptt_button)
         voice_layout.addLayout(voice_actions)
 
@@ -448,245 +362,6 @@ class AssistantPanel(QWidget):
         self._chat_refresh_timer.setInterval(45)
         self._chat_refresh_timer.timeout.connect(self._refresh_chat)
         self._refresh_chat()
-        self._apply_provider_ui()
-
-
-    def _chat_is_connected(self) -> bool:
-        if self._chat_provider == "ollama":
-            return bool(self._ollama_connected and self.ollama_client)
-        return bool(self.client and self.client.connected)
-
-    def _apply_provider_ui(self):
-        ollama = self._chat_provider == "ollama"
-        self.project_card.setVisible(not ollama)
-        self.ollama_controls.setVisible(ollama)
-        self.connect_button.setText("Connect Ollama" if ollama else "Connect OpenCode")
-        connected = self._chat_is_connected()
-        self.send_button.setEnabled(connected and not self._worker_active)
-        self.disconnect_button.setEnabled(connected)
-        self.connect_button.setEnabled(not connected and not self._worker_active)
-        if connected:
-            self.connection_state.setText("Connected · Ollama" if ollama else "Connected · OpenCode")
-            self.connection_state.setProperty("state", "connected")
-        else:
-            self.connection_state.setText("Disconnected")
-            self.connection_state.setProperty("state", "disconnected")
-        self.connection_state.style().unpolish(self.connection_state)
-        self.connection_state.style().polish(self.connection_state)
-
-    def _on_provider_changed(self, _index: int):
-        if self.voice_agent is not None:
-            self._voice_conversation_mode = False
-            self.toggle_voice_agent()
-        self._chat_provider = str(self.provider_combo.currentData() or "opencode")
-        if self.settings_store:
-            self.settings_store.update(chat_provider=self._chat_provider)
-        self._apply_provider_ui()
-        if self._chat_provider == "ollama":
-            self.activity_label.setText("Choose a locally installed Ollama model, then connect.")
-            if self.ollama_model_combo.count() <= 1:
-                self.refresh_ollama_models()
-        else:
-            self.activity_label.setText("Connect to OpenCode to use its Agent and Transcriber workspace tools.")
-
-    def refresh_ollama_models(self):
-        if self._worker_active:
-            return
-        try:
-            client = OllamaClient(self.ollama_url.text().strip())
-        except ValueError as exc:
-            self.ollama_help.setText(str(exc))
-            return
-        self.ollama_help.setText("Checking the Ollama server and listing installed models…")
-        worker = FunctionWorker(lambda _emit: client.list_models())
-        worker.signals.result.connect(self.signals.ollama_models_ready.emit)
-        worker.signals.error.connect(lambda message: self.ollama_help.setText(str(message)))
-        self.thread_pool.start(worker)
-
-    def _on_ollama_models_ready(self, models):
-        selected = (
-            self.settings_store.settings.ollama_model
-            if self.settings_store else self.ollama_model_combo.currentData()
-        )
-        self.ollama_model_combo.blockSignals(True)
-        self.ollama_model_combo.clear()
-        self.ollama_model_combo.addItem("Select an installed Ollama model…", "")
-        for item in models:
-            name = str(item.get("name") or "")
-            if name:
-                size = item.get("size")
-                size_label = f" · {int(size) / (1024 ** 3):.1f} GB" if str(size).isdigit() and int(size) > 0 else ""
-                self.ollama_model_combo.addItem(f"{name}{size_label}", name)
-        index = self.ollama_model_combo.findData(selected or "")
-        self.ollama_model_combo.setCurrentIndex(max(0, index))
-        self.ollama_model_combo.blockSignals(False)
-        if models:
-            self.ollama_help.setText(f"Found {len(models)} local Ollama model(s).")
-        else:
-            self.ollama_help.setText("No models are installed. Run ollama pull <model> and refresh.")
-
-    def connect_provider(self):
-        if self._chat_provider == "ollama":
-            self.connect_ollama()
-        else:
-            self.connect_opencode()
-
-    def connect_ollama(self):
-        if self._worker_active or self._ollama_connected:
-            return
-        try:
-            client = OllamaClient(self.ollama_url.text().strip())
-        except ValueError as exc:
-            self._on_ollama_error(str(exc))
-            return
-        self.ollama_client = client
-        requested_model = str(self.ollama_model_combo.currentData() or "").strip()
-        if self.settings_store:
-            self.settings_store.update(
-                ollama_base_url=client.base_url,
-                ollama_model=requested_model,
-            )
-        self._worker_active = True
-        self.connect_button.setEnabled(False)
-        self.connection_state.setText("Connecting to Ollama…")
-        self.connection_state.setProperty("state", "connecting")
-        self.activity_label.setText("Finding an installed model and loading it into local memory…")
-
-        def connect(_emit):
-            models = client.list_models()
-            names = [str(item.get("name") or "") for item in models if item.get("name")]
-            if not names:
-                raise RuntimeError(
-                    "Ollama is reachable, but no models are installed. Run ollama pull <model> first."
-                )
-            selected = requested_model if requested_model in names else names[0]
-            keep_alive = (
-                self.settings_store.settings.ollama_keep_alive if self.settings_store else "30m"
-            )
-            client.load_model(selected, keep_alive=keep_alive)
-            return {"models": models, "model": selected}
-
-        worker = FunctionWorker(connect)
-        worker.signals.result.connect(self.signals.ollama_connected.emit)
-        worker.signals.error.connect(self.signals.ollama_error.emit)
-        worker.signals.finished.connect(self._worker_finished)
-        self.thread_pool.start(worker)
-
-    def _on_ollama_connected(self, result):
-        models = result.get("models", [])
-        selected = str(result.get("model") or "")
-        self._on_ollama_models_ready(models)
-        index = self.ollama_model_combo.findData(selected)
-        if index >= 0:
-            self.ollama_model_combo.setCurrentIndex(index)
-        changed_model = selected != self._ollama_model
-        self._ollama_model = selected
-        self._ollama_connected = True
-        if changed_model:
-            self._ollama_messages = []
-            self._messages.clear()
-            self._streaming_index = None
-        if self.settings_store:
-            self.settings_store.update(
-                ollama_model=selected, ollama_base_url=self.ollama_url.text().strip()
-            )
-        self.ollama_help.setText(
-            f"{selected} is loaded in Ollama. Chat messages are sent to your local model."
-        )
-        self.connection_state.setText(f"Connected · {selected}")
-        self.connection_state.setProperty("state", "connected")
-        self.connection_state.style().unpolish(self.connection_state)
-        self.connection_state.style().polish(self.connection_state)
-        self.activity_label.setText("Ollama ready · Start a local conversation.")
-        self._append_message("system", f"Local Ollama model loaded · {selected}")
-        self._apply_provider_ui()
-        if self._start_voice_after_connect:
-            self._start_voice_after_connect = False
-            self._voice_conversation_mode = True
-            self.toggle_voice_agent()
-
-    def _on_ollama_error(self, message):
-        self._streaming_index = None
-        self._append_message("error", str(message))
-        self.ollama_help.setText(str(message))
-        self.activity_label.setText("Ollama is unavailable or the selected model could not be loaded.")
-        self.status_message.emit(f"Ollama: {message}")
-        if not self._ollama_connected:
-            self.connection_state.setText("Ollama unavailable")
-            self.connection_state.setProperty("state", "error")
-            self.connection_state.style().unpolish(self.connection_state)
-            self.connection_state.style().polish(self.connection_state)
-        if self._start_voice_after_connect:
-            self._start_voice_after_connect = False
-            self._voice_conversation_mode = False
-
-    def disconnect_provider(self):
-        if self._chat_provider == "ollama":
-            self._ollama_connected = False
-            self.ollama_client = None
-            self.connection_state.setText("Disconnected")
-            self.connection_state.setProperty("state", "disconnected")
-            self.connection_state.style().unpolish(self.connection_state)
-            self.connection_state.style().polish(self.connection_state)
-            self.activity_label.setText("Disconnected from Ollama. The server and its loaded model are left running.")
-            self._append_message("system", "Ollama chat disconnected; the local service/model was not stopped.")
-            self._apply_provider_ui()
-            return
-        self.disconnect_opencode()
-
-    def start_voice_chat(self):
-        if self.voice_agent is not None:
-            self._voice_conversation_mode = False
-            self.toggle_voice_agent()
-            return
-        if self._worker_active:
-            self.status_message.emit("Wait for the current model operation to finish before starting voice chat.")
-            return
-        self._voice_conversation_mode = True
-        if not self._chat_is_connected():
-            self._start_voice_after_connect = True
-            self.connect_provider()
-            return
-        self.toggle_voice_agent()
-
-    def refresh_voice_asr_models(self, selected_model: str | None = None):
-        if not hasattr(self, "voice_asr_combo"):
-            return
-        combo = self.voice_asr_combo
-        selected = selected_model or (combo.currentData() if combo.count() else "")
-        if not selected and self.settings_store:
-            selected = self.settings_store.settings.default_model
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItem("Use default Faster-Whisper model", "")
-        installed = []
-        if self.model_manager is not None:
-            try:
-                installed = self.model_manager.installed(include_sizes=False)
-            except Exception:
-                installed = []
-        for item in installed:
-            if not item.get("compatible") or str(item.get("runtime") or "faster-whisper") != "faster-whisper":
-                continue
-            repo_id = str(item.get("repo_id") or "")
-            if repo_id:
-                combo.addItem(repo_id, repo_id)
-        index = combo.findData(selected or "")
-        combo.setCurrentIndex(max(0, index))
-        combo.blockSignals(False)
-
-    def _voice_asr_model_changed(self, _index: int):
-        if self.settings_store:
-            self.settings_store.update(voice_asr_model=str(self.voice_asr_combo.currentData() or ""))
-
-    def _provider_base_url_changed(self):
-        if self.settings_store:
-            self.settings_store.update(ollama_base_url=self.ollama_url.text().strip())
-
-
-    def _provider_base_url_changed(self):
-        if self.settings_store:
-            self.settings_store.update(ollama_base_url=self.ollama_url.text().strip())
 
     def _toggle_voice_panel(self, expanded: bool):
         self.voice_panel.setVisible(expanded)
@@ -809,11 +484,6 @@ class AssistantPanel(QWidget):
             return
         settings = self.settings_store.settings
         self.wake_phrase.setText(settings.wake_phrase)
-        self.ollama_url.setText(settings.ollama_base_url)
-        provider_index = self.provider_combo.findData(settings.chat_provider)
-        if provider_index >= 0 and provider_index != self.provider_combo.currentIndex():
-            self.provider_combo.setCurrentIndex(provider_index)
-        self.refresh_voice_asr_models(settings.voice_asr_model)
         if hasattr(self, "voice_silence_spin"):
             self.voice_silence_spin.setValue(settings.voice_silence_seconds)
         if hasattr(self, "voice_auto_submit_check"):
@@ -977,12 +647,9 @@ class AssistantPanel(QWidget):
         )
         self.voice_agent = agent
         self.wake_button.setEnabled(False)
-        self.voice_chat_button.setEnabled(False)
 
         def start_agent(_emit):
             try:
-                if callable(self.voice_model_loader):
-                    self.voice_model_loader()
                 return agent.start()
             except Exception:
                 agent.stop()
@@ -996,8 +663,6 @@ class AssistantPanel(QWidget):
 
     def _voice_started(self):
         self.wake_button.setText("Stop local wake")
-        self.voice_chat_button.setText("Stop voice chat")
-        self.voice_chat_button.setEnabled(True)
         self.ptt_button.setEnabled(True)
         self.voice_state_label.setText("Wake listening")
         self._append_message(
@@ -1052,10 +717,10 @@ class AssistantPanel(QWidget):
         self.prompt.setPlainText(recognized)
         self.prompt.setFocus()
         settings = self.settings_store.settings if self.settings_store else None
-        auto_submit = bool((settings and settings.voice_auto_submit) or self._voice_conversation_mode)
-        connected = self._chat_is_connected()
+        auto_submit = bool(settings and settings.voice_auto_submit)
+        connected = bool(self.client and self.client.connected)
         if auto_submit and connected and not self._worker_active:
-            self._append_message("system", "Voice command recognized · sending it to the selected chat model.")
+            self._append_message("system", "Voice command recognized · sending it to the Agent.")
             self._resume_voice_after_prompt = True
             self.send_prompt()
         else:
@@ -1065,14 +730,11 @@ class AssistantPanel(QWidget):
             )
             if auto_submit and not connected:
                 self.status_message.emit(
-                    "Voice command recognized but not sent: the selected chat provider is disconnected."
+                    "Voice command recognized but not sent: OpenCode is disconnected."
                 )
             self.ptt_button.setText("Resume listening")
             self.ptt_button.setEnabled(self.voice_agent is not None)
             self.voice_state_label.setText("Command ready for review")
-            if self._voice_conversation_mode:
-                self._voice_conversation_mode = False
-                self.voice_chat_button.setText("Start voice chat")
 
     def _on_voice_asr_error(self, message: str):
         self._append_message("error", f"Voice transcription failed: {message}")
@@ -1107,10 +769,6 @@ class AssistantPanel(QWidget):
             self.thread_pool.start(worker)
         self.wake_button.setText("Enable local wake")
         self.wake_button.setEnabled(True)
-        self.voice_chat_button.setText("Start voice chat")
-        self.voice_chat_button.setEnabled(True)
-        self._voice_conversation_mode = False
-        self._start_voice_after_connect = False
         self.ptt_button.setEnabled(False)
         self.voice_state_label.setText("Voice error")
         self.status_message.emit(f"Voice input: {message}")
@@ -1131,10 +789,10 @@ class AssistantPanel(QWidget):
         self.prompt.setPlainText(text)
         self.prompt.setFocus()
         settings = self.settings_store.settings if self.settings_store else None
-        auto_submit = bool((settings and settings.voice_auto_submit) or self._voice_conversation_mode)
-        connected = self._chat_is_connected()
+        auto_submit = bool(settings and settings.voice_auto_submit)
+        connected = bool(self.client and self.client.connected)
         if auto_submit and connected and not self._worker_active:
-            self._append_message("system", "Recognized locally · sending the voice command to the selected model.")
+            self._append_message("system", "Recognized locally · sending the reviewed voice command.")
             self.send_prompt()
         else:
             self._append_message("system", "Voice command recognized. Review or edit it before sending.")
@@ -1265,86 +923,16 @@ class AssistantPanel(QWidget):
         self.send_button.setEnabled(True)
         self.activity_label.setText("Connected · Transcriber workspace tools are attached to this ACP session.")
         self._append_message("system", f"OpenCode connected · session {str(session_id)[:12]}")
-        if self._start_voice_after_connect:
-            self._start_voice_after_connect = False
-            self._voice_conversation_mode = True
-            self.toggle_voice_agent()
-        self._apply_provider_ui()
-
-
-    def _send_ollama_prompt(self, prompt: str):
-        client = self.ollama_client
-        if not self._ollama_connected or client is None:
-            self._append_message("system", "Connect to Ollama and load a local model before sending a message.")
-            self.status_message.emit("Ollama is disconnected")
-            return
-        try:
-            prompt_files = self.prompt_library.prompt_files_for_request(prompt)
-            prompt_context = self.prompt_library.context_for_request(prompt)
-        except (OSError, ValueError) as exc:
-            self._append_message("error", f"Could not load the current Agent prompt instructions: {exc}")
-            self.status_message.emit(f"Agent prompt library: {exc}")
-            return
-        system_prompt = (
-            "You are the local chat assistant inside Transcriber. Answer the user's questions clearly. "
-            "You are connected to no application tools in this Ollama chat mode: do not claim to inspect "
-            "or modify the live Transcriber workspace or OpenCode Desktop.\n\n"
-            + prompt_context
-        )
-        history = [dict(item) for item in self._ollama_messages]
-        if history and history[0].get("role") == "system":
-            history[0] = {"role": "system", "content": system_prompt}
-        else:
-            history.insert(0, {"role": "system", "content": system_prompt})
-        history.append({"role": "user", "content": prompt})
-        self._ollama_messages = history
-        self._worker_active = True
-        if self.voice_agent is not None and self.voice_agent.mode == "processing":
-            self._resume_voice_after_prompt = True
-        self._streaming_index = None
-        self.send_button.setEnabled(False)
-        self.stop_button.setEnabled(False)
-        self.activity_label.setText(f"Ollama is working · {self._ollama_model}")
-        self._append_message("user", prompt)
-        self.prompt.clear()
-        self._append_message("system", "Loaded current prompt instructions: " + ", ".join(prompt_files))
-        keep_alive = self.settings_store.settings.ollama_keep_alive if self.settings_store else "30m"
-        worker = FunctionWorker(
-            lambda emit: client.chat(
-                self._ollama_model,
-                history,
-                keep_alive=keep_alive,
-                on_chunk=emit,
-            )
-        )
-        worker.signals.progress.connect(self.signals.ollama_chunk.emit)
-        worker.signals.result.connect(self.signals.ollama_complete.emit)
-        worker.signals.error.connect(self.signals.ollama_error.emit)
-        worker.signals.finished.connect(self._worker_finished)
-        self.thread_pool.start(worker)
-
-    def _on_ollama_chat_complete(self, result):
-        response = str(result.get("text") or "")
-        if response:
-            self._ollama_messages.append({"role": "assistant", "content": response})
-        self._streaming_index = None
-        metrics = result.get("metrics") or {}
-        eval_count = metrics.get("eval_count")
-        detail = f" · {eval_count} tokens" if eval_count is not None else ""
-        self.activity_label.setText(f"Ollama turn complete{detail} · Ready for your next message.")
 
     def send_prompt(self):
         prompt = self.prompt.toPlainText().strip()
         if not prompt:
             return
-        if self._worker_active:
-            return
-        if self._chat_provider == "ollama":
-            self._send_ollama_prompt(prompt)
-            return
         if not self.client or not self.client.connected:
             self._append_message("system", "Connect to OpenCode before sending a message.")
             self.status_message.emit("OpenCode is disconnected")
+            return
+        if self._worker_active:
             return
 
         try:
@@ -1444,16 +1032,13 @@ class AssistantPanel(QWidget):
 
     def _worker_finished(self):
         self._worker_active = False
-        connected = self._chat_is_connected()
+        connected = bool(self.client and self.client.connected)
         self.send_button.setEnabled(connected)
         self.stop_button.setEnabled(False)
         self.connect_button.setEnabled(not connected)
         self.disconnect_button.setEnabled(connected)
-        if connected and (
-            self.activity_label.text().startswith("OpenCode is working")
-            or self.activity_label.text().startswith("Ollama is working")
-        ):
-            self.activity_label.setText("Ready · Ask another question or start the voice conversation.")
+        if connected and self.activity_label.text().startswith("OpenCode is working"):
+            self.activity_label.setText("Ready · Ask another question or choose a suggested task.")
         if self._resume_voice_after_prompt:
             self._resume_voice_after_prompt = False
             self._resume_voice_agent()

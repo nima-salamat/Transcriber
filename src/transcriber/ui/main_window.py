@@ -340,6 +340,7 @@ class MainWindow(QMainWindow):
         self.assistant_panel = AssistantPanel(
             self.paths, self.thread_pool, self.settings_store,
             voice_transcriber=self._transcribe_voice_audio,
+            voice_model_loader=self._prepare_voice_models,
             model_manager=self.model_manager,
         )
         self.assistant_panel.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
@@ -564,6 +565,9 @@ class MainWindow(QMainWindow):
         )
         self.model_page.installed_models_changed.connect(
             self.assistant_panel.refresh_wake_models
+        )
+        self.model_page.installed_models_changed.connect(
+            self.assistant_panel.refresh_voice_asr_models
         )
 
 
@@ -831,13 +835,8 @@ class MainWindow(QMainWindow):
             self.ipc_server = None
             self.status_bar.showMessage(f"Local Agent IPC unavailable: {exc}", 8000)
 
-    def _transcribe_voice_audio(self, pcm_audio: bytes) -> str:
-        """Transcribe an in-memory voice command with the installed local Whisper model."""
-        if self.transcription_page.is_busy:
-            raise RuntimeError(
-                "Finish or cancel the current transcription before using voice commands."
-            )
-        configured = self.settings_store.settings
+    def _voice_asr_model_id(self, configured=None) -> str:
+        settings = configured or self.settings_store.settings
         candidates = [
             item for item in self.model_manager.installed(include_sizes=False)
             if item.get("compatible")
@@ -847,11 +846,32 @@ class MainWindow(QMainWindow):
             raise RuntimeError(
                 "Install a compatible Faster-Whisper model in AI models before using voice commands."
             )
+        preferred = settings.voice_asr_model or settings.default_model
         candidates.sort(key=lambda item: (
-            item.get("repo_id") != configured.default_model,
+            item.get("repo_id") != preferred,
             str(item.get("repo_id") or "").casefold(),
         ))
-        repo_id = str(candidates[0]["repo_id"])
+        return str(candidates[0]["repo_id"])
+
+    def _prepare_voice_models(self) -> str:
+        """Warm the selected local Faster-Whisper ASR model before microphone capture."""
+        if self.transcription_page.is_busy:
+            raise RuntimeError(
+                "Finish or cancel the current transcription before starting voice chat."
+            )
+        configured = self.settings_store.settings
+        repo_id = self._voice_asr_model_id(configured)
+        self.model_manager.get_engine(repo_id, configured)
+        return repo_id
+
+    def _transcribe_voice_audio(self, pcm_audio: bytes) -> str:
+        """Transcribe an in-memory voice command with the installed local Whisper model."""
+        if self.transcription_page.is_busy:
+            raise RuntimeError(
+                "Finish or cancel the current transcription before using voice commands."
+            )
+        configured = self.settings_store.settings
+        repo_id = self._voice_asr_model_id(configured)
         audio = bytes(pcm_audio)
         audio = audio[: len(audio) - (len(audio) % 2)]
         if len(audio) < 3200:
