@@ -186,7 +186,7 @@ def test_cuda_toolkit_bin_from_environment_is_discovered(tmp_path):
 def test_cuda_error_message_reports_runtime_probe_on_windows(tmp_path, monkeypatch):
     from transcriber.engines import cuda_runtime
 
-    monkeypatch.setattr(cuda_runtime.os, "name", "nt")
+    monkeypatch.setattr(cuda_runtime, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(
         cuda_runtime,
         "find_windows_cuda_dll_directories",
