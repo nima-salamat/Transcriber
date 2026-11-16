@@ -36,6 +36,7 @@ from transcriber.audio.player import AudioPlayer
 from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
 from transcriber.engines.base import TranscriptionEngine
+from transcriber.subtitles.formats import export_subtitles
 from transcriber.transcription.exporters import export_transcript
 from transcriber.transcription.segments import (
     TranscriptionOptions,
@@ -43,7 +44,6 @@ from transcriber.transcription.segments import (
     reconcile_segments,
 )
 from transcriber.transcription.service import TranscriptionService
-from transcriber.subtitles.formats import export_subtitles
 from transcriber.ui.widgets import Card, page_header, primary_button
 from transcriber.ui.workers import FunctionWorker
 

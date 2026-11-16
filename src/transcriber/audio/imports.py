@@ -58,7 +58,6 @@ def collect_media_paths(paths, *, existing_paths=()) -> MediaImportReport:
                 for item in discovered:
                     if item.suffix.casefold() in SUPPORTED_MEDIA_SUFFIXES:
                         supported.append(item)
-                        supported.append(item)
                 if not supported:
                     rejected.append((display, "Directory contains no supported media files"))
                 else:
