@@ -484,6 +484,9 @@ class AssistantPanel(QWidget):
             self._voice_conversation_mode = False
             self.toggle_voice_agent()
         self._chat_provider = str(self.provider_combo.currentData() or "opencode")
+        self._messages.clear()
+        self._streaming_index = None
+        self._refresh_chat()
         if self.settings_store:
             self.settings_store.update(chat_provider=self._chat_provider)
         self._apply_provider_ui()
@@ -716,6 +719,7 @@ class AssistantPanel(QWidget):
         surface_color = palette.color(QPalette.ColorRole.AlternateBase).name()
         accent_color = palette.color(QPalette.ColorRole.Highlight).name()
         accent_text = palette.color(QPalette.ColorRole.HighlightedText).name()
+        assistant_label = "OLLAMA" if self._chat_provider == "ollama" else "OPENCODE"
 
         if not self._messages:
             content = (
@@ -745,7 +749,7 @@ class AssistantPanel(QWidget):
                     blocks.append(
                         '<div style="margin:12px 18px 12px 2px;">'
                         '<div style="font-size:10px;font-weight:700;'
-                        f'color:{muted_color};margin-bottom:4px;">OPENCODE</div>'
+                        f'color:{muted_color};margin-bottom:4px;">{assistant_label}</div>'
                         f'<div style="background:{surface_color};color:{text_color};'
                         f'padding:10px 12px;border-radius:12px;line-height:1.5;">{safe_text}</div>'
                         '</div>'
@@ -964,6 +968,8 @@ class AssistantPanel(QWidget):
         try:
             from transcriber.assistant.speech_input import VoskVoiceAgent
         except ImportError as exc:
+            self._voice_conversation_mode = False
+            self.voice_chat_button.setEnabled(True)
             QMessageBox.warning(self, "Voice support unavailable", str(exc))
             return
 
@@ -988,6 +994,7 @@ class AssistantPanel(QWidget):
         )
         self.voice_agent = agent
         self.wake_button.setEnabled(False)
+        self.voice_chat_button.setText("Starting voice chat…")
         self.voice_chat_button.setEnabled(False)
 
         def start_agent(_emit):
@@ -1159,7 +1166,7 @@ class AssistantPanel(QWidget):
             self._append_message("system", "Voice command recognized. Review or edit it before sending.")
             if auto_submit and not connected:
                 self.status_message.emit(
-                    "Voice command recognized but not sent: OpenCode is disconnected."
+                    "Voice command recognized but not sent: the selected chat provider is disconnected."
                 )
 
     def choose_project(self):
