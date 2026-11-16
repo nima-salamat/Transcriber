@@ -109,6 +109,8 @@ def test_windows_cuda_wheel_directories_are_added_to_the_native_search_path(
         (binary_dir / "runtime-test.dll").write_bytes(b"test")
         expected.append(str(binary_dir))
 
+    monkeypatch.setattr(cuda_runtime, "_REGISTERED_DIRECTORIES", set())
+    monkeypatch.setattr(cuda_runtime, "_DLL_DIRECTORY_HANDLES", [])
     monkeypatch.setattr(
         cuda_runtime.os,
         "add_dll_directory",

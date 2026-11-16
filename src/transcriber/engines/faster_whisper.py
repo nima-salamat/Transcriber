@@ -70,7 +70,8 @@ class FasterWhisperEngine(TranscriptionEngine):
 
         # Register wheel-provided DLL paths before importing Faster-Whisper or
         # CTranslate2. System CUDA installations already on PATH are unaffected.
-        register_cuda_runtime_dll_directories()
+        if self.device != "cpu":
+            register_cuda_runtime_dll_directories()
         try:
             from faster_whisper import WhisperModel
         except ImportError as exc:

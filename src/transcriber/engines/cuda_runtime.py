@@ -115,23 +115,19 @@ def is_missing_cuda_library_error(error: BaseException) -> bool:
             pending.append(current.__context__)
 
     message = " ".join(messages)
-    library_names = (
-        "cublas64_12.dll",
-        "cublaslt64_12.dll",
-        "cudart64_12.dll",
-        "cudnn64_9.dll",
-        "cudnn_ops64_9.dll",
-        "cudnn_cnn64_9.dll",
-        "libcublas.so.12",
-        "libcudnn.so.9",
-        "libcudart.so.12",
+    has_cuda_library_name = any(
+        name in message for name in ("cublas", "cudnn", "cudart")
     )
-    if any(name in message for name in library_names):
-        return True
-    return (
-        "not found or cannot be loaded" in message
-        and any(name in message for name in ("cublas", "cudnn", "cudart"))
+    has_missing_library_phrase = any(
+        phrase in message
+        for phrase in (
+            "not found",
+            "cannot be loaded",
+            "could not locate",
+            "failed to load",
+        )
     )
+    return has_cuda_library_name and has_missing_library_phrase
 
 
 def cuda_runtime_error_message(error: BaseException) -> str:
