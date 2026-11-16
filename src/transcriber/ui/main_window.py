@@ -669,8 +669,10 @@ class MainWindow(QMainWindow):
     def _show_keyboard_shortcuts(self):
         QMessageBox.information(
             self, "Keyboard Shortcuts",
-            "Ctrl+O  Open audio\\nCtrl+S  Save transcript\\nCtrl+Shift+N  New transcription\\n"
-            "Ctrl+K  Command palette\\nCtrl+F  Global search\\nCtrl+Z / Ctrl+Y  Undo / Redo\\n"
+            "Ctrl+O  Open media\\nCtrl+S  Save transcript\\nCtrl+Shift+E  Export\\n"
+            "Ctrl+F  Find in transcript\\nCtrl+H  Replace\\nCtrl+Z / Ctrl+Y  Undo / Redo\\n"
+            "Ctrl+K  Command palette\\nCtrl+1–7  Switch workspace views\\n"
+            "Ctrl+Shift+M  Manage models\\nCtrl+,  Preferences\\n"
             "Ctrl+Shift+I  Toggle inspector\\nCtrl+Shift+T  Toggle timeline\\nF11  Maximize / restore",
         )
 
@@ -1195,18 +1197,18 @@ class MainWindow(QMainWindow):
 
     def _shortcuts(self):
         shortcuts = {
-            "Ctrl+O": lambda: self.transcription_page.choose_audio(),
+            "Ctrl+O": self._open_media,
             "Ctrl+S": lambda: self.transcription_page._autosave(),
             "Ctrl+Shift+N": lambda: self.navigate("transcription"),
-            "Ctrl+1": lambda: self.navigate("home"),
-            "Ctrl+2": lambda: self.navigate("transcription"),
-            "Ctrl+3": lambda: self.navigate("recording"),
-            "Ctrl+4": lambda: self.navigate("history"),
-            "Ctrl+5": lambda: self.navigate("models"),
-            "Ctrl+6": lambda: self.navigate("editor"),
-            "Ctrl+7": lambda: self.navigate("subtitles"),
-            "Ctrl+8": lambda: self.navigate("cleanup"),
-            "Ctrl+9": lambda: self.navigate("audio"),
+            "Ctrl+Shift+E": lambda: self.transcription_page.export_button.click(),
+            "Ctrl+1": lambda: self.navigate("transcription"),
+            "Ctrl+2": lambda: self.navigate("editor"),
+            "Ctrl+3": lambda: self.navigate("subtitles"),
+            "Ctrl+4": lambda: self.navigate("recording"),
+            "Ctrl+5": lambda: self.navigate("batch"),
+            "Ctrl+6": lambda: self.navigate("history"),
+            "Ctrl+7": lambda: self.navigate("cleanup"),
+            "Ctrl+Shift+M": lambda: self.navigate("models"),
             "Ctrl+K": self.show_command_palette,
             "Ctrl+Shift+B": lambda: self.navigate("batch"),
             "Ctrl+,": lambda: self.navigate("settings"),
