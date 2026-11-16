@@ -99,7 +99,6 @@ class AssistantPanel(QWidget):
         self._resume_voice_after_prompt = False
         self._voice_asr_active = False
         self._last_voice_stage = ""
-        self._voice_submission_pending = False
         self.signals = _AssistantSignals(self)
         self.signals.notification.connect(self._on_notification)
         self.signals.connected.connect(self._on_connected)
@@ -658,6 +657,11 @@ class AssistantPanel(QWidget):
             self._start_voice_after_connect = False
             self._voice_conversation_mode = False
             self.voice_chat_button.setEnabled(True)
+            self._set_voice_activity(
+                "Voice chat could not start · check the Ollama connection",
+                stage="error",
+                log_message="Voice chat could not start because Ollama did not connect.",
+            )
 
     def disconnect_provider(self):
         if self._chat_provider == "ollama":
@@ -826,7 +830,7 @@ class AssistantPanel(QWidget):
         if first_chunk:
             self._messages.append({"role": "assistant", "text": ""})
             self._streaming_index = len(self._messages) - 1
-            if self.voice_agent is not None and self._voice_conversation_mode:
+            if self.voice_agent is not None and self.voice_agent.mode == "processing":
                 provider_name = "Ollama" if self._chat_provider == "ollama" else "OpenCode Agent"
                 self._set_voice_activity(
                     f"Receiving response from {provider_name}…",
@@ -979,7 +983,7 @@ class AssistantPanel(QWidget):
             self.voice_chat_button.setEnabled(True)
             self._voice_conversation_mode = False
             self.ptt_button.setEnabled(False)
-            self.voice_state_label.setText("Voice off")
+            self._set_voice_activity("Voice chat stopped", stage="stopped")
             self._append_message("system", "Local voice input stopped; microphone released.")
             return
 
@@ -1173,8 +1177,6 @@ class AssistantPanel(QWidget):
                 stage="sending",
                 log_message=f"Speech recognized. Sending your command to {provider_name}.",
             )
-            self._voice_submission_pending = True
-            self._voice_response_stage_logged = False
             self._resume_voice_after_prompt = True
             self.send_prompt()
         else:
@@ -1597,6 +1599,11 @@ class AssistantPanel(QWidget):
             self._start_voice_after_connect = False
             self._voice_conversation_mode = False
             self.voice_chat_button.setEnabled(True)
+            self._set_voice_activity(
+                "Voice chat could not start · check the OpenCode connection",
+                stage="error",
+                log_message="Voice chat could not start because OpenCode did not connect.",
+            )
 
     def _worker_finished(self):
         self._worker_active = False
