@@ -178,6 +178,12 @@ class UnifiedWorkspace(QWidget):
             f"Engine: {engine}\nModel: {model}\nLanguage: {language}"
         )
 
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        # Keep the header useful on small windows by hiding nonessential
+        # metadata while leaving all primary workflow actions accessible.
+        self.recognition_status.setVisible(self.width() >= 980)
+
     def _on_tab_changed(self, index: int) -> None:
         if index == 5:
             self._on_library_view_changed(self.library_tabs.currentIndex())
