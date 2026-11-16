@@ -64,6 +64,10 @@ def test_view_menu_can_reopen_each_closeable_workspace_dock(qtbot, tmp_path, mon
     window.show()
     qtbot.wait(30)
 
+    # The focused workspace starts with both optional panels hidden. Open them
+    # first so this test exercises the close-and-rediscover path.
+    window._animate_drawer(window.assistant_dock, True, "width")
+    window._animate_drawer(window.timeline_dock, True, "height")
     actions = _menu_actions(_view_menu(window))
     expected = {
         "Inspector / AI Assistant": window.assistant_dock,
@@ -106,8 +110,8 @@ def test_restore_default_layout_restores_the_workspace_docks(qtbot, tmp_path, mo
 
     restore.trigger()
     qtbot.wait(20)
-    assert window.assistant_dock.isVisible()
-    assert window.timeline_dock.isVisible()
+    assert window.assistant_dock.isHidden()
+    assert window.timeline_dock.isHidden()  # No media is loaded in the empty workspace.
     assert window.workspace_splitter.widget(1) is window.assistant_dock
     assert window.workspace_splitter.layoutDirection() == Qt.LayoutDirection.LeftToRight
     assert window.dockWidgetArea(window.timeline_dock) == Qt.DockWidgetArea.BottomDockWidgetArea
@@ -128,7 +132,7 @@ def test_global_search_opens_an_in_window_popup_without_navigating_away(qtbot, t
     window.global_search.setText("meeting notes")
     qtbot.wait(400)
 
-    assert window.stack.currentWidget() is window.home_page, (
+    assert window.stack.currentWidget() is window.workspace, (
         "Typing in global search should not navigate away from the current workspace."
     )
     popups = [
@@ -172,6 +176,7 @@ def test_inspector_can_grow_and_waveform_stays_compact(qtbot, tmp_path, monkeypa
     qtbot.wait(40)
 
     inspector = window.assistant_dock
+    window._animate_drawer(inspector, True, "width")
     assert inspector.minimumWidth() >= 320
     assert inspector.maximumWidth() > 600
     assert window.workspace_splitter.widget(1) is inspector
