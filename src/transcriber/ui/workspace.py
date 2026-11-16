@@ -122,19 +122,26 @@ class UnifiedWorkspace(QWidget):
 
         self.tabs.addTab(cleanup_page, "Audio cleanup")
         self.tabs.currentChanged.connect(self._on_tab_changed)
+        self.library_tabs.currentChanged.connect(self._on_library_view_changed)
         root.addWidget(self.tabs, 1)
 
     def _on_tab_changed(self, index: int) -> None:
+        if index == 5:
+            self._on_library_view_changed(self.library_tabs.currentIndex())
+            return
         names = {
             0: "transcription",
             1: "editor",
             2: "subtitles",
             3: "recording",
             4: "batch",
-            5: "history",
             6: "cleanup",
         }
         self.view_changed.emit(names.get(index, "transcription"))
+
+    def _on_library_view_changed(self, index: int) -> None:
+        if self.tabs.currentIndex() == 5:
+            self.view_changed.emit("audio" if index == 1 else "history")
 
     def set_view(self, view: str) -> None:
         index = self.VIEW_INDEX.get(str(view), 0)
@@ -159,6 +166,9 @@ class UnifiedWorkspace(QWidget):
 
     @property
     def current_view(self) -> str:
+        index = self.tabs.currentIndex()
+        if index == 5 and self.library_tabs.currentIndex() == 1:
+            return "audio"
         return {
             0: "transcription",
             1: "editor",
@@ -167,7 +177,7 @@ class UnifiedWorkspace(QWidget):
             4: "batch",
             5: "history",
             6: "cleanup",
-        }.get(self.tabs.currentIndex(), "transcription")
+        }.get(index, "transcription")
 
     def button(self, action: str) -> QPushButton | None:
         return self._buttons.get(action)
