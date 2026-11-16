@@ -777,6 +777,19 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        width = event.size().width()
+        if hasattr(self, "global_search"):
+            self.global_search.setMaximumWidth(
+                250 if width >= 1200 else 175 if width >= 900 else 125
+            )
+        if hasattr(self, "assistant_button"):
+            self.assistant_button.setVisible(width >= 900)
+        if hasattr(self, "top_status"):
+            self.top_status.setVisible(width >= 1000)
+        if hasattr(self, "command_button"):
+            self.command_button.setText(
+                "Ctrl+K  Commands" if width >= 900 else "Ctrl+K"
+            )
         popup = getattr(self, "global_search_popup", None)
         if popup is not None and popup.isVisible():
             popup.reposition()
