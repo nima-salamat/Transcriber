@@ -295,7 +295,6 @@ class TranscriptionPage(QWidget):
             self.editor, self.include_timestamps, self.export_button,
             self.subtitle_export_button,
         )
-        self._update_engine_controls()
         self._refresh_busy_controls()
 
     @property
@@ -307,14 +306,26 @@ class TranscriptionPage(QWidget):
 
     def _refresh_busy_controls(self):
         busy = self.is_busy
-        for control in self._busy_controls:
-            control.setEnabled(not busy)
-        self.start_button.setEnabled(not busy)
-        self.close_audio_button.setEnabled(not busy and self.audio_path is not None)
-        self.export_button.setEnabled(not busy and bool(self.editor.toPlainText().strip()))
-        self.subtitle_export_button.setEnabled(not busy and self._has_timed_subtitles())
+        if busy:
+            for control in self._busy_controls:
+                control.setEnabled(False)
+            self.start_button.setEnabled(False)
+            self.close_audio_button.setEnabled(False)
+            self.export_button.setEnabled(False)
+            self.subtitle_export_button.setEnabled(False)
+        else:
+            # Recompute the per-engine availability after releasing the lock.
+            # Do not blanket-enable every control: Cloud/Vosk have different
+            # model, task and prompt capabilities than Faster-Whisper.
+            self._update_engine_controls()
+            self.start_button.setEnabled(True)
+            self.close_audio_button.setEnabled(self.audio_path is not None)
+            self.export_button.setEnabled(bool(self.editor.toPlainText().strip()))
+            self.subtitle_export_button.setEnabled(self._has_timed_subtitles())
         self.cancel_button.setVisible(self.cancel_event is not None)
-        self.cancel_button.setEnabled(self.cancel_event is not None and not self.cancel_event.is_set())
+        self.cancel_button.setEnabled(
+            self.cancel_event is not None and not self.cancel_event.is_set()
+        )
         self.job_state_changed.emit(busy)
 
     def _update_engine_controls(self, *_args):
