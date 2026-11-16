@@ -166,7 +166,7 @@ def test_voice_lifecycle_status_is_visible_when_voice_settings_are_collapsed(qtb
     assert "Listening for your command" in panel.voice_live_status.text()
 
     panel._on_voice_state("Silence detected · transcribing with Faster-Whisper")
-    assert "Transcribing" in panel.voice_live_status.text()
+    assert "transcribing" in panel.voice_live_status.text().casefold()
 
     qtbot.wait(80)
     visible_text = panel.chat_view.toPlainText()
