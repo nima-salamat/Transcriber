@@ -53,6 +53,11 @@ def test_all_primary_workflows_live_in_one_workspace(qtbot, tmp_path, monkeypatc
         window.workspace.tabs.tabText(index)
         for index in range(3)
     ] == ["Transcribe", "Segments", "Captions"]
+    assert window.transcription_page.advanced_options_widget.isHidden()
+    window.transcription_page.advanced_toggle.click()
+    assert not window.transcription_page.advanced_options_widget.isHidden()
+    window.transcription_page.advanced_toggle.click()
+    assert window.transcription_page.advanced_options_widget.isHidden()
 
     for route, expected_index, expected_view in (
         ("transcription", 0, "transcription"),
