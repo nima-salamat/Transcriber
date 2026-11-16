@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut, QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
@@ -347,7 +347,7 @@ class AssistantPanel(QWidget):
         self.prompt.setPlainText(f"{current}\n\n{prompt}" if current else prompt)
         self.prompt.setFocus()
         cursor = self.prompt.textCursor()
-        cursor.movePosition(cursor.End)
+        cursor.movePosition(QTextCursor.MoveOperation.End)
         self.prompt.setTextCursor(cursor)
 
     def _schedule_chat_refresh(self):
