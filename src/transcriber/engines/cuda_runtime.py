@@ -118,6 +118,26 @@ def find_windows_cuda_dll_directories(
     for root in toolkit_roots:
         candidates.append(root if root.name.casefold() == "bin" else root / "bin")
 
+    # Some installations add CUDA to PATH without defining CUDA_PATH.
+    # Keep only PATH entries that actually contain a core CUDA runtime DLL.
+    path_sentinels = (
+        "cublas64_12.dll",
+        "cublasLt64_12.dll",
+        "cudart64_12.dll",
+        "cudnn64_9.dll",
+    )
+    for value in environment.get("PATH", "").split(";"):
+        if not value.strip():
+            continue
+        path_directory = Path(value.strip().strip('"')).expanduser()
+        try:
+            if path_directory.is_dir() and any(
+                (path_directory / filename).is_file() for filename in path_sentinels
+            ):
+                candidates.append(path_directory)
+        except OSError:
+            continue
+
     discovered: list[Path] = []
     seen: set[str] = set()
     for candidate in candidates:

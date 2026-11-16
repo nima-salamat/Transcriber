@@ -183,6 +183,21 @@ def test_cuda_toolkit_bin_from_environment_is_discovered(tmp_path):
     assert toolkit_bin in discovered
 
 
+def test_cuda_bin_directory_from_path_is_discovered(tmp_path):
+    from transcriber.engines.cuda_runtime import find_windows_cuda_dll_directories
+
+    cuda_bin = tmp_path / "cuda-bin"
+    cuda_bin.mkdir()
+    (cuda_bin / "cublas64_12.dll").write_bytes(b"test")
+
+    discovered = find_windows_cuda_dll_directories(
+        [],
+        environ={"PATH": str(cuda_bin)},
+    )
+
+    assert cuda_bin in discovered
+
+
 def test_cuda_error_message_reports_runtime_probe_on_windows(tmp_path, monkeypatch):
     from transcriber.engines import cuda_runtime
 
