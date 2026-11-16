@@ -172,6 +172,7 @@ class TranscriptionPage(QWidget):
         layout.addWidget(source_card)
 
         player_card = Card()
+        self.player_card = player_card
         player_layout = QHBoxLayout(player_card)
         player_layout.setContentsMargins(16, 10, 16, 10)
         self.player = AudioPlayer(self)
@@ -211,6 +212,9 @@ class TranscriptionPage(QWidget):
         player_layout.addWidget(QLabel("Vol"))
         player_layout.addWidget(self.volume_slider)
         layout.addWidget(player_card)
+        # Playback controls are presented once in MainWindow's shared bottom
+        # transport, regardless of the current workspace view.
+        player_card.hide()
 
         editor_card = Card()
         editor_layout = QVBoxLayout(editor_card)
