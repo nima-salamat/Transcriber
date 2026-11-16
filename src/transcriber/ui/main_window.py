@@ -423,7 +423,12 @@ class MainWindow(QMainWindow):
                     previous = control.blockSignals(True)
                     control.setChecked(bool(visible))
                     control.blockSignals(previous)
-            if persist:
+            if persist and not (
+                setting == "timeline_visible"
+                and not visible
+                and not self.transcription_page.audio_path
+            ):
+                # Hiding an empty timeline is contextual, not a user preference.
                 self.settings_store.update(**{setting: bool(visible)})
             break
 
