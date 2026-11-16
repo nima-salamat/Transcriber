@@ -61,6 +61,7 @@ def test_directory_import_expands_supported_media_only(tmp_path):
     report = collect_media_paths([folder])
     assert set(report.accepted) == {first.resolve(), second.resolve()}
     assert report.rejected == ()
+    assert report.duplicates == ()
 
 
 def test_empty_drop_returns_empty_report():

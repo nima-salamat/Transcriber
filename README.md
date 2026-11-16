@@ -93,14 +93,16 @@ The curated list includes the Systran tiny/base/small/medium/large-v3 models, pl
 
 For gated repositories, open the model page and accept its terms with the model provider first. Then configure `HF_TOKEN` in the environment before launching Transcriber. Tokens are not shown in the interface or intentionally written to logs.
 
-## Transcribe audio
+## Transcribe audio and video
 
-1. Open **New Transcription** and choose an audio file, or drag a supported file into the application.
+1. Open **New Transcription** and choose a supported audio file or video, or drag one into the application. Video transcription reads its first audio track; a video without audio is rejected before recognition. The workspace plays the audio but does not show video frames.
 2. Select an installed model and a language, or leave language detection on Auto.
 3. Adjust beam size and voice activity detection as needed.
-4. Start offline transcription. Inference runs in a worker and updates the status/progress controls.
-5. Open **Transcript Editor** to edit segments, speakers and available word timestamps. Split, merge, bookmark, lock, review, add notes, search/replace or preview text cleanup. Segment edits support undo/redo and are saved with the transcript metadata.
-6. Open **Subtitle Studio** to inspect and fix timing, then export SRT, WebVTT, ASS or SSA. The timeline can seek the loaded audio and display segment boundaries.
+4. Start transcription. Local recognition stays on-device; a Cloud engine is used only after explicit consent. Inference runs in a worker and updates the status/progress controls.
+5. Edit segments in **New Transcription** or open **Transcript Editor** for speaker, timing and word-level edits.
+6. Use **Export subtitles…** on the transcription page to save timed cues as SRT, WebVTT, ASS or SSA. You can also open **Subtitle Studio** to adjust timing, validate cues and export the same formats.
+
+While a transcription or history load is active, Transcriber locks media replacement and transcript switching. The Home/History pickers, Transcript Editor and Subtitle Studio stay unavailable until the worker has actually finished. Requesting Cancel does not release the lock early.
 
 ## Record audio
 

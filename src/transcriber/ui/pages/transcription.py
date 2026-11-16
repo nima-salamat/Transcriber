@@ -723,7 +723,6 @@ class TranscriptionPage(QWidget):
             self.progress_label.setText("Transcription cancelled")
         self.cancel_event = None
         self._job_engine_id = None
-        self._update_engine_controls()
         self._refresh_busy_controls()
 
     def _sync_editor_text_to_document(self):
