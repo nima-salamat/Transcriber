@@ -120,6 +120,10 @@ class SettingsPage(QWidget):
         for label, value in (("Automatic", "auto"), ("CPU", "cpu"), ("CUDA GPU", "cuda")):
             self.device.addItem(label, value)
         self.device.setCurrentIndex(max(0, self.device.findData(current.device)))
+        self.device.setToolTip(
+            "CUDA GPU requires NVIDIA cuBLAS for CUDA 12 and cuDNN 9. "
+            "Automatic mode retries on CPU if a CUDA runtime DLL is missing."
+        )
         self.device.currentIndexChanged.connect(lambda: self._save(device=self.device.currentData()))
         self.compute = QComboBox()
         for value in ("int8", "int8_float16", "float16", "float32", "default"):

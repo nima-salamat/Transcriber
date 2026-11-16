@@ -53,3 +53,20 @@ Users remain responsible for reviewing licenses and model-card provenance. Pinni
 - The import validator only supports Faster-Whisper / CTranslate2 root-level files; other model formats require a separate runtime/validator.
 - No RAM/VRAM requirement is inferred from a model name. The size shown is the repository file size supplied by the Hub, not a guarantee of the memory needed at inference.
 - The production application still uses a single-active Faster-Whisper model; the generic multi-model runtime is not yet the global inference service.
+
+
+## Windows GPU runtime
+
+Faster-Whisper uses CTranslate2 for local inference. GPU execution requires NVIDIA cuBLAS for CUDA 12 and cuDNN 9 for CUDA 12; installing only the display driver is not enough. See the upstream [Faster-Whisper GPU requirements](https://github.com/SYSTRAN/faster-whisper#gpu) and NVIDIA's [Windows CUDA Python-wheel instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/).
+
+For a source checkout using the same virtual environment as Transcriber, install the optional Windows GPU extra:
+
+```powershell
+python -m pip install -e ".[asr,gpu]"
+```
+
+This adds NVIDIA's CUDA 12 cuBLAS, CUDA runtime and cuDNN 9 wheels. The cuDNN wheel is large (hundreds of megabytes), so it is intentionally not part of the default install. Before importing CTranslate2, Transcriber discovers the active environment's `site-packages/nvidia/*/bin` directories and registers them with Windows DLL search plus `PATH`. A system CUDA installation already on `PATH` continues to work.
+
+Restart Transcriber after installing or changing CUDA libraries. The Python environment used for the install must be the same environment used to launch the application.
+
+If Compute device is **Automatic**, Transcriber retries with CPU INT8 when the CUDA library is missing either while constructing the model or when Faster-Whisper first iterates its lazy result generator. If Compute device is explicitly **CUDA GPU**, it does not silently switch devices; the error explains how to install the runtime. Choose **CPU** for a deliberate CPU-only run.

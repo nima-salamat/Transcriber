@@ -31,6 +31,12 @@ dependencies = [
 [project.optional-dependencies]
 # Faster-Whisper 1.2.1 passes metadata_errors to av.open; PyAV 19 removed it.
 asr = ["faster-whisper>=1.1,<2", "av>=11,<19"]
+# Optional Windows CUDA runtime. cuDNN is large, so GPU support is explicit opt-in.
+gpu = [
+  "nvidia-cublas-cu12>=12.9,<13; sys_platform == 'win32'",
+  "nvidia-cuda-runtime-cu12>=12.9,<13; sys_platform == 'win32'",
+  "nvidia-cudnn-cu12>=9,<10; sys_platform == 'win32'",
+]
 cloud = ["google-cloud-speech>=2.27,<3"]
 voice = ["sounddevice>=0.5,<1", "vosk>=0.3.45,<1", "av>=11,<19"]
 agent = ["mcp>=2,<3"]
