@@ -80,6 +80,25 @@ class UnifiedWorkspace(QWidget):
         identity.addWidget(self.document_subtitle)
         header_layout.addLayout(identity, 1)
 
+        self.recognition_status = QLabel("Local · No model · Auto", self.header)
+        self.recognition_status.setObjectName("WorkspaceMetadata")
+        self.recognition_status.setToolTip("Current recognition engine, model and language")
+        self.recognition_status.setMinimumWidth(110)
+        self.recognition_status.setMaximumWidth(220)
+        header_layout.addWidget(self.recognition_status)
+
+        # Keep recognition context visible without duplicating full settings controls.
+        transcription_page.engine_combo.currentTextChanged.connect(
+            lambda _value: self._refresh_recognition_status(transcription_page)
+        )
+        transcription_page.model_combo.currentTextChanged.connect(
+            lambda _value: self._refresh_recognition_status(transcription_page)
+        )
+        transcription_page.language_combo.currentTextChanged.connect(
+            lambda _value: self._refresh_recognition_status(transcription_page)
+        )
+        self._refresh_recognition_status(transcription_page)
+
         self._buttons: dict[str, object] = {}
         primary_actions = (
             ("record", "Record", "Open the microphone recording workspace"),
@@ -144,6 +163,20 @@ class UnifiedWorkspace(QWidget):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.library_tabs.currentChanged.connect(self._on_library_view_changed)
         root.addWidget(self.tabs, 1)
+
+    def _refresh_recognition_status(self, transcription_page: QWidget) -> None:
+        engine = str(transcription_page.engine_combo.currentText() or "Engine")
+        model = str(transcription_page.model_combo.currentText() or "No model")
+        language = str(transcription_page.language_combo.currentText() or "Auto")
+        if language.casefold().startswith("auto"):
+            language = "Auto"
+        if "·" in engine:
+            engine = engine.split("·", 1)[0].strip()
+        model_name = model.rsplit("/", 1)[-1] if model else "No model"
+        self.recognition_status.setText(f"{engine} · {model_name} · {language}")
+        self.recognition_status.setToolTip(
+            f"Engine: {engine}\nModel: {model}\nLanguage: {language}"
+        )
 
     def _on_tab_changed(self, index: int) -> None:
         if index == 5:
