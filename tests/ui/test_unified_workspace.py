@@ -87,6 +87,19 @@ def test_all_primary_workflows_live_in_one_workspace(qtbot, tmp_path, monkeypatc
     window._focus_current_transcript_search()
     assert QApplication.focusWidget() is window.editor_page.search_input
 
+    # Narrow windows keep essential actions but collapse secondary toolbar details.
+    window.resize(820, 720)
+    qtbot.wait(20)
+    assert window.global_search.maximumWidth() == 125
+    assert window.assistant_button.isHidden()
+    assert window.top_status.isHidden()
+    assert window.workspace.recognition_status.isHidden()
+    window.resize(1280, 820)
+    qtbot.wait(20)
+    assert window.assistant_button.isVisible()
+    assert window.top_status.isVisible()
+    assert window.workspace.recognition_status.isVisible()
+
     # Model management and preferences are secondary dialogs, not permanent
     # entries in the workspace's primary view strip.
     window.navigate("models")
