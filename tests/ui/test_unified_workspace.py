@@ -93,18 +93,13 @@ def test_workspace_tool_buttons_switch_to_the_expected_mode(qtbot, tmp_path, mon
         ("cleanup", "cleanup"),
     )
     for action, expected in actions:
-        button = window.workspace.button(action)
-        assert button is not None
-        button.click()
+        assert window.workspace.trigger(action)
         assert window.workspace.current_view == expected
 
-    model_button = window.workspace.button("models")
-    preferences_button = window.workspace.button("settings")
-    assert model_button is not None and preferences_button is not None
-    model_button.click()
+    assert window.workspace.trigger("models")
     assert window.model_dialog.isVisible()
     window.model_dialog.hide()
-    preferences_button.click()
+    assert window.workspace.trigger("settings")
     assert window.settings_dialog.isVisible()
     window.settings_dialog.hide()
     window.close()
