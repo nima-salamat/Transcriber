@@ -33,7 +33,7 @@ def test_mixed_supported_and_unsupported_paths_are_reported(tmp_path):
     assert report.accepted == (supported.resolve(),)
     assert len(report.rejected) == 1
     assert report.rejected[0][0] == str(unsupported)
-    assert "Unsupported audio extension" in report.rejected[0][1]
+    assert "Unsupported media extension" in report.rejected[0][1]
 
 
 def test_missing_and_empty_paths_are_rejected(tmp_path):
