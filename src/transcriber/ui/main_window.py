@@ -42,6 +42,7 @@ from transcriber.ipc.server import LocalIPCServer
 from transcriber.storage.recordings import RecordingRepository
 from transcriber.transcription.segments import TranscriptionOptions
 from transcriber.ui.components.assistant_panel import AssistantPanel
+from transcriber.ui.components.audio_transport import AudioTransportBar
 from transcriber.ui.components.waveform import WaveformTimeline
 from transcriber.ui.components.workspace_popups import CommandPalettePopup, GlobalSearchPopup
 from transcriber.ui.design.icon_registry import IconRegistry
@@ -319,10 +320,21 @@ class MainWindow(QMainWindow):
         # The waveform is a bottom drawer, not a movable/floating dock window.
         self.timeline_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.timeline_dock.setFixedHeight(172)
-        self.timeline = WaveformTimeline()
+        timeline_panel = QWidget(self.timeline_dock)
+        timeline_layout = QVBoxLayout(timeline_panel)
+        timeline_layout.setContentsMargins(8, 5, 8, 5)
+        timeline_layout.setSpacing(3)
+        self.audio_transport = AudioTransportBar(self.transcription_page.player, timeline_panel)
+        self.audio_transport.set_media_loaded(bool(self.transcription_page.audio_path))
+        timeline_layout.addWidget(self.audio_transport)
+
+        self.timeline = WaveformTimeline(timeline_panel)
         self.timeline.set_interactive(True)
-        self.timeline.seek_requested.connect(lambda value: self.transcription_page.player.seek(int(value * 1000)))
-        self.timeline_dock.setWidget(self.timeline)
+        self.timeline.seek_requested.connect(
+            lambda value: self.transcription_page.player.seek(int(value * 1000))
+        )
+        timeline_layout.addWidget(self.timeline, 1)
+        self.timeline_dock.setWidget(timeline_panel)
         self._install_drawer_title_bar(self.timeline_dock, "Audio Timeline", "〰", "height")
         self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
         self.setCorner(Qt.BottomRightCorner, Qt.RightDockWidgetArea)
@@ -1090,6 +1102,7 @@ class MainWindow(QMainWindow):
             self.timeline.set_waveform([], 0.0)
             self._animate_drawer(self.timeline_dock, False, "height", persist=False)
             self.workspace.set_media(None)
+            self.audio_transport.set_media_loaded(False)
             self.timeline.set_segments(self.transcription_page.segments)
             self.timeline.set_position(0.0)
             self.inspector_title.setText("No active audio")
@@ -1097,6 +1110,7 @@ class MainWindow(QMainWindow):
             return
         self.waveform_status = "Loading waveform…"
         self.workspace.set_media(audio_path)
+        self.audio_transport.set_media_loaded(True)
         if self.settings_store.settings.timeline_visible:
             self._animate_drawer(self.timeline_dock, True, "height", persist=False)
         worker = FunctionWorker(lambda emit: build_waveform(Path(audio_path), self.paths.cache / "waveforms", bins=4096, progress=lambda value: emit(value)))
