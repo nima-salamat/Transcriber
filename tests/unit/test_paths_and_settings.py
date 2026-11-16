@@ -97,3 +97,31 @@ def test_voice_silence_window_is_validated_and_persisted(tmp_path):
     invalid_nan = AppSettings(voice_silence_seconds=float("nan"))
     invalid_nan.validate()
     assert invalid_nan.voice_silence_seconds == 1.5
+
+
+
+def test_ollama_and_voice_model_settings_round_trip(tmp_path):
+    store = SettingsStore(tmp_path / "settings.json")
+    store.load()
+
+    saved = store.update(
+        chat_provider="ollama",
+        ollama_base_url="http://127.0.0.1:11434",
+        ollama_model="qwen2.5:7b",
+        ollama_keep_alive="1h",
+        voice_asr_model="Systran/faster-whisper-small",
+    )
+    loaded = SettingsStore(store.path).load()
+
+    assert saved.chat_provider == "ollama"
+    assert loaded.chat_provider == "ollama"
+    assert loaded.ollama_model == "qwen2.5:7b"
+    assert loaded.ollama_keep_alive == "1h"
+    assert loaded.voice_asr_model == "Systran/faster-whisper-small"
+
+
+def test_invalid_chat_provider_and_ollama_url_fall_back_safely():
+    settings = AppSettings(chat_provider="remote", ollama_base_url="localhost:11434")
+    settings.validate()
+    assert settings.chat_provider == "opencode"
+    assert settings.ollama_base_url == "http://127.0.0.1:11434"

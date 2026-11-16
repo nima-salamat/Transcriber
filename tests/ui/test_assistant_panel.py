@@ -110,3 +110,40 @@ def test_assistant_wake_model_selector_lists_installed_vosk_models(qtbot, tmp_pa
     assert panel.wake_model_combo.count() == 2
     assert panel.wake_model_combo.currentData() == str(model_path)
     assert "Persian" in panel.wake_model_combo.currentText()
+
+
+
+def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    panel = AssistantPanel(paths, QThreadPool())
+    qtbot.addWidget(panel)
+    panel.refresh_ollama_models = lambda: None
+
+    panel.provider_combo.setCurrentIndex(panel.provider_combo.findData("ollama"))
+
+    assert panel.provider_combo.currentData() == "ollama"
+    assert panel.ollama_controls.isHidden() is False
+    assert panel.project_card.isHidden() is True
+    assert panel.connect_button.text() == "Connect Ollama"
+    assert panel.voice_chat_button.text() == "Start voice chat"
+
+
+def test_assistant_exposes_installed_faster_whisper_voice_models(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    model_manager = SimpleNamespace(
+        installed=lambda *, include_sizes=False: [
+            {"repo_id": "Systran/faster-whisper-small", "runtime": "faster-whisper", "compatible": True},
+            {"repo_id": "vosk/vosk-model-small-fa-0.42", "runtime": "vosk", "compatible": True},
+        ],
+        installed_vosk_models=lambda *, include_sizes=False: [],
+    )
+    panel = AssistantPanel(paths, QThreadPool(), model_manager=model_manager)
+    qtbot.addWidget(panel)
+
+    values = [panel.voice_asr_combo.itemData(i) for i in range(panel.voice_asr_combo.count())]
+    assert "Systran/faster-whisper-small" in values
+    assert "vosk/vosk-model-small-fa-0.42" not in values

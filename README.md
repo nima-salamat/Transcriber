@@ -20,6 +20,7 @@
 - Generic model runtime service with resource budgets, lazy loading, pinning, LRU eviction and a configurable 1–10 loaded-model ceiling for compatible adapters. The integrated Faster-Whisper application manager remains single-active-model for now.
 - Optional OpenCode ACP client with persistent sessions, streaming updates and cancellation; standalone MCP stdio server exposes application state, action discovery and registered actions through authenticated local IPC.
 - Optional local Vosk wake/voice input. Choose the activation keyword and one installed Vosk wake-word model in Settings → OpenCode & Voice Agent (or Assistant → Wake word & voice settings). Vosk detects only the wake phrase; the installed local Faster-Whisper model transcribes the command.
+- Optional local Ollama chat provider in the side Assistant panel. Select an installed Ollama model, load it locally and chat with streamed responses. **Start voice chat** connects the selected provider, warms the local Faster-Whisper model, loads the Vosk wake detector, and continuously cycles through wake phrase → microphone capture → local transcription → model response → wake listening. The response is displayed in the chat; speech playback is not included.
 - SQLite transcript persistence, editor metadata, history, favorites, autosave and metadata-only backup/restore.
 
 The full scope and verified gaps are listed in [Feature extraction](docs/product/feature-extraction.md) and [Known limitations](docs/KNOWN_LIMITATIONS.md).
@@ -130,6 +131,8 @@ This page records microphone audio; it does **not** claim to perform continuous 
    - CPU or Linux: `python -m pip install -r requirements-voice.txt`
 2. Open **AI models → Vosk** and install a compatible Vosk model for the language you intend to use.
 3. Open **Settings → OpenCode & Voice Agent**. Enter the **Activation keyword / phrase**, then choose the **Wake-word Vosk model** from the installed-model list. The Assistant's **Wake word & voice settings** panel exposes the same controls.
+4. Install and start [Ollama](https://ollama.com), then download a local chat model, for example `ollama pull qwen2.5:7b`.
+5. In the Assistant side panel choose **Ollama · Local models**, keep the default URL `http://127.0.0.1:11434`, refresh the model list and connect. Use the **Start voice chat** button for continuous wake-word conversations. Select the Faster-Whisper model separately in **Wake word & voice settings**; the Vosk model is used only for the activation phrase.
 4. Use **Refresh** after installing a Vosk model. A local folder can also be selected with **Browse local…**. Only compatible registered Vosk models are listed automatically.
 5. Select **Enable local wake** in the Assistant. Vosk listens for the configured phrase; the command after the phrase is transcribed by Faster-Whisper. The phrase should be short and use words supported by the selected Vosk model and language. An arbitrary name is not guaranteed to be recognized by a model that has never learned that vocabulary.
 
