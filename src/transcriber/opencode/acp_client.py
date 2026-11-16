@@ -33,22 +33,25 @@ def resolve_opencode_executable(
     # If Settings contains the extensionless path, prefer the .cmd/.exe wrapper
     # instead of passing the JavaScript shim to CreateProcess (WinError 193).
     if windows and not PureWindowsPath(expanded).suffix:
-        for suffix in (".cmd", ".bat", ".exe", ".ps1"):
-            candidate = Path(expanded + suffix)
-            if candidate.is_file():
-                return str(candidate)
-
         is_explicit_path = (
             "\\" in expanded
             or "/" in expanded
             or PureWindowsPath(expanded).drive
         )
-        if is_explicit_path and Path(expanded).is_file():
-            raise ACPError(
-                f"OpenCode points to an extensionless Windows script ({expanded}). "
-                "Select the adjacent opencode.cmd file in Settings → OpenCode executable."
-            )
+        if is_explicit_path:
+            for suffix in (".cmd", ".bat", ".exe", ".ps1"):
+                candidate = Path(expanded + suffix)
+                if candidate.is_file():
+                    return str(candidate)
 
+            if Path(expanded).is_file():
+                raise ACPError(
+                    f"OpenCode points to an extensionless Windows script ({expanded}). "
+                    "Select the adjacent opencode.cmd file in Settings → OpenCode executable."
+                )
+
+    # Bare commands must be resolved through PATH/PATHEXT, never from the
+    # current project directory.
     return shutil.which(expanded) or expanded
 
 
