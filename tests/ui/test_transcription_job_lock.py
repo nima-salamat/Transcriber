@@ -50,18 +50,16 @@ def test_active_job_blocks_history_switch_and_source_replacement(qtbot, tmp_path
     assert not page.set_audio(tmp_path / "another.mp4")
     assert not page.close_audio()
     assert page.audio_path == active_video
-    assert not window.home_page.recent.isEnabled()
     assert not window.history_page.items.isEnabled()
     assert not window.editor_page.isEnabled()
     assert not window.subtitle_page.isEnabled()
 
     window.navigate("home")
     assert not window.open_transcript("old-transcript-id")
-    assert window.stack.currentWidget() is window.home_page
+    assert window.stack.currentWidget() is window.workspace
 
     page._finish_worker()
     assert not page.is_busy
-    assert window.home_page.recent.isEnabled()
     assert window.history_page.items.isEnabled()
     assert window.editor_page.isEnabled()
     assert window.subtitle_page.isEnabled()
