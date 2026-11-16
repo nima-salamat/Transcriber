@@ -312,7 +312,8 @@ class VoskVoiceAgent:
         if normalized == self.wake_phrase or normalized.startswith(self.wake_phrase + " "):
             self._wake_recognizer = None
             self._begin_command()
-            self._notify("Wake phrase detected · capturing your command")
+            self._notify("Wake word detected")
+            self._notify("Listening for your command…")
 
     def _begin_command(self):
         self._command_frames = []

@@ -98,6 +98,8 @@ class AssistantPanel(QWidget):
         self.prompt_library = PromptLibrary(self.paths.config / "agent_prompts")
         self._resume_voice_after_prompt = False
         self._voice_asr_active = False
+        self._last_voice_stage = ""
+        self._voice_submission_pending = False
         self.signals = _AssistantSignals(self)
         self.signals.notification.connect(self._on_notification)
         self.signals.connected.connect(self._on_connected)
@@ -235,6 +237,14 @@ class AssistantPanel(QWidget):
         )
         self.voice_chat_button.clicked.connect(self.start_voice_chat)
         root.addWidget(self.voice_chat_button)
+
+        # Keep live voice feedback visible even while the detailed settings panel is collapsed.
+        self.voice_live_status = QLabel("Voice chat is off")
+        self.voice_live_status.setObjectName("Muted")
+        self.voice_live_status.setWordWrap(True)
+        self.voice_live_status.setAccessibleName("Voice chat status")
+        root.addWidget(self.voice_live_status)
+
         # Retain the old attribute name for integrations which inspect the panel.
         self.log = self.chat_view
 
@@ -672,6 +682,11 @@ class AssistantPanel(QWidget):
             self.status_message.emit("Wait for the current model operation to finish before starting voice chat.")
             return
         self._voice_conversation_mode = True
+        self._set_voice_activity(
+            "Connecting to the selected chat model…",
+            stage="connecting",
+            log_message="Voice chat started · connecting to the selected chat model.",
+        )
         if not self._chat_is_connected():
             self._start_voice_after_connect = True
             self.connect_provider()
@@ -807,9 +822,17 @@ class AssistantPanel(QWidget):
     def _append_stream_chunk(self, text: str):
         if not text:
             return
-        if self._streaming_index is None or self._streaming_index >= len(self._messages):
+        first_chunk = self._streaming_index is None or self._streaming_index >= len(self._messages)
+        if first_chunk:
             self._messages.append({"role": "assistant", "text": ""})
             self._streaming_index = len(self._messages) - 1
+            if self.voice_agent is not None and self._voice_conversation_mode:
+                provider_name = "Ollama" if self._chat_provider == "ollama" else "OpenCode Agent"
+                self._set_voice_activity(
+                    f"Receiving response from {provider_name}…",
+                    stage="receiving",
+                    log_message=f"{provider_name} is generating your response.",
+                )
         self._messages[self._streaming_index]["text"] += str(text)
         self._schedule_chat_refresh()
 
@@ -1033,21 +1056,71 @@ class AssistantPanel(QWidget):
         self.voice_chat_button.setText("Stop voice chat")
         self.voice_chat_button.setEnabled(True)
         self.ptt_button.setEnabled(True)
-        self.voice_state_label.setText("Wake listening")
+        self._set_voice_activity(
+            "Waiting for the wake word…",
+            stage="waiting",
+            log_message="Voice chat is ready. Waiting for the wake word.",
+        )
         self._append_message(
             "system",
-            "Local wake detection is active. Vosk listens for the wake phrase; Faster-Whisper transcribes the captured command.",
+            "Vosk is listening locally for the activation phrase. Faster-Whisper will transcribe your command.",
         )
 
+    def _set_voice_activity(
+        self, message: str, *, stage: str | None = None, log_message: str | None = None
+    ):
+        """Update the always-visible voice status and optionally add a chat timeline event."""
+        display = str(message or "Voice chat is active")
+        self.voice_live_status.setText(display)
+        self.voice_state_label.setText(display)
+        if stage is not None and stage != self._last_voice_stage:
+            self._last_voice_stage = stage
+            if log_message:
+                self._append_message("system", log_message)
+
     def _on_voice_state(self, state: str):
-        self.voice_state_label.setText(state)
-        normalized = state.casefold()
+        raw_state = str(state or "").strip()
+        normalized = raw_state.casefold()
+        if "wake phrase detected" in normalized or "wake word detected" in normalized:
+            self._set_voice_activity(
+                "Wake word detected · listening for your command…",
+                stage="wake-detected",
+                log_message="Wake word detected. Listening for your command.",
+            )
+        elif "listening for your command" in normalized or "push-to-talk" in normalized:
+            self._set_voice_activity(
+                "Listening for your command…",
+                stage="listening",
+                log_message="Microphone is listening. Speak now.",
+            )
+        elif "silence detected" in normalized or "transcribing" in normalized:
+            self._set_voice_activity(
+                "Command captured · transcribing with Faster-Whisper…",
+                stage="transcribing",
+                log_message="Command captured. Converting speech to text with Faster-Whisper.",
+            )
+        elif "no speech detected" in normalized:
+            self._set_voice_activity(
+                "No speech detected · waiting for the wake word…",
+                stage="waiting",
+                log_message="No speech detected. Waiting for the wake word.",
+            )
+        elif "wake listening" in normalized:
+            self._set_voice_activity(
+                "Waiting for the wake word…",
+                stage="waiting",
+                log_message="Waiting for the wake word.",
+            )
+        elif "voice agent stopped" in normalized:
+            self._set_voice_activity("Voice chat stopped", stage="stopped")
+        elif "error" in normalized or "failed" in normalized:
+            self._set_voice_activity(raw_state, stage="error", log_message=raw_state)
+        else:
+            self._set_voice_activity(raw_state or "Voice chat is active")
+
         self.ptt_button.setEnabled(
             self.voice_agent is not None
-            and (
-                "wake listening" in normalized
-                or normalized == "voice agent stopped"
-            )
+            and ("wake listening" in normalized or normalized == "voice agent stopped")
         )
 
     def _on_voice_audio(self, audio: bytes):
@@ -1057,8 +1130,9 @@ class AssistantPanel(QWidget):
             return
         self._voice_asr_active = True
         self.ptt_button.setEnabled(False)
-        self.voice_state_label.setText("Transcribing command…")
-        self._append_message("system", "Command captured · running local Faster-Whisper recognition.")
+        self._set_voice_activity(
+            "Transcribing your command with Faster-Whisper…", stage="transcribing"
+        )
 
         worker = FunctionWorker(
             lambda _emit: self.voice_transcriber(bytes(audio))
@@ -1073,10 +1147,14 @@ class AssistantPanel(QWidget):
 
     def _resume_voice_agent(self):
         if self.voice_agent is not None:
-            self.voice_agent.resume_after_processing()
+            self._set_voice_activity(
+                "Resuming wake-word detection…",
+                stage="resuming",
+                log_message="Response handling finished. Resuming wake-word detection.",
+            )
             self.ptt_button.setText("Push to talk")
-            self.ptt_button.setEnabled(True)
-            self.voice_state_label.setText("Wake listening")
+            self.ptt_button.setEnabled(False)
+            self.voice_agent.resume_after_processing()
 
     def _on_voice_asr_complete(self, text: str):
         recognized = str(text or "").strip()
@@ -1089,13 +1167,21 @@ class AssistantPanel(QWidget):
         auto_submit = bool((settings and settings.voice_auto_submit) or self._voice_conversation_mode)
         connected = self._chat_is_connected()
         if auto_submit and connected and not self._worker_active:
-            self._append_message("system", "Voice command recognized · sending it to the selected chat model.")
+            provider_name = "Ollama" if self._chat_provider == "ollama" else "OpenCode Agent"
+            self._set_voice_activity(
+                f"Sending your command to {provider_name}…",
+                stage="sending",
+                log_message=f"Speech recognized. Sending your command to {provider_name}.",
+            )
+            self._voice_submission_pending = True
+            self._voice_response_stage_logged = False
             self._resume_voice_after_prompt = True
             self.send_prompt()
         else:
-            self._append_message(
-                "system",
-                "Voice command transcribed with Faster-Whisper. Review or edit it before sending."
+            self._set_voice_activity(
+                "Speech recognized · review the transcript before sending",
+                stage="review",
+                log_message="Speech recognized with Faster-Whisper. The transcript is ready in the message box for review.",
             )
             if auto_submit and not connected:
                 self.status_message.emit(
@@ -1111,7 +1197,11 @@ class AssistantPanel(QWidget):
     def _on_voice_asr_error(self, message: str):
         self._append_message("error", f"Voice transcription failed: {message}")
         self.status_message.emit(f"Voice transcription: {message}")
-        self.voice_state_label.setText("Voice command failed · wake listening")
+        self._set_voice_activity(
+            "Speech recognition failed · resuming wake-word detection…",
+            stage="asr-error",
+            log_message=f"Speech recognition failed: {message}",
+        )
         self._resume_voice_agent()
 
     def _set_voice_auto_submit(self, enabled: bool):
@@ -1146,7 +1236,9 @@ class AssistantPanel(QWidget):
         self._voice_conversation_mode = False
         self._start_voice_after_connect = False
         self.ptt_button.setEnabled(False)
-        self.voice_state_label.setText("Voice error")
+        self._set_voice_activity(
+            f"Voice input error · {message}", stage="error", log_message=f"Voice input error: {message}"
+        )
         self.status_message.emit(f"Voice input: {message}")
         QMessageBox.warning(self, "Voice input failed", str(message))
 
@@ -1343,6 +1435,9 @@ class AssistantPanel(QWidget):
         self._worker_active = True
         if self.voice_agent is not None and self.voice_agent.mode == "processing":
             self._resume_voice_after_prompt = True
+            self._set_voice_activity(
+                f"Sending your command to Ollama · {self._ollama_model}…", stage="sending"
+            )
         self._streaming_index = None
         self.send_button.setEnabled(False)
         self.stop_button.setEnabled(False)
@@ -1374,6 +1469,12 @@ class AssistantPanel(QWidget):
         eval_count = metrics.get("eval_count")
         detail = f" · {eval_count} tokens" if eval_count is not None else ""
         self.activity_label.setText(f"Ollama turn complete{detail} · Ready for your next message.")
+        if self.voice_agent is not None and self._resume_voice_after_prompt:
+            self._set_voice_activity(
+                "Ollama response received · preparing to listen again…",
+                stage="response",
+                log_message="Ollama finished responding.",
+            )
 
     def send_prompt(self):
         prompt = self.prompt.toPlainText().strip()
@@ -1403,6 +1504,9 @@ class AssistantPanel(QWidget):
         self._worker_active = True
         if self.voice_agent is not None and self.voice_agent.mode == "processing":
             self._resume_voice_after_prompt = True
+            self._set_voice_activity(
+                "Sending your command to OpenCode Agent…", stage="sending"
+            )
         self._streaming_index = None
         self.send_button.setEnabled(False)
         self.stop_button.setEnabled(True)
@@ -1470,6 +1574,12 @@ class AssistantPanel(QWidget):
         self._streaming_index = None
         reason = result.get("stopReason", "completed") if isinstance(result, dict) else "completed"
         self.activity_label.setText(f"Turn {reason} · Ready for your next message.")
+        if self.voice_agent is not None and self._resume_voice_after_prompt:
+            self._set_voice_activity(
+                "OpenCode response received · preparing to listen again…",
+                stage="response",
+                log_message="OpenCode finished responding.",
+            )
 
     def _on_error(self, message):
         self._streaming_index = None

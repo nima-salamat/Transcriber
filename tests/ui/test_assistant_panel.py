@@ -147,3 +147,44 @@ def test_assistant_exposes_installed_faster_whisper_voice_models(qtbot, tmp_path
     values = [panel.voice_asr_combo.itemData(i) for i in range(panel.voice_asr_combo.count())]
     assert "Systran/faster-whisper-small" in values
     assert "vosk/vosk-model-small-fa-0.42" not in values
+
+
+
+def test_voice_lifecycle_status_is_visible_when_voice_settings_are_collapsed(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    panel = AssistantPanel(paths, QThreadPool())
+    qtbot.addWidget(panel)
+
+    assert panel.voice_panel.isHidden()
+    assert not panel.voice_live_status.isHidden()
+
+    panel.voice_agent = SimpleNamespace(mode="command")
+    panel._on_voice_state("Wake word detected")
+    panel._on_voice_state("Listening for your command…")
+    assert "Listening for your command" in panel.voice_live_status.text()
+
+    panel._on_voice_state("Silence detected · transcribing with Faster-Whisper")
+    assert "Transcribing" in panel.voice_live_status.text()
+
+    qtbot.wait(80)
+    visible_text = panel.chat_view.toPlainText()
+    assert "Wake word detected" in visible_text
+    assert "Microphone is listening" in visible_text
+    assert "Converting speech to text" in visible_text
+
+
+def test_voice_chat_shows_model_response_progress(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    panel = AssistantPanel(paths, QThreadPool())
+    qtbot.addWidget(panel)
+    panel.voice_agent = SimpleNamespace(mode="processing")
+    panel._voice_conversation_mode = True
+
+    panel._append_stream_chunk("Hello")
+
+    assert "Receiving response" in panel.voice_live_status.text()
+    assert "Hello" in panel._messages[0]["text"]
