@@ -6,8 +6,9 @@
 
 ## What is implemented
 
-- Native `QMainWindow` frame and workspace with collapsible sidebar, global search, command palette, resizable Inspector and bottom Waveform/Timeline docks; window geometry and panel state are persisted.
+- Native `QMainWindow` with a unified toolbar and one primary workspace. Transcript, Segments and Captions are workspace modes; Record and Batch remain one click away. Library, Model Manager, Audio Cleanup and Preferences open as contextual dialogs. The optional Inspector and compact 148-pixel Waveform/Timeline are independently persisted.
 - Central semantic dark/light theme tokens and a bundled Lucide SVG icon subset. No runtime network access or QtAwesome dependency is required for icons.
+- Shared audio transport controls remain available across Transcript, Segments and Captions and use the same `AudioPlayer` controller as the transcription service.
 - Faster-Whisper local audio-file transcription with language detection/selection, task, VAD, beam size, compute device/type, CPU threads and optional word timestamps.
 - Hugging Face model discovery, compatibility inspection, pinned-revision download, validation, install/retry/cancel, default selection and active-model lifecycle.
 - Microphone recording through Qt Multimedia with device selection, level meter, pause/resume, save/discard and optional transcription after saving.
@@ -23,7 +24,7 @@
 - Optional local Ollama chat provider in the side Assistant panel. Select an installed Ollama model, load it locally and chat with streamed responses. **Start voice chat** connects the selected provider, warms the local Faster-Whisper model, loads the Vosk wake detector, and continuously cycles through wake phrase → microphone capture → local transcription → model response → wake listening. The response is displayed in the chat; speech playback is not included.
 - SQLite transcript persistence, editor metadata, history, favorites, autosave and metadata-only backup/restore.
 
-The full scope and verified gaps are listed in [Feature extraction](docs/product/feature-extraction.md) and [Known limitations](docs/KNOWN_LIMITATIONS.md).
+The full scope and verified gaps are listed in [Feature extraction](docs/product/feature-extraction.md), [Unified workspace redesign](docs/product/unified-workspace-redesign.md) and [Known limitations](docs/KNOWN_LIMITATIONS.md).
 
 ## Screenshots
 

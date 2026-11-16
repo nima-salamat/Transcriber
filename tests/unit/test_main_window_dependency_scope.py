@@ -47,10 +47,10 @@ def test_drawer_controls_are_compact_and_permanently_right_aligned() -> None:
         / "src" / "transcriber" / "ui" / "main_window.py"
     ).read_text(encoding="utf-8")
 
-    assert "status.addPermanentWidget(self.assistant_drawer_button)" in source
-    assert "status.addPermanentWidget(self.timeline_drawer_button)" in source
-    assert "status.addWidget(self.assistant_drawer_button)" not in source
-    assert "status.addWidget(self.timeline_drawer_button)" not in source
+    assert "self.status_bar.addPermanentWidget(self.assistant_drawer_button)" in source
+    assert "self.status_bar.addPermanentWidget(self.timeline_drawer_button)" in source
+    assert "self.status_bar.addWidget(self.assistant_drawer_button)" not in source
+    assert "self.status_bar.addWidget(self.timeline_drawer_button)" not in source
     assert "drawer_button.setFixedHeight(25)" in source
 
 

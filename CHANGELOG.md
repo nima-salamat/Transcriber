@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Unified workspace redesign
+
+- Replaced the permanent multi-destination navigation rail with a focused workspace toolbar and Transcript / Segments / Captions modes.
+- Moved Projects and Recordings into a shared Library dialog; Model Manager, Audio Cleanup and Preferences are contextual dialogs.
+- Added a single compact audio transport shared across workspace modes; the old page-local transport is hidden to prevent duplicate playback controls.
+- Made the Inspector optional by default and fixed the bottom waveform/timeline to 148 pixels.
+- Replaced navigation-specific UI tests with workspace, dialog, panel and shared-player regression tests.
+
+
 ## 2.1.4 — Microphone device-change signal fix
 
 - Fixed the Recording page startup crash caused by trying to connect `QMediaDevices.audioInputsChanged` as a class-level signal.

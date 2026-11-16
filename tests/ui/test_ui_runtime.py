@@ -1,4 +1,4 @@
-"""Real shell/navigation smoke tests for environments with the optional Qt stack."""
+"""Real shell/workspace smoke tests for environments with the optional Qt stack."""
 from __future__ import annotations
 
 import os
@@ -37,28 +37,34 @@ def make_window(tmp_path, monkeypatch):
     return MainWindow(paths, settings, history, database, manager), settings
 
 
-def test_native_shell_navigation_theme_and_geometry(qtbot, tmp_path, monkeypatch):
+def test_native_shell_workspace_modes_theme_and_geometry(qtbot, tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     window, settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
-    window.resize(1040, 740)
+    window.resize(1120, 760)
     window.show()
     qtbot.wait(30)
 
     assert not (window.windowFlags() & Qt.WindowType.FramelessWindowHint)
     assert window.minimumWidth() >= 700
-    assert window.stack.count() == len(window.pages) == 11
+    assert window.stack.count() == len(window.pages) == 5
     assert set(window.pages) == {
-        "home", "transcription", "recording", "batch", "history", "editor",
-        "subtitles", "models", "audio", "cleanup", "settings",
+        "transcription", "editor", "subtitles", "recording", "batch",
     }
+    assert not window.sidebar.isVisible()
+    assert window.nav_buttons == {}
 
     for page_id in window.pages:
         window.navigate(page_id)
         assert window.stack.currentWidget() is window.pages[page_id][1]
         assert window.page_title.text() == window.pages[page_id][0]
-        assert window.nav_buttons[page_id].isChecked()
+        if page_id in window.mode_buttons:
+            assert window.mode_buttons[page_id].isChecked()
+            assert window.workspace_mode_bar.isVisible()
+        else:
+            assert not window.workspace_mode_bar.isVisible()
 
+    window.show_preferences()
     window.settings_page.theme.setCurrentIndex(window.settings_page.theme.findData("light"))
     assert settings.settings.theme == "light"
     assert app.styleSheet()

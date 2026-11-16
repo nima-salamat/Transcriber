@@ -1,8 +1,4 @@
-"""Regression tests for discoverable workspace panel visibility controls.
-
-The native QDockWidget close button must never leave a panel unreachable.  The
-View menu is the single, discoverable source of truth for dock visibility.
-"""
+"""Regression tests for the unified single-workspace application shell."""
 from __future__ import annotations
 
 import os
@@ -14,7 +10,7 @@ pytest.importorskip("PySide6")
 pytest.importorskip("pytestqt")
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QInputDialog, QWidget
 
 from transcriber.core.config import SettingsStore
 from transcriber.core.paths import AppPaths
@@ -53,12 +49,132 @@ def _view_menu(window):
     for action in window.menuBar().actions():
         if action.menu() and action.text().replace("&", "").strip().casefold() == "view":
             return action.menu()
-    pytest.fail("MainWindow has no View menu; closed workspace panels cannot be rediscovered.")
+    pytest.fail("MainWindow has no View menu.")
 
 
-def test_view_menu_can_reopen_each_closeable_workspace_dock(qtbot, tmp_path, monkeypatch):
+def test_main_window_uses_one_primary_workspace(qtbot, tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     assert app is not None
+    window, settings = make_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(30)
+
+    assert not window.sidebar.isVisible()
+    assert window.nav_buttons == {}
+    assert set(window.pages) == {"transcription", "editor", "subtitles", "recording", "batch"}
+    assert window.stack.count() == 5
+    assert window.workspace_mode_bar.isVisible()
+    assert window.mode_buttons["transcription"].isChecked()
+    assert window.editor_page.document is window.transcript_document
+    assert window.transcription_page.document is window.transcript_document
+    assert window.audio_transport.player is window.transcription_page.player
+    assert window.transcription_page.player_card.isHidden()
+    assert window.transcription_page.open_button.isHidden()
+    assert window.transcription_page.export_button.isHidden()
+    assert window.transcription_page.subtitle_export_button.isHidden()
+    assert window.audio_transport.isHidden()
+    assert not window.assistant_dock.isVisible()
+    assert window.timeline_dock.isVisible()
+    assert not window.library_dialog.isVisible()
+    assert not window.model_dialog.isVisible()
+    assert not window.preferences_dialog.isVisible()
+    assert not window.cleanup_dialog.isVisible()
+    assert settings.settings.sidebar_visible is False
+    assert settings.settings.inspector_visible is False
+
+    window.close()
+
+
+def test_advanced_recognition_options_are_collapsed_by_default(qtbot, tmp_path, monkeypatch):
+    window, _settings = make_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(20)
+
+    page = window.transcription_page
+    assert page.model_combo.isVisible()
+    assert page.language_combo.isVisible()
+    assert not page.advanced_options_panel.isVisible()
+    assert page.advanced_toggle.isVisible()
+
+    page.advanced_toggle.click()
+    assert page.advanced_options_panel.isVisible()
+    assert page.beam_spin.isVisible()
+    assert page.vad_check.isVisible()
+    assert page.task_combo.isVisible()
+    assert page.word_timestamps.isVisible()
+    assert page.initial_prompt.isVisible()
+
+    page.advanced_toggle.click()
+    assert not page.advanced_options_panel.isVisible()
+    window.close()
+
+
+def test_transcript_segments_and_captions_are_workspace_modes(qtbot, tmp_path, monkeypatch):
+    window, _settings = make_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(20)
+
+    window.navigate("editor")
+    assert window.stack.currentWidget() is window.editor_page
+    assert window.workspace_mode_bar.isVisible()
+    assert window.mode_buttons["editor"].isChecked()
+
+    window.navigate("subtitles")
+    assert window.stack.currentWidget() is window.subtitle_page
+    assert window.workspace_mode_bar.isVisible()
+    assert window.mode_buttons["subtitles"].isChecked()
+
+    window.navigate("transcription")
+    assert window.stack.currentWidget() is window.transcription_page
+    assert window.workspace_mode_bar.isVisible()
+    assert window.mode_buttons["transcription"].isChecked()
+
+    window.navigate("recording")
+    assert window.stack.currentWidget() is window.recording_page
+    assert not window.workspace_mode_bar.isVisible()
+
+    window.navigate("batch")
+    assert window.stack.currentWidget() is window.batch_page
+    assert not window.workspace_mode_bar.isVisible()
+
+    window.close()
+
+
+def test_secondary_tools_open_as_contextual_non_modal_dialogs(qtbot, tmp_path, monkeypatch):
+    window, _settings = make_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(20)
+    current = window.stack.currentWidget()
+
+    window.show_library(0)
+    assert window.library_dialog.isVisible()
+    assert window.library_tabs.currentIndex() == 0
+    assert window.library_dialog.isModal() is False
+
+    window.show_library(1)
+    assert window.library_tabs.currentIndex() == 1
+
+    window.show_model_manager()
+    assert window.model_dialog.isVisible()
+    assert window.model_dialog.isModal() is False
+
+    window.show_preferences()
+    assert window.preferences_dialog.isVisible()
+    assert window.preferences_dialog.isModal() is False
+
+    window.show_audio_cleanup()
+    assert window.cleanup_dialog.isVisible()
+    assert window.cleanup_dialog.isModal() is False
+
+    assert window.stack.currentWidget() is current
+    window.close()
+
+
+def test_view_menu_can_reopen_contextual_workspace_panels(qtbot, tmp_path, monkeypatch):
     window, _settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
     window.show()
@@ -69,11 +185,13 @@ def test_view_menu_can_reopen_each_closeable_workspace_dock(qtbot, tmp_path, mon
         "Inspector / AI Assistant": window.assistant_dock,
         "Audio Timeline": window.timeline_dock,
     }
+    assert not window.assistant_dock.isVisible()
+    assert window.timeline_dock.isVisible()
+
     for title, dock in expected.items():
         assert title in actions, f"View menu is missing a toggle for {title}"
         action = actions[title]
-        assert action.isCheckable(), f"{title} visibility action must be checkable"
-        assert dock.isVisible()
+        assert action.isCheckable()
         dock.close()
         qtbot.wait(10)
         assert not dock.isVisible()
@@ -86,9 +204,9 @@ def test_view_menu_can_reopen_each_closeable_workspace_dock(qtbot, tmp_path, mon
     window.close()
 
 
-def test_restore_default_layout_restores_the_workspace_docks(qtbot, tmp_path, monkeypatch):
-    app = QApplication.instance() or QApplication([])
-    assert app is not None
+def test_restore_default_layout_keeps_inspector_optional_and_waveform_compact(
+    qtbot, tmp_path, monkeypatch
+):
     window, _settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
     window.show()
@@ -96,53 +214,45 @@ def test_restore_default_layout_restores_the_workspace_docks(qtbot, tmp_path, mo
 
     actions = _menu_actions(_view_menu(window))
     restore = actions.get("Restore Default Layout")
-    assert restore is not None, "View menu needs a Restore Default Layout action"
+    assert restore is not None
 
-    window.assistant_dock.close()
-    window.timeline_dock.close()
-    qtbot.wait(10)
-    assert not window.assistant_dock.isVisible()
-    assert not window.timeline_dock.isVisible()
-
+    window.assistant_dock.show()
+    window.timeline_dock.hide()
     restore.trigger()
     qtbot.wait(20)
-    assert window.assistant_dock.isVisible()
+
+    assert not window.assistant_dock.isVisible()
     assert window.timeline_dock.isVisible()
     assert window.workspace_splitter.widget(1) is window.assistant_dock
     assert window.workspace_splitter.layoutDirection() == Qt.LayoutDirection.LeftToRight
     assert window.dockWidgetArea(window.timeline_dock) == Qt.DockWidgetArea.BottomDockWidgetArea
-    assert window.timeline_dock.minimumHeight() == window.timeline_dock.maximumHeight() == 172
+    assert window.timeline_dock.minimumHeight() == window.timeline_dock.maximumHeight() == 148
 
     window.close()
 
 
-def test_global_search_opens_an_in_window_popup_without_navigating_away(qtbot, tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QWidget
-
+def test_global_search_does_not_navigate_away_from_current_mode(qtbot, tmp_path, monkeypatch):
     window, _settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
     window.show()
     qtbot.wait(30)
-    window.navigate("home")
+    window.navigate("editor")
 
+    current = window.stack.currentWidget()
     window.global_search.setText("meeting notes")
     qtbot.wait(400)
 
-    assert window.stack.currentWidget() is window.home_page, (
-        "Typing in global search should not navigate away from the current workspace."
-    )
+    assert window.stack.currentWidget() is current
     popups = [
         child for child in window.findChildren(QWidget)
         if child.objectName() == "GlobalSearchPopup" and child.isVisible()
     ]
-    assert popups, "Global search must show results in a popup inside the main window."
+    assert popups
     assert all(child.window() is window for child in popups)
     window.close()
 
 
 def test_command_palette_is_an_in_window_popup_not_a_modal_dialog(qtbot, tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QInputDialog, QWidget
-
     window, _settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
     window.show()
@@ -158,13 +268,34 @@ def test_command_palette_is_an_in_window_popup_not_a_modal_dialog(qtbot, tmp_pat
         child for child in window.findChildren(QWidget)
         if child.objectName() == "CommandPalettePopup" and child.isVisible()
     ]
-    assert popups, "Ctrl+K must open a searchable in-window command palette."
+    assert popups
     assert all(child.window() is window for child in popups)
     assert QApplication.activeModalWidget() is None
     window.close()
 
 
-def test_inspector_can_grow_and_waveform_stays_compact(qtbot, tmp_path, monkeypatch):
+def test_toolbar_adapts_to_narrow_desktop_windows(qtbot, tmp_path, monkeypatch):
+    window, _settings = make_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    window.resize(820, 700)
+    window.show()
+    qtbot.wait(30)
+
+    assert window.global_search.isHidden()
+    assert window.assistant_button.isHidden()
+    assert window.command_button.text() == "⌘K"
+    assert window.model_button.text() == "Model"
+
+    window.resize(1180, 780)
+    qtbot.wait(30)
+    assert not window.global_search.isHidden()
+    assert not window.assistant_button.isHidden()
+    assert window.command_button.text() == "Ctrl+K"
+    assert window.model_button.text() != "Model"
+    window.close()
+
+
+def test_inspector_resizes_horizontally_and_waveform_stays_fixed(qtbot, tmp_path, monkeypatch):
     window, _settings = make_window(tmp_path, monkeypatch)
     qtbot.addWidget(window)
     window.resize(1280, 850)
@@ -176,15 +307,16 @@ def test_inspector_can_grow_and_waveform_stays_compact(qtbot, tmp_path, monkeypa
     assert inspector.maximumWidth() > 600
     assert window.workspace_splitter.widget(1) is inspector
     assert window.workspace_splitter.layoutDirection() == Qt.LayoutDirection.LeftToRight
+
+    window._animate_drawer(inspector, True, "width")
+    qtbot.wait(30)
     available_width = window.workspace_splitter.width()
-    target_width = min(500, max(inspector.minimumWidth(), available_width - 186))
+    target_width = min(500, max(inspector.minimumWidth(), available_width - 540))
     window.workspace_splitter.setSizes([available_width - target_width, target_width])
     qtbot.wait(30)
     assert inspector.width() >= target_width - 5
-    resized = window.workspace_splitter.sizes()
-    assert resized[1] >= target_width - 5
-    assert resized[0] >= 175
     remembered_width = inspector.width()
+
     window._animate_drawer(inspector, False, "width")
     assert inspector.isHidden()
     window._animate_drawer(inspector, True, "width")
@@ -192,11 +324,9 @@ def test_inspector_can_grow_and_waveform_stays_compact(qtbot, tmp_path, monkeypa
     assert not inspector.isHidden()
     assert inspector.width() >= remembered_width - 10
 
-    # Waveform has one compact size. It can be shown/hidden, not vertically
-    # dragged, so the actual workspace keeps its available height.
     waveform = window.timeline_dock
-    assert waveform.minimumHeight() == 172
-    assert waveform.maximumHeight() == 172
+    assert waveform.minimumHeight() == 148
+    assert waveform.maximumHeight() == 148
     fixed_height = waveform.height()
     window.resize(window.width(), window.height() + 120)
     qtbot.wait(30)

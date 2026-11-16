@@ -143,35 +143,66 @@ class TranscriptionPage(QWidget):
         recognition_options.addWidget(self.default_model_button)
         recognition_options.addWidget(QLabel("Language"))
         recognition_options.addWidget(self.language_combo)
-        recognition_options.addWidget(QLabel("Beam"))
-        recognition_options.addWidget(self.beam_spin)
-        recognition_options.addWidget(self.vad_check)
 
-        advanced_options = QHBoxLayout()
         self.task_combo = QComboBox()
         self.task_combo.addItem("Transcribe in source language", "transcribe")
         self.task_combo.addItem("Translate to English", "translate")
         self.word_timestamps = QCheckBox("Word timings")
         self.word_timestamps.setChecked(self.settings_store.settings.word_timestamps)
-        self.word_timestamps.toggled.connect(lambda value: self.settings_store.update(word_timestamps=value))
+        self.word_timestamps.toggled.connect(
+            lambda value: self.settings_store.update(word_timestamps=value)
+        )
         self.initial_prompt = QLineEdit()
         self.initial_prompt.setPlaceholderText("Whisper initial prompt (local engine only)…")
-        self.initial_prompt.setToolTip("This setting is supported by Faster-Whisper, not Google Cloud Speech-to-Text V2.")
-        advanced_options.addWidget(QLabel("Task"))
-        advanced_options.addWidget(self.task_combo)
-        advanced_options.addWidget(self.word_timestamps)
-        advanced_options.addWidget(self.initial_prompt, 1)
+        self.initial_prompt.setToolTip(
+            "This setting is supported by Faster-Whisper, not Google Cloud Speech-to-Text V2."
+        )
+
+        advanced_options = QVBoxLayout()
+        advanced_options.setContentsMargins(0, 0, 0, 0)
+        advanced_options.setSpacing(8)
+        advanced_recognition_row = QHBoxLayout()
+        advanced_recognition_row.addWidget(QLabel("Beam size"))
+        advanced_recognition_row.addWidget(self.beam_spin)
+        advanced_recognition_row.addWidget(self.vad_check)
+        advanced_recognition_row.addSpacing(12)
+        advanced_recognition_row.addWidget(QLabel("Task"))
+        advanced_recognition_row.addWidget(self.task_combo)
+        advanced_recognition_row.addStretch(1)
+        advanced_text_row = QHBoxLayout()
+        advanced_text_row.addWidget(self.word_timestamps)
+        advanced_text_row.addWidget(self.initial_prompt, 1)
+        advanced_options.addLayout(advanced_recognition_row)
+        advanced_options.addLayout(advanced_text_row)
+
+        self.advanced_toggle = QPushButton("Advanced options  ▾")
+        self.advanced_toggle.setObjectName("Disclosure")
+        self.advanced_toggle.setCheckable(True)
+        self.advanced_toggle.setChecked(False)
+        self.advanced_options_panel = QWidget()
+        self.advanced_options_panel.setObjectName("AdvancedOptionsPanel")
+        self.advanced_options_panel.setLayout(advanced_options)
+        self.advanced_options_panel.setVisible(False)
+        self.advanced_toggle.toggled.connect(self.advanced_options_panel.setVisible)
+        self.advanced_toggle.toggled.connect(
+            lambda expanded: self.advanced_toggle.setText(
+                "Advanced options  ▴" if expanded else "Advanced options  ▾"
+            )
+        )
+
         self.engine_privacy_hint = QLabel()
         self.engine_privacy_hint.setObjectName("Muted")
         self.engine_privacy_hint.setWordWrap(True)
         source_outer = QVBoxLayout(source_card)
         source_outer.addLayout(source_layout)
         source_outer.addLayout(recognition_options)
-        source_outer.addLayout(advanced_options)
+        source_outer.addWidget(self.advanced_toggle)
+        source_outer.addWidget(self.advanced_options_panel)
         source_outer.addWidget(self.engine_privacy_hint)
         layout.addWidget(source_card)
 
         player_card = Card()
+        self.player_card = player_card
         player_layout = QHBoxLayout(player_card)
         player_layout.setContentsMargins(16, 10, 16, 10)
         self.player = AudioPlayer(self)
@@ -288,7 +319,8 @@ class TranscriptionPage(QWidget):
         self.player.error_occurred.connect(lambda message: self.status_message.emit(f"Audio player: {message}"))
         self._busy_controls = (
             self.open_button, self.engine_combo, self.model_combo,
-            self.default_model_button, self.language_combo, self.beam_spin,
+            self.default_model_button, self.language_combo, self.advanced_toggle,
+            self.beam_spin,
             self.vad_check, self.task_combo, self.word_timestamps,
             self.initial_prompt, self.search_input, self.find_button,
             self.replace_input, self.replace_button, self.copy_button,

@@ -16,6 +16,46 @@ def stylesheet(theme: str) -> str:
     }}
     QMainWindow, QDialog {{ background: {c['window']}; }}
     QWidget#Root {{ background: {c['window']}; }}
+    QFrame#WorkspaceToolbar {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QFrame#WorkspaceModeBar {{ background: transparent; border: 0; }}
+    QPushButton#WorkspaceMode {{
+        background: transparent;
+        color: {c['muted']};
+        border: 1px solid transparent;
+        padding: 6px 13px;
+        min-height: 15px;
+        font-weight: 600;
+    }}
+    QPushButton#WorkspaceMode:checked {{
+        color: {c['text']};
+        background: {c['surface_2']};
+        border-color: {c['border']};
+    }}
+    QPushButton#WorkspaceMode:hover {{ color: {c['text']}; background: {c['surface_hover']}; }}
+    QWidget#AdvancedOptionsPanel {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 9px;
+        padding: 6px;
+    }}
+    QFrame#AudioTransportBar {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+    }}
+    QPushButton#TransportPlay {{
+        color: white;
+        background: {c['accent']};
+        border: 0;
+        border-radius: 9px;
+        font-weight: 750;
+        padding: 4px;
+    }}
+    QPushButton#TransportPlay:hover {{ background: {c['accent_hover']}; }}
     QFrame#Sidebar {{ background: {c['surface']}; border: 0; }}
     QFrame#Card {{
         background: {c['surface']};
