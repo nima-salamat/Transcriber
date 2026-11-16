@@ -74,6 +74,13 @@ def test_all_primary_workflows_live_in_one_workspace(qtbot, tmp_path, monkeypatc
         assert window.workspace.tabs.currentIndex() == expected_index
         assert window.workspace.current_view == expected_view
 
+    window.navigate("transcription")
+    window._focus_current_transcript_search()
+    assert QApplication.focusWidget() is window.transcription_page.search_input
+    window.navigate("editor")
+    window._focus_current_transcript_search()
+    assert QApplication.focusWidget() is window.editor_page.search_input
+
     # Model management and preferences are secondary dialogs, not permanent
     # entries in the workspace's primary view strip.
     window.navigate("models")
