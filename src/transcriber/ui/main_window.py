@@ -330,6 +330,7 @@ class MainWindow(QMainWindow):
 
         self.timeline = WaveformTimeline(timeline_panel)
         self.timeline.set_interactive(True)
+        self.timeline.setMinimumHeight(88)
         self.timeline.seek_requested.connect(
             lambda value: self.transcription_page.player.seek(int(value * 1000))
         )
