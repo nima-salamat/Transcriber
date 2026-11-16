@@ -553,11 +553,13 @@ class AssistantPanel(QWidget):
             return
         self.ollama_client = client
         requested_model = str(self.ollama_model_combo.currentData() or "").strip()
+        if not requested_model and self.settings_store:
+            requested_model = self.settings_store.settings.ollama_model
         if self.settings_store:
-            self.settings_store.update(
-                ollama_base_url=client.base_url,
-                ollama_model=requested_model,
-            )
+            changes = {"ollama_base_url": client.base_url}
+            if requested_model:
+                changes["ollama_model"] = requested_model
+            self.settings_store.update(**changes)
         self._worker_active = True
         self.connect_button.setEnabled(False)
         self.connection_state.setText("Connecting to Ollama…")

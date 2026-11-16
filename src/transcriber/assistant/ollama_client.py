@@ -81,7 +81,9 @@ class OllamaClient:
         for item in raw_models:
             if not isinstance(item, dict):
                 continue
-            details = item.get("details") or {}
+            details = item.get("details")
+            if not isinstance(details, dict):
+                details = {}
             name = str(item.get("name") or item.get("model") or "").strip()
             if name:
                 models.append({
