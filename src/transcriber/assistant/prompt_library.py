@@ -150,8 +150,11 @@ formats. It is not the primary place to rewrite the transcript.
   OpenCode or a cloud engine. The application uses a temporary WAV only to
   adapt the in-memory audio buffer to the local ASR interface and removes it
   after recognition.
-- Review-before-send is the default. Automatic Agent submission is an explicit
-  user setting and requires an active OpenCode connection.
+- Review-before-send is the default for one-shot voice commands. The dedicated
+  Start voice chat mode sends each recognized command automatically to the active
+  provider (OpenCode ACP or local Ollama), displays the answer and resumes wake
+  listening for the next turn. Automatic submission outside that mode is an
+  explicit user setting and requires the selected provider to be connected.
 - When troubleshooting, inspect the chosen Vosk model, its language, the
   configured phrase, microphone input and the visible voice status. Do not
   assume the wake detector is active merely because a model is installed.

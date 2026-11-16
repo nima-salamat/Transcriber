@@ -131,14 +131,14 @@ This page records microphone audio; it does **not** claim to perform continuous 
    - CPU or Linux: `python -m pip install -r requirements-voice.txt`
 2. Open **AI models → Vosk** and install a compatible Vosk model for the language you intend to use.
 3. Open **Settings → OpenCode & Voice Agent**. Enter the **Activation keyword / phrase**, then choose the **Wake-word Vosk model** from the installed-model list. The Assistant's **Wake word & voice settings** panel exposes the same controls.
-4. Install and start [Ollama](https://ollama.com), then download a local chat model, for example `ollama pull qwen2.5:7b`.
-5. In the Assistant side panel choose **Ollama · Local models**, keep the default URL `http://127.0.0.1:11434`, refresh the model list and connect. Use the **Start voice chat** button for continuous wake-word conversations. Select the Faster-Whisper model separately in **Wake word & voice settings**; the Vosk model is used only for the activation phrase.
 4. Use **Refresh** after installing a Vosk model. A local folder can also be selected with **Browse local…**. Only compatible registered Vosk models are listed automatically.
-5. Select **Enable local wake** in the Assistant. Vosk listens for the configured phrase; the command after the phrase is transcribed by Faster-Whisper. The phrase should be short and use words supported by the selected Vosk model and language. An arbitrary name is not guaranteed to be recognized by a model that has never learned that vocabulary.
+5. Install and start [Ollama](https://ollama.com), then download a local chat model, for example `ollama pull qwen2.5:7b`.
+6. In the Assistant side panel choose **Ollama · Local models**, keep the default URL `http://127.0.0.1:11434`, refresh the model list and connect. Select a Faster-Whisper model separately in **Wake word & voice settings**; the Vosk model is used only for the activation phrase. Press **Start voice chat** to launch the complete hands-free loop: wake phrase, command capture, local transcription, Ollama response, then wake listening again.
+7. For ordinary one-shot voice commands, review-before-send remains the default unless automatic submission is enabled. The dedicated **Start voice chat** mode submits each turn automatically and resumes listening after the response. Use a short phrase supported by the chosen Vosk model; arbitrary names or unsupported languages are not guaranteed to be recognized.
 
 Vosk is the wake detector, not the command transcription model. The wake model and activation phrase are saved in Transcriber settings. Voice input remains off until explicitly enabled, and review-before-send remains the default.
 
-The **Prompt library** in the Assistant stores editable Markdown instructions. **Copy full prompt pack** copies the actual current contents, rather than only a folder path. For messages sent through Transcriber, the application reads the current coordinator, index and task-relevant specialist files and embeds their contents in the request to OpenCode; it does not rely on OpenCode independently opening Transcriber's AppData directory.
+The **Prompt library** in the Assistant stores editable Markdown instructions. **Copy full prompt pack** copies the actual current contents, rather than only a folder path. For messages sent through Transcriber, the application reads the current coordinator, index and task-relevant specialist files and embeds their contents in requests to OpenCode or the local Ollama model; it does not rely on an external client independently opening Transcriber's AppData directory.
 
 ## Data locations
 
