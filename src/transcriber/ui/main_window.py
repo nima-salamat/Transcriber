@@ -455,7 +455,7 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(close_button)
         dock.setTitleBarWidget(title_bar)
 
-    def _sync_drawer_controls(self, dock, visible: bool):
+    def _sync_drawer_controls(self, dock, visible: bool, *, persist: bool = True):
         pairs = (
             (self.assistant_dock, getattr(self, "assistant_drawer_button", None),
              getattr(self, "assistant_view_action", None), "inspector_visible"),
@@ -470,7 +470,8 @@ class MainWindow(QMainWindow):
                     previous = control.blockSignals(True)
                     control.setChecked(bool(visible))
                     control.blockSignals(previous)
-            self.settings_store.update(**{setting: bool(visible)})
+            if persist:
+                self.settings_store.update(**{setting: bool(visible)})
             break
 
     def _remember_inspector_width(self, *_args):
@@ -490,7 +491,7 @@ class MainWindow(QMainWindow):
         if available > target:
             self.workspace_splitter.setSizes([available - target, target])
 
-    def _animate_drawer(self, dock, visible: bool, dimension: str):
+    def _animate_drawer(self, dock, visible: bool, dimension: str, *, persist: bool = True):
         """Show or hide a drawer while keeping each panel's sizing rules explicit."""
         if dock not in (self.assistant_dock, self.timeline_dock):
             return
@@ -509,7 +510,7 @@ class MainWindow(QMainWindow):
         else:
             raise ValueError(f"Unsupported drawer dimension: {dimension}")
 
-        self._sync_drawer_controls(dock, not dock.isHidden())
+        self._sync_drawer_controls(dock, not dock.isHidden(), persist=persist)
 
     def _set_transcription_job_busy(self, busy: bool):
         """Lock alternate document entry points while an operation owns the transcript."""
@@ -711,10 +712,11 @@ class MainWindow(QMainWindow):
         # setFixedHeight sets both limits; never release the maximum again.
         self.timeline_dock.setFixedHeight(172)
         self.assistant_dock.hide()
-        self.timeline_dock.setVisible(bool(self.transcription_page.audio_path))
+        timeline_visible = bool(self.transcription_page.audio_path)
+        self.timeline_dock.setVisible(timeline_visible)
         self._inspector_width = 430
-        self._sync_drawer_controls(self.assistant_dock, False)
-        self._sync_drawer_controls(self.timeline_dock, bool(self.transcription_page.audio_path))
+        self._sync_drawer_controls(self.assistant_dock, False, persist=False)
+        self._sync_drawer_controls(self.timeline_dock, timeline_visible, persist=False)
         self.sidebar.hide()
         self._sidebar_collapsed = False
         self.settings_store.update(
@@ -1128,7 +1130,7 @@ class MainWindow(QMainWindow):
         if not audio_path:
             self.waveform_status = "No audio loaded"
             self.timeline.set_waveform([], 0.0)
-            self._animate_drawer(self.timeline_dock, False, "height")
+            self._animate_drawer(self.timeline_dock, False, "height", persist=False)
             self.workspace.set_media(None)
             self.timeline.set_segments(self.transcription_page.segments)
             self.timeline.set_position(0.0)
@@ -1138,7 +1140,7 @@ class MainWindow(QMainWindow):
         self.waveform_status = "Loading waveform…"
         self.workspace.set_media(audio_path)
         if self.settings_store.settings.timeline_visible:
-            self._animate_drawer(self.timeline_dock, True, "height")
+            self._animate_drawer(self.timeline_dock, True, "height", persist=False)
         worker = FunctionWorker(lambda emit: build_waveform(Path(audio_path), self.paths.cache / "waveforms", bins=4096, progress=lambda value: emit(value)))
         worker.signals.progress.connect(lambda _value: None)
         worker.signals.result.connect(lambda peaks, gen=generation: self._waveform_ready(gen, peaks))
@@ -1420,6 +1422,7 @@ class MainWindow(QMainWindow):
         self._sync_drawer_controls(
             self.timeline_dock,
             bool(settings.timeline_visible and self.transcription_page.audio_path),
+            persist=False,
         )
         self.sidebar.hide()
         QTimer.singleShot(0, self._apply_inspector_width)
