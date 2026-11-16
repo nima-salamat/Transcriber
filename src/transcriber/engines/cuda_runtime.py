@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import MutableMapping, Sequence
+from collections.abc import MutableMapping, Sequence
 
 _DLL_DIRECTORY_HANDLES: list[object] = []
 _REGISTERED_DIRECTORIES: set[str] = set()
