@@ -114,7 +114,7 @@ class MainThreadDispatcher(QObject):
 
 
 class MainWindow(QMainWindow):
-    NAVIGATION = [("workspace", "house", "Workspace")]
+    NAVIGATION = [("workspace", "home", "Workspace")]
 
     def __init__(self, paths, settings_store, history, database, model_manager, recording_history=None):
         super().__init__()
