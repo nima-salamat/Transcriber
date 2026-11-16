@@ -204,11 +204,14 @@ class UnifiedWorkspace(QWidget):
 
     def set_view(self, view: str) -> None:
         index = self.VIEW_INDEX.get(str(view), 0)
-        self.tabs.setCurrentIndex(index)
+        # Set the nested Library view first. Its change signal is ignored while
+        # the Library tab is inactive; switching the parent tab then emits one
+        # final, correct view_changed event.
         if view == "audio":
             self.library_tabs.setCurrentIndex(1)
         elif view == "history":
             self.library_tabs.setCurrentIndex(0)
+        self.tabs.setCurrentIndex(index)
 
     def set_media(self, path: str | Path | None) -> None:
         self._current_media = str(path or "")
