@@ -569,7 +569,7 @@ class MainWindow(QMainWindow):
         bar = self.menuBar()
         file_menu = bar.addMenu("&File")
         self._add_menu_action(file_menu, "New Transcription", lambda: self.navigate("transcription"), "Ctrl+Shift+N")
-        self._add_menu_action(file_menu, "Open Audio…", self.transcription_page.choose_audio, "Ctrl+O")
+        self._add_menu_action(file_menu, "Open Media…", self._open_media, "Ctrl+O")
         file_menu.addSeparator()
         self.close_audio_action = self._add_menu_action(
             file_menu, "Close Audio", self.transcription_page.close_audio, "Ctrl+W"
@@ -619,7 +619,7 @@ class MainWindow(QMainWindow):
         self._add_menu_action(view_menu, "Restore Default Layout", self.restore_default_layout)
 
         tools_menu = bar.addMenu("&Tools")
-        self._add_menu_action(tools_menu, "Open Media…", self._open_media, "Ctrl+O")
+        self._add_menu_action(tools_menu, "Open Media…", self._open_media)
         self._add_menu_action(tools_menu, "Record Audio", lambda: self.navigate("recording"))
         self._add_menu_action(tools_menu, "Batch Queue", lambda: self.navigate("batch"))
         self._add_menu_action(tools_menu, "Library", lambda: self.navigate("history"))
@@ -1196,11 +1196,9 @@ class MainWindow(QMainWindow):
         self.timeline.set_segments(self.transcript_document.segments)
 
     def _shortcuts(self):
+        # File/Edit menu actions own their shortcuts; this table contains
+        # workspace-only navigation and commands to avoid duplicate bindings.
         shortcuts = {
-            "Ctrl+O": self._open_media,
-            "Ctrl+S": lambda: self.transcription_page._autosave(),
-            "Ctrl+Shift+N": lambda: self.navigate("transcription"),
-            "Ctrl+Shift+E": lambda: self.transcription_page.export_button.click(),
             "Ctrl+1": lambda: self.navigate("transcription"),
             "Ctrl+2": lambda: self.navigate("editor"),
             "Ctrl+3": lambda: self.navigate("subtitles"),
