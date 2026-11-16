@@ -53,6 +53,12 @@ def test_all_primary_workflows_live_in_one_workspace(qtbot, tmp_path, monkeypatc
         window.workspace.tabs.tabText(index)
         for index in range(3)
     ] == ["Transcribe", "Segments", "Captions"]
+    assert "Auto" in window.workspace.recognition_status.text()
+    window.transcription_page.language_combo.setCurrentIndex(
+        window.transcription_page.language_combo.findData("fa")
+    )
+    assert "Persian" in window.workspace.recognition_status.text()
+    window.transcription_page.advanced_options_widget.setVisible(False)
     assert window.transcription_page.advanced_options_widget.isHidden()
     window.transcription_page.advanced_toggle.click()
     assert not window.transcription_page.advanced_options_widget.isHidden()
