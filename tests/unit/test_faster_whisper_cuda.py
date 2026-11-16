@@ -93,3 +93,45 @@ def test_cuda_library_detector_does_not_match_unrelated_transcription_errors():
     assert is_missing_cuda_library_error(RuntimeError(CUDA_ERROR))
     assert not is_missing_cuda_library_error(RuntimeError("Invalid audio stream"))
     assert not is_missing_cuda_library_error(RuntimeError("CUDA out of memory"))
+
+
+def test_windows_cuda_wheel_directories_are_added_to_the_native_search_path(
+    tmp_path, monkeypatch
+):
+    from transcriber.engines import cuda_runtime
+
+    package_root = tmp_path / "nvidia"
+    expected = []
+    handles = []
+    for package in ("cublas", "cuda_runtime", "cudnn"):
+        binary_dir = package_root / package / "bin"
+        binary_dir.mkdir(parents=True)
+        (binary_dir / "runtime-test.dll").write_bytes(b"test")
+        expected.append(str(binary_dir))
+
+    monkeypatch.setattr(
+        cuda_runtime.os,
+        "add_dll_directory",
+        lambda value: handles.append(value) or object(),
+        raising=False,
+    )
+    environment = {"PATH": r"C:\Windows\System32"}
+    registered = cuda_runtime.register_cuda_runtime_dll_directories(
+        is_windows=True,
+        search_paths=[str(tmp_path)],
+        environ=environment,
+    )
+
+    assert registered == tuple(expected)
+    assert environment["PATH"].split(";")[:3] == expected
+    assert handles == expected
+
+    # Repeated model loads must not accumulate duplicate PATH entries or handles.
+    registered_again = cuda_runtime.register_cuda_runtime_dll_directories(
+        is_windows=True,
+        search_paths=[str(tmp_path)],
+        environ=environment,
+    )
+    assert registered_again == ()
+    assert environment["PATH"].split(";") == [*expected, r"C:\Windows\System32"]
+    assert handles == expected

@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import MutableMapping, Sequence
 
 _DLL_DIRECTORY_HANDLES: list[object] = []
 _REGISTERED_DIRECTORIES: set[str] = set()
@@ -51,7 +51,7 @@ def register_cuda_runtime_dll_directories(
     *,
     is_windows: bool | None = None,
     search_paths: Sequence[str] | None = None,
-    environ: Mapping[str, str] | None = None,
+    environ: MutableMapping[str, str] | None = None,
 ) -> tuple[str, ...]:
     """Make NVIDIA wheel DLLs visible before CTranslate2 imports its native extension.
 
@@ -138,7 +138,7 @@ def cuda_runtime_error_message(error: BaseException) -> str:
     """Build an actionable message for a CUDA runtime dependency failure."""
     detail = str(error).strip() or type(error).__name__
     return (
-        "Transcriber could not load the NVIDIA CUDA runtime required by Faster-Whisper.\n\n"
+        "CUDA GPU initialization failed: Transcriber could not load the NVIDIA CUDA runtime required by Faster-Whisper.\n\n"
         f"Underlying error: {detail}\n\n"
         "Faster-Whisper requires cuBLAS for CUDA 12 and cuDNN 9 for CUDA 12. "
         "Installing or updating only the NVIDIA display driver does not install these runtime DLLs.\n\n"
