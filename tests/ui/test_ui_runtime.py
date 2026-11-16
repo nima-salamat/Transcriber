@@ -47,17 +47,13 @@ def test_native_shell_navigation_theme_and_geometry(qtbot, tmp_path, monkeypatch
 
     assert not (window.windowFlags() & Qt.WindowType.FramelessWindowHint)
     assert window.minimumWidth() >= 700
-    assert window.stack.count() == len(window.pages) == 11
-    assert set(window.pages) == {
-        "home", "transcription", "recording", "batch", "history", "editor",
-        "subtitles", "models", "audio", "cleanup", "settings",
-    }
+    assert window.stack.count() == len(window.pages) == 1
+    assert set(window.pages) == {"workspace"}
+    assert window.workspace.tabs.count() == 7
 
-    for page_id in window.pages:
-        window.navigate(page_id)
-        assert window.stack.currentWidget() is window.pages[page_id][1]
-        assert window.page_title.text() == window.pages[page_id][0]
-        assert window.nav_buttons[page_id].isChecked()
+    window.navigate("workspace")
+    assert window.stack.currentWidget() is window.workspace
+    assert window.page_title.text() == "Workspace"
 
     window.settings_page.theme.setCurrentIndex(window.settings_page.theme.findData("light"))
     assert settings.settings.theme == "light"
