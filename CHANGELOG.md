@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Unified workspace redesign
+
+- Replaced the permanent eleven-destination feature sidebar with one central workspace containing Transcribe, Segments, Captions, Record, Batch, Library and Audio Cleanup views.
+- Reused the existing shared transcript document and command history; the redesign changes UI composition rather than replacing ASR, persistence, recording or batch services.
+- Consolidated Projects and Recordings under one Library tab, and moved Model Library and Preferences into dedicated dialogs.
+- Moved less frequently used workspace actions into a compact More menu.
+- Made Inspector hidden by default and kept the waveform timeline fixed-height and hidden while no media is loaded, without discarding the user's visibility preference.
+- Added regression tests for workspace routing, nested Library views, secondary dialogs and panel defaults.
+
 ## 2.1.4 — Microphone device-change signal fix
 
 - Fixed the Recording page startup crash caused by trying to connect `QMediaDevices.audioInputsChanged` as a class-level signal.
