@@ -54,6 +54,18 @@ local voice input, MCP, and document/PDF export. Cloud recognition and microphon
 features remain disabled until explicitly configured in the application. For a smaller install,
 install only the core package and selected extras with `pip install -e ".[asr,documents]"`.
 
+For Windows NVIDIA GPU acceleration, install the GPU runtime into the same environment used to
+launch Transcriber:
+
+```powershell
+python -m pip install -e ".[asr,gpu]"
+```
+
+This installs CUDA 12 cuBLAS/runtime, NVRTC, nvJitLink and cuDNN 9 runtime wheels. Transcriber
+registers every NVIDIA wheel `bin` directory before Faster-Whisper imports CTranslate2. Close
+all Transcriber processes and restart the application after installation. A recent NVIDIA
+display driver alone does not provide these runtime DLLs.
+
 For development and tests:
 
 ```bash
@@ -157,7 +169,7 @@ See [Architecture](docs/ARCHITECTURE.md), [Model manager](docs/MODEL_MANAGER.md)
 ## Troubleshooting
 
 - **No local model appears:** open Model Library and inspect a CTranslate2 model. PyTorch-only Whisper repositories are intentionally rejected.
-- **CUDA load failure:** use Automatic or CPU/INT8 first. CUDA support depends on a compatible CTranslate2 wheel and CUDA/cuDNN runtime; install the combination supported by Faster-Whisper/CTranslate2 for your system.
+- **CUDA load failure:** on Windows run `python -m pip install -e ".[asr,gpu]"` from the activated environment used to launch Transcriber, then fully restart the application. The CUDA extra installs cuBLAS, CUDA Runtime, NVRTC, nvJitLink and cuDNN 9 wheels. Transcriber adds all `nvidia/*/bin` folders and CUDA Toolkit `bin` folders to the native DLL search path. The error dialog reports the active Python executable and whether the core runtime DLL files were found. If they exist but fail to load, repair the Microsoft Visual C++ 2015–2022 x64 Redistributable.
 - **`open() got an unexpected keyword argument 'metadata_errors'`:** the current Faster-Whisper release calls a PyAV API parameter removed in PyAV 19. The project pins PyAV to `av>=11,<19`; repair an existing environment with `python -m pip install --upgrade "av>=11,<19"` and restart Transcriber.
 - **Model download interrupted:** retry the same repository. Hub cache/download facilities are used to reuse completed artefacts where possible; the incomplete staging installation is not marked installed.
 - **Gated model access:** accept the repository terms on Hugging Face and provide a `HF_TOKEN` environment variable. Transcriber does not bypass access restrictions.

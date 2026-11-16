@@ -31,10 +31,13 @@ dependencies = [
 [project.optional-dependencies]
 # Faster-Whisper 1.2.1 passes metadata_errors to av.open; PyAV 19 removed it.
 asr = ["faster-whisper>=1.1,<2", "av>=11,<19"]
-# Optional Windows CUDA runtime. cuDNN is large, so GPU support is explicit opt-in.
+# Optional Windows CUDA runtime. These wheels are large, so GPU support is opt-in.
+# NVRTC and nvJitLink are installed explicitly because cuBLAS may resolve them lazily.
 gpu = [
   "nvidia-cublas-cu12>=12.9,<13; sys_platform == 'win32'",
   "nvidia-cuda-runtime-cu12>=12.9,<13; sys_platform == 'win32'",
+  "nvidia-cuda-nvrtc-cu12>=12.9,<13; sys_platform == 'win32'",
+  "nvidia-nvjitlink-cu12>=12.9,<13; sys_platform == 'win32'",
   "nvidia-cudnn-cu12>=9,<10; sys_platform == 'win32'",
 ]
 cloud = ["google-cloud-speech>=2.27,<3"]

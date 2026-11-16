@@ -136,3 +136,67 @@ def test_windows_cuda_wheel_directories_are_added_to_the_native_search_path(
     assert registered_again == ()
     assert environment["PATH"].split(";") == [*expected, r"C:\Windows\System32"]
     assert handles == expected
+
+
+def test_all_nvidia_component_bin_directories_are_discovered(tmp_path):
+    from transcriber.engines.cuda_runtime import find_windows_cuda_dll_directories
+
+    nvidia_root = tmp_path / "nvidia"
+    package_names = (
+        "cublas",
+        "cuda_runtime",
+        "cudnn",
+        "cuda_nvrtc",
+        "nvjitlink",
+        "nvfatbin",
+    )
+    expected = []
+    for package in package_names:
+        binary_dir = nvidia_root / package / "bin"
+        binary_dir.mkdir(parents=True)
+        (binary_dir / f"{package}.dll").write_bytes(b"test")
+        expected.append(binary_dir)
+
+    discovered = find_windows_cuda_dll_directories(
+        [str(tmp_path)],
+        environ={},
+    )
+
+    assert set(discovered) == set(expected)
+    assert discovered.index(nvidia_root / "cublas" / "bin") < discovered.index(
+        nvidia_root / "nvjitlink" / "bin"
+    )
+
+
+def test_cuda_toolkit_bin_from_environment_is_discovered(tmp_path):
+    from transcriber.engines.cuda_runtime import find_windows_cuda_dll_directories
+
+    toolkit_bin = tmp_path / "CUDA" / "v12.9" / "bin"
+    toolkit_bin.mkdir(parents=True)
+    (toolkit_bin / "cublas64_12.dll").write_bytes(b"test")
+
+    discovered = find_windows_cuda_dll_directories(
+        [],
+        environ={"CUDA_PATH": str(toolkit_bin.parent)},
+    )
+
+    assert toolkit_bin in discovered
+
+
+def test_cuda_error_message_reports_runtime_probe_on_windows(tmp_path, monkeypatch):
+    from transcriber.engines import cuda_runtime
+
+    monkeypatch.setattr(cuda_runtime.os, "name", "nt")
+    monkeypatch.setattr(
+        cuda_runtime,
+        "find_windows_cuda_dll_directories",
+        lambda: (tmp_path,),
+    )
+    (tmp_path / "cublas64_12.dll").write_bytes(b"test")
+
+    message = cuda_runtime.cuda_runtime_error_message(RuntimeError(CUDA_ERROR))
+
+    assert "Python executable:" in message
+    assert "cublas64_12.dll:" in message
+    assert str(tmp_path / "cublas64_12.dll") in message
+    assert "Visual C++" in message
