@@ -39,8 +39,8 @@ class AppSettings:
     geometry: str | None = None
     window_state: str | None = None
     sidebar_collapsed: bool = False
-    sidebar_visible: bool = True
-    inspector_visible: bool = True
+    sidebar_visible: bool = False
+    inspector_visible: bool = False
     timeline_visible: bool = True
     opencode_path: str | None = None
     opencode_project_directory: str | None = None
@@ -60,7 +60,7 @@ class AppSettings:
     max_active_models: int = 2
     ram_budget_mb: int = 8192
     vram_budget_mb: int = 4096
-    last_page: str = "home"
+    last_page: str = "transcription"
 
     def validate(self) -> None:
         self.theme = str(self.theme)
@@ -99,8 +99,8 @@ class AppSettings:
             return default
 
         self.sidebar_collapsed = as_bool(self.sidebar_collapsed, False)
-        self.sidebar_visible = as_bool(self.sidebar_visible, True)
-        self.inspector_visible = as_bool(self.inspector_visible, True)
+        self.sidebar_visible = as_bool(self.sidebar_visible, False)
+        self.inspector_visible = as_bool(self.inspector_visible, False)
         self.timeline_visible = as_bool(self.timeline_visible, True)
         self.wake_enabled = as_bool(self.wake_enabled, False)
         self.voice_auto_submit = as_bool(self.voice_auto_submit, False)
