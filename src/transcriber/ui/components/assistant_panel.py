@@ -646,11 +646,8 @@ class AssistantPanel(QWidget):
     def _set_voice_silence_seconds(self, value: float):
         if self.settings_store:
             self.settings_store.update(voice_silence_seconds=float(value))
-        if self.voice_agent is not None and self.voice_agent.mode == "command":
-            self._append_message(
-                "system",
-                "The new silence interval will apply to the next voice command."
-            )
+        if self.voice_agent is not None:
+            self.voice_agent.set_silence_seconds(value)
 
     def open_prompt_library(self):
         dialog = PromptLibraryDialog(self.prompt_library, self)

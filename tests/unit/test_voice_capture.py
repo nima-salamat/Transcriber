@@ -31,3 +31,16 @@ def test_silence_before_the_first_speech_does_not_finish_a_command():
 
     assert not gate.has_speech
     assert not gate.should_finish(30.0)
+
+
+
+def test_live_agent_setting_updates_the_current_silence_gate():
+    from transcriber.assistant.speech_input import VoskVoiceAgent
+
+    agent = VoskVoiceAgent("unused-model-path", "transcriber", silence_seconds=1.5)
+    agent._silence_gate = AudioSilenceGate(silence_seconds=1.5)
+
+    agent.set_silence_seconds(2.4)
+
+    assert agent.silence_seconds == 2.4
+    assert agent._silence_gate.silence_seconds == 2.4

@@ -7,7 +7,6 @@ import re
 import tempfile
 from pathlib import Path
 
-
 DEFAULT_PROMPTS: dict[str, str] = {
     "00-AGENT.md": """# Transcriber agent — coordinator instructions
 

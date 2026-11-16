@@ -39,6 +39,7 @@ from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
 from transcriber.ipc.server import LocalIPCServer
 from transcriber.storage.recordings import RecordingRepository
+from transcriber.transcription.segments import TranscriptionOptions
 from transcriber.ui.components.assistant_panel import AssistantPanel
 from transcriber.ui.components.waveform import WaveformTimeline
 from transcriber.ui.components.workspace_popups import CommandPalettePopup, GlobalSearchPopup
@@ -55,7 +56,6 @@ from transcriber.ui.pages.subtitle_studio import SubtitleStudioPage
 from transcriber.ui.pages.transcript_editor import TranscriptEditorPage
 from transcriber.ui.pages.transcription import TranscriptionPage
 from transcriber.ui.theme import stylesheet
-from transcriber.transcription.segments import TranscriptionOptions
 from transcriber.ui.workers import FunctionWorker
 
 

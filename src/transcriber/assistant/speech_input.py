@@ -201,6 +201,19 @@ class VoskVoiceAgent:
                 raise RuntimeError("The previous voice command is still being processed.")
             self._ptt_requested.set()
 
+    def set_silence_seconds(self, seconds: float):
+        """Update the endpointing threshold, including an active command."""
+        try:
+            value = float(seconds)
+        except (TypeError, ValueError):
+            value = 1.5
+        if not (0.5 <= value <= 8.0):
+            value = 1.5
+        with self._lock:
+            self.silence_seconds = value
+            if self._silence_gate is not None:
+                self._silence_gate.silence_seconds = value
+
     def resume_after_processing(self):
         """Resume wake detection after the current audio/AI turn is ready."""
         with self._lock:
