@@ -38,33 +38,33 @@ The two images currently in the repository (`screenshot_1.png` and `screenshot_2
 
 ## Installation
 
-Create and activate a virtual environment, then install the runtime dependencies:
-
-```bash
-python -m venv .venv
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-# Linux: source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-pip install -e . --no-deps
-```
-
-`requirements.txt` includes the runtime integrations for local ASR, optional cloud recognition,
-local voice input, MCP, and document/PDF export. Cloud recognition and microphone-based voice
-features remain disabled until explicitly configured in the application. For a smaller install,
-install only the core package and selected extras with `pip install -e ".[asr,documents]"`.
-
-For Windows NVIDIA GPU acceleration, install the GPU runtime into the same environment used to
-launch Transcriber:
+Create and activate a virtual environment, then install the local speech-recognition
+runtime:
 
 ```powershell
-python -m pip install -e ".[asr,gpu]"
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements-asr.txt
 ```
 
-This installs CUDA 12 cuBLAS/runtime, NVRTC, nvJitLink and cuDNN 9 runtime wheels. Transcriber
-registers every NVIDIA wheel `bin` directory before Faster-Whisper imports CTranslate2. Close
-all Transcriber processes and restart the application after installation. A recent NVIDIA
-display driver alone does not provide these runtime DLLs.
+`requirements.txt` is the core GUI/runtime dependency lock. It does not install the optional
+speech-recognition engine or NVIDIA GPU libraries. `requirements-asr.txt` adds Faster-Whisper
+and the supported PyAV range for CPU or automatic-device recognition. For a core-only GUI
+environment, install `requirements.txt` and then `pip install -e . --no-deps`.
+
+For Windows x64 NVIDIA GPU acceleration, use the dedicated requirements file instead of
+manually installing individual CUDA wheels:
+
+```powershell
+python -m pip install -r requirements-windows-gpu.txt
+```
+
+This installs the core application, Faster-Whisper/PyAV, and the CUDA 12 cuBLAS/runtime, NVRTC,
+nvJitLink and cuDNN 9 wheels into the active Python environment. Transcriber registers every
+NVIDIA wheel `bin` directory before loading CTranslate2. Close all Transcriber processes and
+restart the application after installation. A recent NVIDIA display driver alone does not
+provide these runtime DLLs. The same command can be used to repair an existing environment.
 
 For development and tests:
 
@@ -169,7 +169,8 @@ See [Architecture](docs/ARCHITECTURE.md), [Model manager](docs/MODEL_MANAGER.md)
 ## Troubleshooting
 
 - **No local model appears:** open Model Library and inspect a CTranslate2 model. PyTorch-only Whisper repositories are intentionally rejected.
-- **CUDA load failure:** on Windows run `python -m pip install -e ".[asr,gpu]"` from the activated environment used to launch Transcriber, then fully restart the application. The CUDA extra installs cuBLAS, CUDA Runtime, NVRTC, nvJitLink and cuDNN 9 wheels. Transcriber adds all `nvidia/*/bin` folders and CUDA Toolkit `bin` folders to the native DLL search path. The error dialog reports the active Python executable and whether the core runtime DLL files were found. If they exist but fail to load, repair the Microsoft Visual C++ 2015–2022 x64 Redistributable.
+- **CUDA load failure:** on Windows run `python -m pip install -r requirements-windows-gpu.txt` from the repository root and the same activated environment used to launch Transcriber, then fully restart the application. This installs cuBLAS, CUDA Runtime, NVRTC, nvJitLink and cuDNN 9 wheels. Transcriber adds all `nvidia/*/bin` folders and CUDA Toolkit `bin` folders to the native DLL search path. The error dialog reports the active Python executable, installed NVIDIA wheel versions and whether core runtime DLL files were found. If DLL files exist but still cannot load, repair the Microsoft Visual C++ 2015–2022 x64 Redistributable and check for conflicting CUDA versions.
+- **OpenCode ACP fails with WinError 193 on Windows:** select the npm `opencode.cmd` launcher (normally `%APPDATA%\\npm\\opencode.cmd`) in Settings → OpenCode executable, or clear the field and let Transcriber resolve OpenCode from PATH. Do not point Settings at the extensionless npm JavaScript shim. Transcriber runs `.cmd`/`.bat` launchers through the Windows command processor and uses the same launcher logic for **Test OpenCode executable**.
 - **`open() got an unexpected keyword argument 'metadata_errors'`:** the current Faster-Whisper release calls a PyAV API parameter removed in PyAV 19. The project pins PyAV to `av>=11,<19`; repair an existing environment with `python -m pip install --upgrade "av>=11,<19"` and restart Transcriber.
 - **Model download interrupted:** retry the same repository. Hub cache/download facilities are used to reuse completed artefacts where possible; the incomplete staging installation is not marked installed.
 - **Gated model access:** accept the repository terms on Hugging Face and provide a `HF_TOKEN` environment variable. Transcriber does not bypass access restrictions.

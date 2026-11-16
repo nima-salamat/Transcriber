@@ -8,6 +8,7 @@ transitive dependencies in another NVIDIA component directory.
 
 from __future__ import annotations
 
+import importlib.metadata
 import os
 import site
 import sys
@@ -209,7 +210,7 @@ def register_cuda_runtime_dll_directories(
 
 
 def cuda_runtime_diagnostics() -> str:
-    """Describe whether the required CUDA 12/cuDNN 9 DLLs are visible."""
+    """Describe installed NVIDIA wheels and whether their core DLLs are discoverable."""
     directories = find_windows_cuda_dll_directories()
     required = (
         "cublas64_12.dll",
@@ -219,7 +220,11 @@ def cuda_runtime_diagnostics() -> str:
     )
     found: dict[str, str | None] = {
         name: next(
-            (str(directory / name) for directory in directories if (directory / name).is_file()),
+            (
+                str(directory / name)
+                for directory in directories
+                if (directory / name).is_file()
+            ),
             None,
         )
         for name in required
@@ -227,11 +232,27 @@ def cuda_runtime_diagnostics() -> str:
     dll_status = "; ".join(
         f"{name}: {path if path else 'not found'}" for name, path in found.items()
     )
+    package_names = (
+        "nvidia-cublas-cu12",
+        "nvidia-cuda-runtime-cu12",
+        "nvidia-cuda-nvrtc-cu12",
+        "nvidia-nvjitlink-cu12",
+        "nvidia-cudnn-cu12",
+    )
+    package_status = []
+    for name in package_names:
+        try:
+            version = importlib.metadata.version(name)
+            package_status.append(f"{name}=={version}")
+        except importlib.metadata.PackageNotFoundError:
+            package_status.append(f"{name}: NOT INSTALLED")
     search_status = "; ".join(str(path) for path in directories[:8]) or "no CUDA DLL folders discovered"
     if len(directories) > 8:
         search_status += f"; and {len(directories) - 8} more"
     return (
         f"Python executable: {sys.executable}\n"
+        f"Python prefix: {sys.prefix}\n"
+        f"NVIDIA runtime packages: {'; '.join(package_status)}\n"
         f"Runtime DLL probe: {dll_status}\n"
         f"CUDA DLL search folders: {search_status}"
     )
@@ -280,10 +301,12 @@ def cuda_runtime_error_message(error: BaseException) -> str:
         "Faster-Whisper requires cuBLAS for CUDA 12 and cuDNN 9 for CUDA 12. "
         "Installing or updating only the NVIDIA display driver does not install these runtime DLLs.\n\n"
         "On Windows, install the optional runtime into the same Python environment that runs Transcriber:\n"
-        '  python -m pip install -e ".[asr,gpu]"\n\n'
+        '  python -m pip install -r requirements-windows-gpu.txt\n'
+        '  (or, from the repository root: python -m pip install -e ".[asr,gpu]")\n\n'
         "Then completely restart Transcriber. The GPU extra installs the CUDA 12 "
         "cuBLAS/runtime, NVRTC, nvJitLink and cuDNN 9 wheels. Transcriber registers "
-        "all NVIDIA wheel DLL folders and CUDA Toolkit folders before loading CTranslate2.\n\n"
+        "all NVIDIA wheel DLL folders and CUDA Toolkit folders before loading CTranslate2.\n"
+        "The diagnostics above show which NVIDIA wheels and DLL files are visible to this exact Python environment.\n\n"
         "If the DLLs are reported as found but still cannot load, repair the Microsoft "
         "Visual C++ 2015–2022 x64 Redistributable and check for conflicting CUDA DLL versions.\n\n"
         "For immediate use, choose Settings → Recognition → Compute device → Automatic or CPU. "

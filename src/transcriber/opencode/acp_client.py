@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import shutil
 import subprocess
 import threading
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 
@@ -16,10 +17,79 @@ class ACPError(RuntimeError):
     pass
 
 
+def resolve_opencode_executable(
+    executable: str | None = None,
+    *,
+    is_windows: bool | None = None,
+) -> str:
+    """Resolve OpenCode, including extensionless paths to Windows npm shims."""
+    windows = os.name == "nt" if is_windows is None else bool(is_windows)
+    configured = str(executable or "opencode").strip().strip('"')
+    if not configured:
+        configured = "opencode"
+    expanded = os.path.expandvars(os.path.expanduser(configured))
+
+    # npm installs both an extensionless shim and Windows command wrappers.
+    # If Settings contains the extensionless path, prefer the .cmd/.exe wrapper
+    # instead of passing the JavaScript shim to CreateProcess (WinError 193).
+    if windows and not PureWindowsPath(expanded).suffix:
+        for suffix in (".cmd", ".bat", ".exe", ".ps1"):
+            candidate = Path(expanded + suffix)
+            if candidate.is_file():
+                return str(candidate)
+
+        is_explicit_path = (
+            "\\" in expanded
+            or "/" in expanded
+            or PureWindowsPath(expanded).drive
+        )
+        if is_explicit_path and Path(expanded).is_file():
+            raise ACPError(
+                f"OpenCode points to an extensionless Windows script ({expanded}). "
+                "Select the adjacent opencode.cmd file in Settings → OpenCode executable."
+            )
+
+    return shutil.which(expanded) or expanded
+
+
+def build_opencode_invocation(
+    executable: str,
+    arguments: list[str] | tuple[str, ...],
+    *,
+    is_windows: bool | None = None,
+) -> tuple[list[str] | str, dict[str, Any]]:
+    """Build a safe subprocess invocation for native executables and Windows shims."""
+    windows = os.name == "nt" if is_windows is None else bool(is_windows)
+    target = str(executable)
+    suffix = PureWindowsPath(target).suffix.casefold() if windows else Path(target).suffix.casefold()
+    args = [target, *(str(item) for item in arguments)]
+
+    if windows and suffix in {".cmd", ".bat"}:
+        # cmd/bat files are command scripts, not PE executables. Let cmd.exe
+        # execute the quoted command line while keeping argv quoting consistent.
+        return subprocess.list2cmdline(args), {"shell": True}
+
+    if windows and suffix == ".ps1":
+        powershell = shutil.which("pwsh") or shutil.which("powershell") or "powershell.exe"
+        return [
+            powershell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            target,
+            *(str(item) for item in arguments),
+        ], {}
+
+    return args, {}
+
+
 class OpenCodeACPClient:
     def __init__(self, executable: str | None = None, *, cwd: Path | None = None,
                  on_notification: Callable[[dict[str, Any]], None] | None = None):
-        self.executable = executable or shutil.which("opencode") or "opencode"
+        self.executable = executable or "opencode"
         self.cwd = Path(cwd or Path.cwd()).expanduser().resolve()
         self.on_notification = on_notification
         self.process: subprocess.Popen | None = None
@@ -47,16 +117,26 @@ class OpenCodeACPClient:
             return self.agent_capabilities
         if not self.cwd.is_absolute() or not self.cwd.is_dir():
             raise ValueError(f"ACP working directory must exist and be absolute: {self.cwd}")
-        resolved = shutil.which(self.executable) or self.executable
+        resolved = resolve_opencode_executable(self.executable)
+        command, launch_options = build_opencode_invocation(resolved, ["acp"])
         try:
             self.process = subprocess.Popen(
-                [resolved, "acp"], cwd=self.cwd, stdin=subprocess.PIPE,
+                command, cwd=self.cwd, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                 encoding="utf-8", errors="replace", bufsize=1,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                **launch_options,
             )
         except OSError as exc:
-            raise ACPError(f"Could not start OpenCode ACP ({resolved}): {exc}") from exc
+            hint = ""
+            if os.name == "nt" and getattr(exc, "winerror", None) == 193:
+                hint = (
+                    " Windows cannot execute this file directly. Choose the npm "
+                    "opencode.cmd launcher, or leave the setting empty to resolve it from PATH."
+                )
+            raise ACPError(
+                f"Could not start OpenCode ACP ({resolved}): {exc}.{hint}"
+            ) from exc
         self._closed.clear()
         self._reader = threading.Thread(target=self._read_stdout, name="OpenCode-ACP-reader", daemon=True)
         self._stderr_reader = threading.Thread(target=self._read_stderr, name="OpenCode-ACP-stderr", daemon=True)

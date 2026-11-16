@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -25,6 +24,10 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.audio.devices import audio_device_id
+from transcriber.opencode.acp_client import (
+    build_opencode_invocation,
+    resolve_opencode_executable,
+)
 from transcriber.storage.backup import create_backup, restore_backup
 from transcriber.ui.widgets import Card, page_header
 from transcriber.ui.workers import FunctionWorker
@@ -240,9 +243,15 @@ class SettingsPage(QWidget):
         agent_layout = QVBoxLayout(agent)
         agent_layout.setContentsMargins(18, 16, 18, 16)
         executable_row = QHBoxLayout()
-        executable_row.addWidget(QLabel("OpenCode executable"))
+        executable_row.addWidget(QLabel("OpenCode launcher"))
         self.opencode_path = QLineEdit(current.opencode_path or "")
-        self.opencode_path.setPlaceholderText("Leave empty to use PATH")
+        self.opencode_path.setPlaceholderText(
+            "Leave empty to use PATH (Windows npm installs: opencode.cmd)"
+        )
+        self.opencode_path.setToolTip(
+            "On Windows, select the opencode.cmd launcher from %APPDATA%\\npm. "
+            "The extensionless npm shim is not a native executable."
+        )
         browse_executable = QPushButton("Browse…")
         browse_executable.clicked.connect(self._browse_opencode)
         executable_row.addWidget(self.opencode_path, 1)
@@ -270,7 +279,7 @@ class SettingsPage(QWidget):
         agent_buttons = QHBoxLayout()
         save_agent = QPushButton("Save Agent settings")
         save_agent.clicked.connect(self._save_agent_settings)
-        self.test_opencode = QPushButton("Test OpenCode executable")
+        self.test_opencode = QPushButton("Test OpenCode launcher")
         self.test_opencode.clicked.connect(self._test_opencode)
         agent_buttons.addWidget(save_agent)
         agent_buttons.addWidget(self.test_opencode)
@@ -516,7 +525,12 @@ class SettingsPage(QWidget):
             edit.setText(path)
 
     def _browse_opencode(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Choose OpenCode executable", self.opencode_path.text())
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose OpenCode launcher",
+            self.opencode_path.text(),
+            "OpenCode launchers (*.exe *.cmd *.bat *.ps1);;All files (*)",
+        )
         if path:
             self.opencode_path.setText(path)
 
@@ -607,16 +621,32 @@ class SettingsPage(QWidget):
         self.agent_settings_saved.emit()
 
     def _test_opencode(self):
-        executable = self.opencode_path.text().strip() or shutil.which("opencode") or "opencode"
+        configured = self.opencode_path.text().strip() or None
         self.test_opencode.setEnabled(False)
 
         def run(_emit):
+            executable = resolve_opencode_executable(configured)
+            command, launch_options = build_opencode_invocation(
+                executable, ["--version"]
+            )
             result = subprocess.run(
-                [executable, "--version"], capture_output=True, text=True, timeout=8, check=False,
+                command,
+                capture_output=True,
+                text=True,
+                timeout=12,
+                check=False,
+                **launch_options,
             )
             if result.returncode != 0:
-                raise RuntimeError(result.stderr.strip() or f"OpenCode exited with code {result.returncode}")
-            return result.stdout.strip() or result.stderr.strip() or "OpenCode executable responded"
+                detail = result.stderr.strip() or result.stdout.strip()
+                raise RuntimeError(
+                    detail or f"OpenCode exited with code {result.returncode}"
+                )
+            return (
+                result.stdout.strip()
+                or result.stderr.strip()
+                or f"OpenCode responded using {executable}"
+            )
 
         worker = FunctionWorker(run)
         worker.signals.result.connect(lambda message: self._opencode_test_result(True, message))

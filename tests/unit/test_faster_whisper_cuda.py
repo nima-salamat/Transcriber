@@ -84,6 +84,7 @@ def test_explicit_cuda_reports_install_instructions_instead_of_silent_cpu_fallba
 
     message = str(error.value)
     assert "nvidia-cublas-cu12" in message or ".[asr,gpu]" in message
+    assert "requirements-windows-gpu.txt" in message
     assert "cuDNN 9" in message
     assert calls == [("cuda", "float16")]
 
@@ -215,3 +216,35 @@ def test_cuda_error_message_reports_runtime_probe_on_windows(tmp_path, monkeypat
     assert "cublas64_12.dll:" in message
     assert str(tmp_path / "cublas64_12.dll") in message
     assert "Visual C++" in message
+
+
+
+def test_cuda_diagnostics_report_installed_runtime_wheels_and_missing_packages(
+    tmp_path, monkeypatch
+):
+    from importlib.metadata import PackageNotFoundError
+
+    from transcriber.engines import cuda_runtime
+
+    monkeypatch.setattr(cuda_runtime, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        cuda_runtime,
+        "find_windows_cuda_dll_directories",
+        lambda: (tmp_path,),
+    )
+    (tmp_path / "cublas64_12.dll").write_bytes(b"test")
+
+    def package_version(name):
+        if name == "nvidia-cublas-cu12":
+            return "12.9.2.5"
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(
+        cuda_runtime.importlib.metadata, "version", package_version
+    )
+
+    message = cuda_runtime.cuda_runtime_diagnostics()
+
+    assert "nvidia-cublas-cu12==12.9.2.5" in message
+    assert "nvidia-cudnn-cu12: NOT INSTALLED" in message
+    assert str(tmp_path / "cublas64_12.dll") in message
