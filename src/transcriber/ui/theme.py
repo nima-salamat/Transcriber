@@ -35,6 +35,20 @@ def stylesheet(theme: str) -> str:
         font-weight: 650;
         background: {c['surface_2']};
     }}
+    QPushButton#TransportPlayButton {{
+        min-height: 13px;
+        padding: 4px 7px;
+        font-size: 11px;
+        font-weight: 700;
+    }}
+    QComboBox#TransportSpeed {{
+        min-height: 13px;
+        padding: 4px 7px;
+    }}
+    QPushButton#WorkspaceToolButton {{
+        min-height: 13px;
+        padding: 5px 8px;
+    }}
     QPushButton#WorkspaceToolButton:hover {{
         background: {c['surface_hover']};
         border-color: {c['accent']};
