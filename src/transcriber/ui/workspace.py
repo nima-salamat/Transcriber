@@ -14,8 +14,10 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -78,17 +80,14 @@ class UnifiedWorkspace(QWidget):
         identity.addWidget(self.document_subtitle)
         header_layout.addLayout(identity, 1)
 
-        self._buttons: dict[str, QPushButton] = {}
-        actions = (
+        self._buttons: dict[str, object] = {}
+        primary_actions = (
             ("record", "Record", "Open the microphone recording workspace"),
             ("batch", "Batch", "Process a group of media files"),
             ("library", "Library", "Browse projects and local recordings"),
-            ("cleanup", "Audio cleanup", "Clean audio without overwriting the source"),
-            ("models", "Models", "Manage installed and downloadable speech models"),
-            ("settings", "Preferences", "Open application preferences"),
             ("export", "Export", "Export the current transcript or captions"),
         )
-        for key, label, tooltip in actions:
+        for key, label, tooltip in primary_actions:
             button = QPushButton(label, self.header)
             button.setObjectName("WorkspaceToolButton")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -99,6 +98,27 @@ class UnifiedWorkspace(QWidget):
             )
             self._buttons[key] = button
             header_layout.addWidget(button)
+
+        more_button = QToolButton(self.header)
+        more_button.setText("More")
+        more_button.setObjectName("WorkspaceToolButton")
+        more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        more_button.setToolTip("Advanced and less frequently used tools")
+        more_button.setAccessibleName("More workspace tools")
+        more_menu = QMenu(more_button)
+        for key, label in (
+            ("cleanup", "Audio cleanup"),
+            ("models", "Manage models…"),
+            ("settings", "Preferences…"),
+        ):
+            action = more_menu.addAction(label)
+            action.triggered.connect(
+                lambda _checked=False, item=key: self.action_requested.emit(item)
+            )
+            self._buttons[key] = action
+        more_button.setMenu(more_menu)
+        self._buttons["more"] = more_button
+        header_layout.addWidget(more_button)
 
         root.addWidget(self.header)
 
@@ -179,5 +199,20 @@ class UnifiedWorkspace(QWidget):
             6: "cleanup",
         }.get(index, "transcription")
 
-    def button(self, action: str) -> QPushButton | None:
+    def button(self, action: str):
+        """Return a toolbar button or a More-menu action for UI tests/integration."""
         return self._buttons.get(action)
+
+    def trigger(self, action: str) -> bool:
+        control = self._buttons.get(action)
+        if control is None:
+            return False
+        trigger = getattr(control, "trigger", None)
+        if callable(trigger):
+            trigger()
+            return True
+        click = getattr(control, "click", None)
+        if callable(click):
+            click()
+            return True
+        return False
