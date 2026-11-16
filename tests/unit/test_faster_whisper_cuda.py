@@ -9,7 +9,6 @@ from transcriber.engines import faster_whisper as engine_module
 from transcriber.engines.cuda_runtime import is_missing_cuda_library_error
 from transcriber.transcription.segments import TranscriptionOptions
 
-
 CUDA_ERROR = "Library cublas64_12.dll is not found or cannot be loaded"
 
 
