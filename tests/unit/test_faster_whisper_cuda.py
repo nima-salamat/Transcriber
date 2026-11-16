@@ -5,8 +5,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from transcriber.engines.cuda_runtime import is_missing_cuda_library_error
 from transcriber.engines import faster_whisper as engine_module
+from transcriber.engines.cuda_runtime import is_missing_cuda_library_error
 from transcriber.transcription.segments import TranscriptionOptions
 
 
