@@ -19,12 +19,16 @@ This folder is the single source of truth for the user's editable prompt pack:
 
 {PROMPT_DIRECTORY}
 
-At the beginning of a new session, read `00-AGENT.md` and `01-INDEX.md`.
-Before handling a task, read the relevant specialist file(s) listed in the
-index. Do not load unrelated prompt files. If a requested topic does not have a
-specialist file, explain that and follow the closest general workflow. The user
-may edit these files at any time; always read the current file contents rather
-than relying on cached copies.
+At the beginning of a new session, use the current contents of
+`00-AGENT.md` and `01-INDEX.md`. Before handling a task, use the relevant
+specialist file(s) listed in the index. The Transcriber host may preload the
+actual current contents under headings such as `PROMPT FILE: 20-transcript-editing.md`.
+When those contents are included inline, they have already been read by the host:
+apply them directly and do not ask for filesystem access or claim to have opened
+files that were not supplied. Do not load unrelated prompt files. If a requested
+topic does not have a specialist file, explain that and follow the closest
+general workflow. The user may edit these files at any time; use current contents
+rather than relying on cached copies.
 
 ## Working rules
 
@@ -65,6 +69,7 @@ Read only the specialist prompts relevant to the current request.
 | `30-subtitles.md` | Preparing subtitle cues, readability, timing validation or SRT/VTT/ASS export |
 | `40-audio.md` | Inspecting audio, playback, recording or non-destructive cleanup |
 | `50-workspace-actions.md` | Navigating Transcriber, using MCP actions, permissions or approvals |
+| `60-voice-agent.md` | Choosing a Vosk wake model, activation phrase or voice-agent behavior |
 """,
     "10-transcription.md": """# Transcription workflow
 
@@ -126,6 +131,31 @@ formats. It is not the primary place to rewrite the transcript.
 - Before recording or exporting, confirm the destination and available space
   where relevant. Never retain temporary voice-command audio as a recording.
 """,
+    "60-voice-agent.md": """# Voice agent and wake-word workflow
+
+- The selected Vosk model is the local wake-word detector only. It is not the
+  command transcription model. The captured command is transcribed by the
+  selected local Faster-Whisper model.
+- Before enabling wake detection, verify that the selected Vosk model is
+  installed, compatible and appropriate for the language/accent of the
+  activation phrase. Different Vosk models do not share the same vocabulary.
+- Use a short, distinctive activation phrase made of words the selected model
+  can recognize. Do not promise reliable detection for an out-of-vocabulary
+  name or unsupported language; suggest a supported phrase or a matching model.
+- Vosk listens locally for the configured activation phrase. Only audio after
+  the phrase is collected for the command. The recorder waits for the complete
+  configured continuous-silence interval (1.5 seconds by default), not the
+  first short pause.
+- Voice commands are transcribed locally. Do not send raw microphone audio to
+  OpenCode or a cloud engine. The application uses a temporary WAV only to
+  adapt the in-memory audio buffer to the local ASR interface and removes it
+  after recognition.
+- Review-before-send is the default. Automatic Agent submission is an explicit
+  user setting and requires an active OpenCode connection.
+- When troubleshooting, inspect the chosen Vosk model, its language, the
+  configured phrase, microphone input and the visible voice status. Do not
+  assume the wake detector is active merely because a model is installed.
+""",
     "50-workspace-actions.md": """# Transcriber workspace actions and permissions
 
 - Discover available MCP actions and their schemas before invoking an action.
@@ -177,6 +207,71 @@ class PromptLibrary:
             if path.is_file() and not path.is_symlink():
                 items.append((path.name, path.stem.replace("-", " ").replace("_", " ").title()))
         return sorted(items, key=lambda item: item[0].casefold())
+
+    def prompt_files_for_request(self, request: str) -> list[str]:
+        """Select the specialist prompts relevant to a user request."""
+        query = " ".join(str(request or "").casefold().split())
+        specialists = {
+            "10-transcription.md": (
+                "transcription", "transcribe", "speech recognition", "faster-whisper",
+                "whisper", "asr", "vosk", "گفتار", "تشخیص گفتار", "تبدیل صوت",
+                "رونویسی", "مدل تشخیص",
+            ),
+            "20-transcript-editing.md": (
+                "edit transcript", "correct transcript", "segment", "speaker",
+                "transcript editor", "ویرایش متن", "اصلاح متن", "تصحیح متن",
+                "گوینده", "بخش های متن", "بخش‌های متن",
+            ),
+            "30-subtitles.md": (
+                "subtitle", "subtitles", "srt", "webvtt", "vtt", "ass ",
+                "زیرنویس", "زیرنویس‌ها", "زیرنویس ها", "تایم‌بندی زیرنویس",
+            ),
+            "40-audio.md": (
+                "audio cleanup", "noise removal", "record audio", "microphone",
+                "playback", "صدا", "ضبط", "میکروفون", "نویز", "پاکسازی صوت",
+            ),
+            "60-voice-agent.md": (
+                "wake", "wake word", "activation phrase", "activation keyword",
+                "voice agent", "spoken command", "vosk model", "کلمه کلیدی",
+                "کلمهٔ کلیدی", "کلمه فعال", "کلمهٔ فعال", "فعال‌ساز",
+                "فعال ساز", "بیدارباش", "دستیار صوتی", "فرمان صوتی",
+            ),
+        }
+        selected = ["50-workspace-actions.md"]
+        for filename, keywords in specialists.items():
+            if any(keyword in query for keyword in keywords):
+                selected.append(filename)
+        if len(selected) == 1:
+            selected.append("10-transcription.md")
+        return selected
+
+    def context_for_request(self, request: str) -> str:
+        """Read current coordinator/index/specialist files and include their contents inline."""
+        filenames = [
+            "00-AGENT.md",
+            "01-INDEX.md",
+            *self.prompt_files_for_request(request),
+        ]
+        sections = [
+            "The Transcriber application has loaded the current prompt-pack files listed below. "
+            "Their actual contents are included inline in this request. Apply these instructions "
+            "directly; do not ask the user to grant filesystem access or claim to have opened files "
+            "that are not included here.",
+        ]
+        for filename in dict.fromkeys(filenames):
+            sections.extend((f"===== PROMPT FILE: {filename} =====", self.read(filename)))
+        return "\n\n".join(sections)
+
+    def export_prompt_pack(self) -> str:
+        """Export the current complete prompt library as self-contained text."""
+        sections = [
+            "TRANSCRIBER AI AGENT — COMPLETE PROMPT PACK",
+            "The full current contents of the prompt library are included below. "
+            "Use the coordinator and index to select specialist instructions for each task.",
+        ]
+        for filename, _title in self.list_prompts():
+            sections.extend((f"===== PROMPT FILE: {filename} =====", self.read(filename)))
+        return "\n\n".join(sections)
 
     def read(self, filename: str) -> str:
         name = Path(filename).name
@@ -230,12 +325,5 @@ class PromptLibrary:
         return candidate
 
     def bootstrap_prompt(self) -> str:
-        folder = str(self.directory)
-        return (
-            "Load the Transcriber specialist prompt pack before acting. "
-            f"Read the coordinator and index files from this absolute directory: {folder}. "
-            "First read 00-AGENT.md and 01-INDEX.md, then read only the specialist "
-            "prompt files relevant to my request. Follow their workflow and safety "
-            "rules. Re-read the current files if their content may have changed. "
-            "Do not claim to have read a file until you have actually read it."
-        )
+        """Backward-compatible name for copying a self-contained prompt pack."""
+        return self.export_prompt_pack()

@@ -1,0 +1,4 @@
+# Local voice agent: Vosk wake-word detection + Faster-Whisper command transcription.
+# Run from the repository root in the active Python environment used by Transcriber.
+-r requirements-asr.txt
+-e .[voice]

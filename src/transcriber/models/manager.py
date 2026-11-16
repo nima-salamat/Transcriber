@@ -770,6 +770,14 @@ class ModelManager:
             results.append(item)
         return results
 
+    def installed_vosk_models(self, *, include_sizes: bool = False) -> list[dict]:
+        """Return only registered, validated Vosk models suitable for wake detection."""
+        return [
+            item
+            for item in self.installed(include_sizes=include_sizes)
+            if item.get("runtime") == "vosk" and item.get("compatible")
+        ]
+
     def delete(self, repo_id: str) -> None:
         with self._lock:
             if repo_id in self._installing:

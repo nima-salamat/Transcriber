@@ -70,8 +70,8 @@ class PromptLibraryDialog(QDialog):
         self.import_file_button.clicked.connect(self.import_from_file)
         self.open_folder_button = QPushButton("Open prompt folder")
         self.open_folder_button.clicked.connect(self.open_folder)
-        self.copy_agent_button = QPushButton("Copy coordinator prompt")
-        self.copy_agent_button.clicked.connect(self.copy_coordinator)
+        self.copy_agent_button = QPushButton("Copy full prompt pack")
+        self.copy_agent_button.clicked.connect(self.copy_prompt_pack)
         self.save_button = QPushButton("Save")
         self.save_button.clicked.connect(self.save_current)
         self.use_button = QPushButton("Use selected prompt")
@@ -217,9 +217,11 @@ class PromptLibraryDialog(QDialog):
         except (OSError, ValueError, UnicodeError) as exc:
             QMessageBox.warning(self, "Cannot import prompt", str(exc))
 
-    def copy_coordinator(self):
-        QApplication.clipboard().setText(self.library.bootstrap_prompt())
-        self.filename_label.setText("Coordinator prompt copied to clipboard")
+    def copy_prompt_pack(self):
+        if self._dirty and not self.save_current():
+            return
+        QApplication.clipboard().setText(self.library.export_prompt_pack())
+        self.filename_label.setText("Complete prompt pack copied to clipboard")
 
     def open_folder(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.library.directory)))

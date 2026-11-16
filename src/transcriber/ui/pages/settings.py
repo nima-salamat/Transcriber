@@ -261,13 +261,39 @@ class SettingsPage(QWidget):
             "OpenCode project", current.opencode_project_directory or str(Path.cwd()), agent_layout,
         )
         wake_row = QHBoxLayout()
-        wake_row.addWidget(QLabel("Local wake phrase"))
+        wake_row.addWidget(QLabel("Activation keyword / phrase"))
         self.wake_phrase = QLineEdit(current.wake_phrase)
+        self.wake_phrase.setPlaceholderText("For example: transcriber")
+        self.wake_phrase.setToolTip(
+            "Vosk listens for this exact phrase. Choose words that the selected Vosk model supports."
+        )
         wake_row.addWidget(self.wake_phrase, 1)
         agent_layout.addLayout(wake_row)
-        self.wake_model = self._path_row(
-            "Vosk model directory", current.wake_model_directory or "", agent_layout,
+
+        wake_model_title = QLabel("Wake-word Vosk model")
+        wake_model_title.setToolTip(
+            "This model is used only to detect the activation phrase, not to transcribe the command."
         )
+        agent_layout.addWidget(wake_model_title)
+        wake_model_row = QHBoxLayout()
+        self.wake_model_combo = QComboBox()
+        self.wake_model_combo.setMinimumWidth(240)
+        self.wake_model_combo.setToolTip(
+            "Choose one of the installed and validated Vosk models."
+        )
+        self.refresh_wake_models_button = QPushButton("Refresh")
+        self.refresh_wake_models_button.clicked.connect(lambda: self.refresh_vosk_models())
+        self.browse_wake_model_button = QPushButton("Browse local…")
+        self.browse_wake_model_button.clicked.connect(self._browse_wake_model)
+        wake_model_row.addWidget(self.wake_model_combo, 1)
+        wake_model_row.addWidget(self.refresh_wake_models_button)
+        wake_model_row.addWidget(self.browse_wake_model_button)
+        agent_layout.addLayout(wake_model_row)
+        self.wake_model_help = QLabel()
+        self.wake_model_help.setObjectName("Muted")
+        self.wake_model_help.setWordWrap(True)
+        agent_layout.addWidget(self.wake_model_help)
+        self.refresh_vosk_models(current.wake_model_directory)
         self.voice_auto_submit = QCheckBox(
             "Automatically send recognized voice commands to the connected OpenCode session"
         )
@@ -286,9 +312,10 @@ class SettingsPage(QWidget):
         agent_buttons.addStretch(1)
         agent_layout.addLayout(agent_buttons)
         agent_note = QLabel(
-            "Wake detection starts only after explicitly enabling it in the Assistant panel. "
-            "OpenCode/MCP are optional external components. Voice audio is processed locally by Vosk "
-            "and is not sent to OpenCode as raw audio."
+            "Set the activation phrase and select the Vosk model that listens for it here. "
+            "Install or import Vosk models from AI models → Vosk. Wake detection starts only after "
+            "you enable it in the Assistant panel. The command is then transcribed by the selected "
+            "local Faster-Whisper model; raw voice audio is not sent to OpenCode."
         )
         agent_note.setWordWrap(True)
         agent_note.setObjectName("Muted")
@@ -602,21 +629,130 @@ class SettingsPage(QWidget):
         self._save(agent_permissions=ordered)
         self.permission_changed.emit(permission, enabled)
 
+    @staticmethod
+    def _wake_model_path_key(value: str | None) -> str:
+        if not value:
+            return ""
+        try:
+            return str(Path(value).expanduser().resolve()).casefold()
+        except OSError:
+            return str(value).casefold()
+
+    def refresh_vosk_models(self, selected_path: str | None = None):
+        """Populate the wake selector from installed, validated Vosk models."""
+        if not hasattr(self, "wake_model_combo"):
+            return
+        if selected_path is None:
+            selected_path = self.wake_model_combo.currentData()
+            if not selected_path:
+                selected_path = self.settings_store.settings.wake_model_directory
+        selected_key = self._wake_model_path_key(selected_path)
+
+        combo = self.wake_model_combo
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("Select a Vosk wake-word model…", "")
+
+        try:
+            models = self.model_manager.installed_vosk_models(include_sizes=False)
+        except Exception as exc:
+            models = []
+            self.wake_model_help.setText(f"Could not list installed Vosk models: {exc}")
+
+        for model in models:
+            repo_id = str(model.get("repo_id") or "")
+            model_name = str(model.get("model_name") or repo_id or "Vosk model")
+            language = str(model.get("language_name") or model.get("language") or "").strip()
+            label = f"{model_name} · {language}" if language else model_name
+            path = str(model.get("path") or "")
+            if path:
+                combo.addItem(label, path)
+
+        selected_index = combo.findData(selected_path)
+        if selected_index < 0 and selected_key:
+            for index in range(1, combo.count()):
+                if self._wake_model_path_key(combo.itemData(index)) == selected_key:
+                    selected_index = index
+                    break
+
+        if selected_index < 0 and selected_path:
+            custom_path = Path(selected_path).expanduser()
+            if (
+                custom_path.is_dir()
+                and not custom_path.is_symlink()
+                and ((custom_path / "am").is_dir() or (custom_path / "conf").is_dir())
+            ):
+                combo.addItem(f"Custom local model · {custom_path.name}", str(custom_path.resolve()))
+                selected_index = combo.count() - 1
+
+        combo.setCurrentIndex(max(0, selected_index))
+        combo.blockSignals(False)
+
+        if combo.count() == 1:
+            self.wake_model_help.setText(
+                "No installed Vosk model is available. Open AI models → Vosk to install one, "
+                "or use Browse local… to select an existing Vosk model folder."
+            )
+        else:
+            self.wake_model_help.setText(
+                "The selected Vosk model detects only the activation phrase. "
+                "Faster-Whisper handles the command after the wake phrase."
+            )
+
+    def _browse_wake_model(self):
+        current = str(self.wake_model_combo.currentData() or "")
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Choose local Vosk wake-word model",
+            current or str(self.paths.models),
+        )
+        if not path:
+            return
+        model_path = Path(path).expanduser()
+        if (
+            model_path.is_symlink()
+            or not model_path.is_dir()
+            or not ((model_path / "am").is_dir() or (model_path / "conf").is_dir())
+        ):
+            QMessageBox.warning(
+                self,
+                "Invalid Vosk model",
+                "Choose a Vosk model folder containing its am/ or conf/ directory.",
+            )
+            return
+        self.refresh_vosk_models(str(model_path.resolve()))
+
     def _save_agent_settings(self):
         executable = self.opencode_path.text().strip() or None
         project = self.opencode_project.text().strip() or None
-        wake_model = self.wake_model.text().strip() or None
+        wake_model = str(self.wake_model_combo.currentData() or "").strip() or None
+        wake_phrase = self.wake_phrase.text().strip()
         if project and not Path(project).expanduser().is_dir():
             QMessageBox.warning(self, "Invalid project directory", "OpenCode project must be an existing directory.")
             return
-        if wake_model and not Path(wake_model).expanduser().is_dir():
-            QMessageBox.warning(self, "Invalid Vosk model directory", "Choose an existing local Vosk model directory.")
+        if not wake_phrase:
+            QMessageBox.warning(
+                self, "Activation phrase required",
+                "Enter the keyword or phrase that Vosk should listen for.",
+            )
             return
+        if wake_model:
+            model_path = Path(wake_model).expanduser()
+            if (
+                model_path.is_symlink()
+                or not model_path.is_dir()
+                or not ((model_path / "am").is_dir() or (model_path / "conf").is_dir())
+            ):
+                QMessageBox.warning(
+                    self, "Invalid Vosk model",
+                    "Choose a Vosk model folder containing its am/ or conf/ directory.",
+                )
+                return
         self._save(
             opencode_path=executable,
             opencode_project_directory=project,
             wake_model_directory=wake_model,
-            wake_phrase=self.wake_phrase.text().strip(),
+            wake_phrase=wake_phrase,
         )
         self.agent_settings_saved.emit()
 

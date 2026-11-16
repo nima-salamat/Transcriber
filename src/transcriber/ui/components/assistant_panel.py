@@ -12,6 +12,7 @@ from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QPalette, QShortcut, QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFrame,
@@ -66,16 +67,18 @@ class AssistantPanel(QWidget):
         ),
     }
 
-    def __init__(self, paths, thread_pool, settings_store=None, parent=None, *, voice_transcriber=None):
+    def __init__(
+        self, paths, thread_pool, settings_store=None, parent=None, *,
+        voice_transcriber=None, model_manager=None,
+    ):
         super().__init__(parent)
         self.paths = paths
         self.thread_pool = thread_pool
         self.settings_store = settings_store
         self.voice_transcriber = voice_transcriber
+        self.model_manager = model_manager
         self.voice_agent = None
         self.prompt_library = PromptLibrary(self.paths.config / "agent_prompts")
-        self._agent_instructions_injected = False
-        self._bootstrap_pending = False
         self._resume_voice_after_prompt = False
         self._voice_asr_active = False
         self.signals = _AssistantSignals(self)
@@ -239,9 +242,12 @@ class AssistantPanel(QWidget):
         connection_row.addWidget(self.disconnect_button)
         root.addLayout(connection_row)
 
-        self.voice_toggle = QPushButton("＋  Voice input settings")
+        self.voice_toggle = QPushButton("＋  Wake word & voice settings")
         self.voice_toggle.setObjectName("Disclosure")
         self.voice_toggle.setCheckable(True)
+        self.voice_toggle.setToolTip(
+            "Set the activation phrase, select the Vosk wake-word model and configure voice capture."
+        )
         self.voice_toggle.toggled.connect(self._toggle_voice_panel)
         root.addWidget(self.voice_toggle)
 
@@ -258,24 +264,43 @@ class AssistantPanel(QWidget):
         voice_header.addStretch(1)
         voice_layout.addLayout(voice_header)
 
+        wake_phrase_title = QLabel("Activation keyword / phrase")
+        voice_layout.addWidget(wake_phrase_title)
         self.wake_phrase = QLineEdit(
             self.settings_store.settings.wake_phrase if self.settings_store else "transcriber"
         )
-        self.wake_phrase.setPlaceholderText("Local wake phrase")
+        self.wake_phrase.setPlaceholderText("For example: transcriber")
+        self.wake_phrase.setToolTip(
+            "Vosk listens for this phrase. Use words supported by the selected model's language."
+        )
         voice_layout.addWidget(self.wake_phrase)
 
+        model_title = QLabel("Vosk model used for wake-word detection")
+        voice_layout.addWidget(model_title)
         model_row = QHBoxLayout()
-        saved_model = self.settings_store.settings.wake_model_directory if self.settings_store else ""
-        self.wake_model_label = QLabel(Path(saved_model).name if saved_model else "No local Vosk model selected")
-        self.wake_model_label.setObjectName("Muted")
-        self.wake_model_label.setToolTip(saved_model or "")
-        self.wake_model_label.setWordWrap(True)
-        self.wake_model_button = QPushButton("Choose model…")
-        self.wake_model_button.setObjectName("Subtle")
-        self.wake_model_button.clicked.connect(self.choose_wake_model)
-        model_row.addWidget(self.wake_model_label, 1)
-        model_row.addWidget(self.wake_model_button)
+        self.wake_model_combo = QComboBox()
+        self.wake_model_combo.setMinimumWidth(170)
+        self.wake_model_combo.setToolTip(
+            "This model detects only the activation phrase. Faster-Whisper transcribes the command."
+        )
+        self.wake_model_refresh_button = QPushButton("Refresh")
+        self.wake_model_refresh_button.setObjectName("Subtle")
+        self.wake_model_refresh_button.clicked.connect(lambda: self.refresh_wake_models())
+        self.wake_model_browse_button = QPushButton("Browse local…")
+        self.wake_model_browse_button.setObjectName("Subtle")
+        self.wake_model_browse_button.clicked.connect(self.choose_wake_model)
+        model_row.addWidget(self.wake_model_combo, 1)
+        model_row.addWidget(self.wake_model_refresh_button)
+        model_row.addWidget(self.wake_model_browse_button)
         voice_layout.addLayout(model_row)
+        self.wake_model_help = QLabel()
+        self.wake_model_help.setObjectName("Muted")
+        self.wake_model_help.setWordWrap(True)
+        voice_layout.addWidget(self.wake_model_help)
+        saved_model = (
+            self.settings_store.settings.wake_model_directory if self.settings_store else ""
+        )
+        self.refresh_wake_models(saved_model)
 
         voice_actions = QHBoxLayout()
         self.wake_button = QPushButton("Enable local wake")
@@ -463,9 +488,7 @@ class AssistantPanel(QWidget):
             self.voice_silence_spin.setValue(settings.voice_silence_seconds)
         if hasattr(self, "voice_auto_submit_check"):
             self.voice_auto_submit_check.setChecked(settings.voice_auto_submit)
-        model_directory = settings.wake_model_directory
-        self.wake_model_label.setText(Path(model_directory).name if model_directory else "No local Vosk model selected")
-        self.wake_model_label.setToolTip(model_directory or "")
+        self.refresh_wake_models(settings.wake_model_directory)
         if not (self.client and self.client.connected) and settings.opencode_project_directory:
             candidate = Path(settings.opencode_project_directory).expanduser()
             if candidate.is_dir():
@@ -477,24 +500,95 @@ class AssistantPanel(QWidget):
         self.project_label.setText(path if len(path) <= 54 else f"…{path[-51:]}")
         self.project_label.setToolTip(path)
 
+    @staticmethod
+    def _wake_model_path_key(value: str | None) -> str:
+        if not value:
+            return ""
+        try:
+            return str(Path(value).expanduser().resolve()).casefold()
+        except OSError:
+            return str(value).casefold()
+
+    def refresh_wake_models(self, selected_path: str | None = None):
+        """Refresh the selector using installed and validated Vosk models."""
+        if not hasattr(self, "wake_model_combo"):
+            return
+        if selected_path is None:
+            selected_path = combo.currentData()
+            if not selected_path and self.settings_store:
+                selected_path = self.settings_store.settings.wake_model_directory
+        selected_key = self._wake_model_path_key(selected_path)
+        combo = self.wake_model_combo
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("Select a Vosk wake-word model…", "")
+
+        models = []
+        if self.model_manager is not None:
+            try:
+                models = self.model_manager.installed_vosk_models(include_sizes=False)
+            except Exception as exc:
+                self.wake_model_help.setText(f"Could not list installed Vosk models: {exc}")
+
+        for model in models:
+            repo_id = str(model.get("repo_id") or "")
+            model_name = str(model.get("model_name") or repo_id or "Vosk model")
+            language = str(model.get("language_name") or model.get("language") or "").strip()
+            label = f"{model_name} · {language}" if language else model_name
+            path = str(model.get("path") or "")
+            if path:
+                combo.addItem(label, path)
+
+        selected_index = -1
+        for index in range(1, combo.count()):
+            if self._wake_model_path_key(combo.itemData(index)) == selected_key and selected_key:
+                selected_index = index
+                break
+        if selected_index < 0 and selected_path:
+            custom_path = Path(selected_path).expanduser()
+            if (
+                custom_path.is_dir()
+                and not custom_path.is_symlink()
+                and ((custom_path / "am").is_dir() or (custom_path / "conf").is_dir())
+            ):
+                combo.addItem(f"Custom local model · {custom_path.name}", str(custom_path.resolve()))
+                selected_index = combo.count() - 1
+        combo.setCurrentIndex(max(0, selected_index))
+        combo.blockSignals(False)
+
+        if combo.count() == 1:
+            self.wake_model_help.setText(
+                "No compatible Vosk model is installed. Install one in AI models → Vosk, "
+                "or choose an existing local model folder."
+            )
+        else:
+            self.wake_model_help.setText(
+                "Choose the language/model that recognizes your activation phrase. "
+                "The selected local Faster-Whisper model transcribes your command."
+            )
+
     def choose_wake_model(self):
-        saved = self.settings_store.settings.wake_model_directory if self.settings_store else ""
+        saved = str(self.wake_model_combo.currentData() or "")
         path = QFileDialog.getExistingDirectory(
             self, "Choose local Vosk model directory", saved or str(self.paths.models)
         )
         if not path:
             return
-        model_path = Path(path).resolve()
-        if not (model_path / "am").is_dir() and not (model_path / "conf").is_dir():
+        model_path = Path(path).expanduser()
+        if (
+            model_path.is_symlink()
+            or not model_path.is_dir()
+            or not ((model_path / "am").is_dir() or (model_path / "conf").is_dir())
+        ):
             QMessageBox.warning(
                 self, "Invalid Vosk model",
-                "The selected directory does not look like a Vosk model folder (expected am/ or conf/).",
+                "Choose a Vosk model folder containing its am/ or conf/ directory.",
             )
             return
+        resolved = str(model_path.resolve())
         if self.settings_store:
-            self.settings_store.update(wake_model_directory=str(model_path))
-        self.wake_model_label.setText(model_path.name)
-        self.wake_model_label.setToolTip(str(model_path))
+            self.settings_store.update(wake_model_directory=resolved)
+        self.refresh_wake_models(resolved)
 
     def toggle_voice_agent(self):
         if self.voice_agent is not None:
@@ -508,10 +602,19 @@ class AssistantPanel(QWidget):
             self._append_message("system", "Local voice input stopped; microphone released.")
             return
 
-        model_path = self.settings_store.settings.wake_model_directory if self.settings_store else None
+        model_path = str(self.wake_model_combo.currentData() or "").strip() or None
         phrase = self.wake_phrase.text().strip()
+        if not phrase:
+            QMessageBox.information(
+                self, "Activation phrase required",
+                "Enter the keyword or phrase that Vosk should listen for.",
+            )
+            return
         if self.settings_store:
-            self.settings_store.update(wake_phrase=phrase)
+            self.settings_store.update(
+                wake_phrase=phrase,
+                wake_model_directory=model_path,
+            )
         if not model_path or not Path(model_path).is_dir():
             QMessageBox.information(
                 self, "Vosk model required",
@@ -752,7 +855,6 @@ class AssistantPanel(QWidget):
         if self._worker_active or (self.client and self.client.connected):
             return
         self._worker_active = True
-        self._agent_instructions_injected = False
         self.connect_button.setEnabled(False)
         self.connection_state.setText("Connecting…")
         self.connection_state.setProperty("state", "connecting")
@@ -833,6 +935,17 @@ class AssistantPanel(QWidget):
         if self._worker_active:
             return
 
+        try:
+            prompt_files = self.prompt_library.prompt_files_for_request(prompt)
+            prompt_context = self.prompt_library.context_for_request(prompt)
+        except (OSError, ValueError) as exc:
+            self._append_message(
+                "error",
+                f"Could not load the current Agent prompt instructions: {exc}",
+            )
+            self.status_message.emit(f"Agent prompt library: {exc}")
+            return
+
         self._worker_active = True
         if self.voice_agent is not None and self.voice_agent.mode == "processing":
             self._resume_voice_after_prompt = True
@@ -843,18 +956,15 @@ class AssistantPanel(QWidget):
         self._append_message("user", prompt)
         self.prompt.clear()
         client = self.client
-        outbound_prompt = prompt
-        if not self._agent_instructions_injected:
-            outbound_prompt = (
-                self.prompt_library.bootstrap_prompt()
-                + "\n\n--- USER REQUEST ---\n"
-                + prompt
-            )
-            self._bootstrap_pending = True
-            self._append_message(
-                "system",
-                "Loaded the editable Transcriber coordinator and specialist prompt pack for this session."
-            )
+        outbound_prompt = (
+            prompt_context
+            + "\n\n--- USER REQUEST ---\n"
+            + prompt
+        )
+        self._append_message(
+            "system",
+            "Loaded current prompt instructions: " + ", ".join(prompt_files),
+        )
         worker = FunctionWorker(
             lambda _emit: client.prompt(outbound_prompt, timeout=None)
         )
@@ -904,16 +1014,11 @@ class AssistantPanel(QWidget):
 
     def _on_prompt_complete(self, result):
         self._streaming_index = None
-        if self._bootstrap_pending:
-            self._agent_instructions_injected = True
-            self._bootstrap_pending = False
         reason = result.get("stopReason", "completed") if isinstance(result, dict) else "completed"
         self.activity_label.setText(f"Turn {reason} · Ready for your next message.")
 
     def _on_error(self, message):
         self._streaming_index = None
-        if self._bootstrap_pending:
-            self._bootstrap_pending = False
         self._append_message("error", str(message))
         self.connection_state.setText("Connection error")
         self.connection_state.setProperty("state", "error")

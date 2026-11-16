@@ -340,6 +340,7 @@ class MainWindow(QMainWindow):
         self.assistant_panel = AssistantPanel(
             self.paths, self.thread_pool, self.settings_store,
             voice_transcriber=self._transcribe_voice_audio,
+            model_manager=self.model_manager,
         )
         self.assistant_panel.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
         inspector_tabs.addTab(properties, "Properties")
@@ -557,6 +558,12 @@ class MainWindow(QMainWindow):
         )
         self.model_page.installed_models_changed.connect(
             lambda: self.transcription_page.refresh_models()
+        )
+        self.model_page.installed_models_changed.connect(
+            self.settings_page.refresh_vosk_models
+        )
+        self.model_page.installed_models_changed.connect(
+            self.assistant_panel.refresh_wake_models
         )
 
 
