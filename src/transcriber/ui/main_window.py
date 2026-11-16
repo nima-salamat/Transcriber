@@ -13,6 +13,7 @@ from PySide6.QtCore import QEvent, QObject, QSize, Qt, QThread, QThreadPool, QTi
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QDockWidget,
     QFrame,
     QHBoxLayout,
@@ -57,6 +58,7 @@ from transcriber.ui.pages.transcript_editor import TranscriptEditorPage
 from transcriber.ui.pages.transcription import TranscriptionPage
 from transcriber.ui.theme import stylesheet
 from transcriber.ui.workers import FunctionWorker
+from transcriber.ui.workspace import UnifiedWorkspace
 
 
 class MainThreadDispatcher(QObject):
@@ -113,19 +115,7 @@ class MainThreadDispatcher(QObject):
 
 
 class MainWindow(QMainWindow):
-    NAVIGATION = [
-        ("home", "home", "Home"),
-        ("transcription", "projects", "New transcription"),
-        ("recording", "record", "Record audio"),
-        ("batch", "activity", "Batch processing"),
-        ("history", "projects", "Projects"),
-        ("editor", "controls", "Transcript editor"),
-        ("subtitles", "activity", "Subtitles & timing"),
-        ("models", "models", "AI models"),
-        ("audio", "projects", "Audio library"),
-        ("cleanup", "controls", "Audio cleanup"),
-        ("settings", "settings", "Settings"),
-    ]
+    NAVIGATION = [("workspace", "house", "Workspace")]
 
     def __init__(self, paths, settings_store, history, database, model_manager, recording_history=None):
         super().__init__()
@@ -167,9 +157,8 @@ class MainWindow(QMainWindow):
         self._start_local_ipc()
         self._restore_geometry()
         self.apply_theme(settings_store.settings.theme)
-        if settings_store.settings.sidebar_collapsed:
-            self.toggle_sidebar()
-        self.navigate(settings_store.settings.last_page)
+        self.sidebar.hide()
+        self.navigate("transcription")
         self._shortcuts()
 
     def _build_ui(self):
@@ -230,7 +219,7 @@ class MainWindow(QMainWindow):
         version.setStyleSheet("font-size: 10px; margin: 4px;")
         side_layout.addWidget(version)
         self.sidebar = sidebar
-        root_layout.addWidget(sidebar)
+        sidebar.hide()
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
@@ -240,7 +229,7 @@ class MainWindow(QMainWindow):
         toolbar.setObjectName("Sidebar")
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(24, 13, 24, 13)
-        self.page_title = QLabel("Home")
+        self.page_title = QLabel("Workspace")
         self.page_title.setStyleSheet("font-size: 16px; font-weight: 650;")
         self.top_status = QLabel("● Local mode")
         self.top_status.setObjectName("Muted")
@@ -253,9 +242,10 @@ class MainWindow(QMainWindow):
         self.assistant_button = QPushButton("AI workspace")
         self.assistant_button.setToolTip("Open the AI assistant in the inspector")
         self.assistant_button.clicked.connect(self.show_ai_assistant)
-        new_button = QPushButton("＋  New transcription")
+        new_button = QPushButton("＋  Open media")
         new_button.setObjectName("Primary")
-        new_button.clicked.connect(lambda: self.navigate("transcription"))
+        new_button.setToolTip("Import an audio or video file into the workspace")
+        new_button.clicked.connect(self._open_media)
         toolbar_layout.addWidget(self.page_title)
         toolbar_layout.addStretch(1)
         toolbar_layout.addWidget(self.global_search)
@@ -284,22 +274,37 @@ class MainWindow(QMainWindow):
             before_mutation=self.transcription_page._commit_pending_text_edit,
         )
         self.subtitle_page = SubtitleStudioPage()
-        self.pages = {
-            "home": ("Home", self.home_page),
-            "transcription": ("New transcription", self.transcription_page),
-            "recording": ("Record audio", self.recording_page),
-            "batch": ("Batch processing", self.batch_page),
-            "history": ("Projects", self.history_page),
-            "editor": ("Transcript editor", self.editor_page),
-            "subtitles": ("Subtitles & timing", self.subtitle_page),
-            "models": ("AI models", self.model_page),
-            "audio": ("Audio library", self.audio_page),
-            "cleanup": ("Audio cleanup", self.audio_cleanup_page),
-            "settings": ("Settings", self.settings_page),
-        }
-        for _, page in self.pages.values():
-            self.stack.addWidget(page)
+        self.workspace = UnifiedWorkspace(
+            self.transcription_page,
+            self.editor_page,
+            self.subtitle_page,
+            self.recording_page,
+            self.batch_page,
+            self.history_page,
+            self.audio_page,
+            self.audio_cleanup_page,
+        )
+        self.workspace.action_requested.connect(self._handle_workspace_action)
+        self.workspace.view_changed.connect(self._on_workspace_view_changed)
+        self.pages = {"workspace": ("Workspace", self.workspace)}
+        self.stack.addWidget(self.workspace)
         content_layout.addWidget(self.stack, 1)
+
+        # Advanced management tools use large dialogs rather than permanent
+        # navigation destinations. Their existing feature pages are reused.
+        self.model_dialog = QDialog(self)
+        self.model_dialog.setWindowTitle("Transcriber · Model Library")
+        self.model_dialog.setMinimumSize(900, 640)
+        model_dialog_layout = QVBoxLayout(self.model_dialog)
+        model_dialog_layout.setContentsMargins(0, 0, 0, 0)
+        model_dialog_layout.addWidget(self.model_page)
+
+        self.settings_dialog = QDialog(self)
+        self.settings_dialog.setWindowTitle("Transcriber · Preferences")
+        self.settings_dialog.setMinimumSize(760, 580)
+        settings_dialog_layout = QVBoxLayout(self.settings_dialog)
+        settings_dialog_layout.setContentsMargins(0, 0, 0, 0)
+        settings_dialog_layout.addWidget(self.settings_page)
         self.workspace_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.workspace_splitter.setObjectName("WorkspaceSplitter")
         self.workspace_splitter.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
@@ -625,13 +630,6 @@ class MainWindow(QMainWindow):
 
         view_menu = bar.addMenu("&View")
         panels_menu = view_menu.addMenu("Panels")
-        self.sidebar_action = QAction("Sidebar", self)
-        self.sidebar_action.setCheckable(True)
-        self.sidebar_action.setChecked(True)
-        self.sidebar_action.toggled.connect(self._set_sidebar_visible)
-        view_menu.addAction(self.sidebar_action)
-        panels_menu.addAction(self.sidebar_action)
-
         self.assistant_view_action = QAction("Inspector / AI Assistant", self)
         self.assistant_view_action.setCheckable(True)
         self.assistant_view_action.setChecked(not self.assistant_dock.isHidden())
@@ -655,15 +653,18 @@ class MainWindow(QMainWindow):
         self._add_menu_action(view_menu, "Restore Default Layout", self.restore_default_layout)
 
         tools_menu = bar.addMenu("&Tools")
-        for key, _icon, title in self.NAVIGATION:
-            if key in {"transcription", "recording", "batch", "cleanup", "subtitles", "models"}:
-                self._add_menu_action(tools_menu, title, lambda page=key: self.navigate(page))
+        self._add_menu_action(tools_menu, "Open Media…", self._open_media, "Ctrl+O")
+        self._add_menu_action(tools_menu, "Record Audio", lambda: self.navigate("recording"))
+        self._add_menu_action(tools_menu, "Batch Queue", lambda: self.navigate("batch"))
+        self._add_menu_action(tools_menu, "Library", lambda: self.navigate("history"))
+        self._add_menu_action(tools_menu, "Audio Cleanup", lambda: self.navigate("cleanup"))
+        self._add_menu_action(tools_menu, "Manage Models…", lambda: self.navigate("models"))
+        self._add_menu_action(tools_menu, "Preferences…", lambda: self.navigate("settings"))
 
         window_menu = bar.addMenu("&Window")
+        self._add_menu_action(window_menu, "Workspace", lambda: self.navigate("transcription"))
         self._add_menu_action(window_menu, "Minimize", self.showMinimized)
         self._add_menu_action(window_menu, "Maximize / Restore", self._toggle_maximized, "F11")
-        for key, _icon, title in self.NAVIGATION:
-            self._add_menu_action(window_menu, title, lambda page=key: self.navigate(page))
 
         help_menu = bar.addMenu("&Help")
         self._add_menu_action(help_menu, "Keyboard Shortcuts", self._show_keyboard_shortcuts)
@@ -703,9 +704,10 @@ class MainWindow(QMainWindow):
     def _show_about(self):
         QMessageBox.about(self, "About Transcriber", "Transcriber 2.1.5\\nLocal-first audio transcription workspace")
 
-    def _set_sidebar_visible(self, visible):
-        self.sidebar.setVisible(bool(visible))
-        self.settings_store.update(sidebar_visible=bool(visible))
+    def _set_sidebar_visible(self, _visible):
+        # Legacy compatibility: permanent navigation has been removed.
+        self.sidebar.hide()
+        self.settings_store.update(sidebar_visible=False)
 
     def restore_default_layout(self):
         self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
@@ -720,19 +722,11 @@ class MainWindow(QMainWindow):
         self._apply_inspector_width()
         self._sync_drawer_controls(self.assistant_dock, True)
         self._sync_drawer_controls(self.timeline_dock, True)
-        self.sidebar.show()
+        self.sidebar.hide()
         self._sidebar_collapsed = False
-        self.sidebar.setMinimumWidth(190)
-        self.sidebar.setMaximumWidth(230)
-        self.brand_name.show()
-        self.tagline.show()
-        self.sidebar_action.setChecked(True)
-        self.sidebar_toggle.setText("Collapse sidebar")
-        for key, _icon, title in self.NAVIGATION:
-            self.nav_buttons[key].setText(title)
         self.settings_store.update(
-            sidebar_visible=True, sidebar_collapsed=False,
-            inspector_visible=True, timeline_visible=True, window_state=None,
+            sidebar_visible=False, sidebar_collapsed=False,
+            inspector_visible=False, timeline_visible=True, window_state=None,
         )
 
     @staticmethod
@@ -1118,18 +1112,11 @@ class MainWindow(QMainWindow):
         return answer == QMessageBox.Yes
 
     def toggle_sidebar(self):
-        self._sidebar_collapsed = not getattr(self, "_sidebar_collapsed", False)
-        width = 76 if self._sidebar_collapsed else 210
-        self.sidebar.setMinimumWidth(width)
-        self.sidebar.setMaximumWidth(width)
-        self.brand_name.setVisible(not self._sidebar_collapsed)
-        self.tagline.setVisible(not self._sidebar_collapsed)
-        self.sidebar_toggle.setText("Expand sidebar" if self._sidebar_collapsed else "Collapse sidebar")
-        for key, _icon, title in self.NAVIGATION:
-            button = self.nav_buttons[key]
-            button.setText("" if self._sidebar_collapsed else title)
-            button.setToolTip(title)
-        self.settings_store.update(sidebar_collapsed=self._sidebar_collapsed)
+        # Kept for compatibility with old saved commands; the feature sidebar
+        # no longer participates in the application layout.
+        self.sidebar.hide()
+        self._sidebar_collapsed = False
+        self.settings_store.update(sidebar_visible=False, sidebar_collapsed=False)
 
     def _search_library(self):
         self.global_search_popup.activate_current()
@@ -1149,12 +1136,17 @@ class MainWindow(QMainWindow):
         if not audio_path:
             self.waveform_status = "No audio loaded"
             self.timeline.set_waveform([], 0.0)
+            self._animate_drawer(self.timeline_dock, False, "height")
+            self.workspace.set_media(None)
             self.timeline.set_segments(self.transcription_page.segments)
             self.timeline.set_position(0.0)
             self.inspector_title.setText("No active audio")
             self.inspector_details.setText("Open an audio file to inspect its waveform and properties.")
             return
         self.waveform_status = "Loading waveform…"
+        self.workspace.set_media(audio_path)
+        if self.settings_store.settings.timeline_visible:
+            self._animate_drawer(self.timeline_dock, True, "height")
         worker = FunctionWorker(lambda emit: build_waveform(Path(audio_path), self.paths.cache / "waveforms", bins=4096, progress=lambda value: emit(value)))
         worker.signals.progress.connect(lambda _value: None)
         worker.signals.result.connect(lambda peaks, gen=generation: self._waveform_ready(gen, peaks))
@@ -1252,35 +1244,87 @@ class MainWindow(QMainWindow):
             self._shortcut_refs.append(shortcut)
 
     def navigate(self, page_id: str):
-        if page_id not in self.pages:
-            page_id = "home"
-        title, page = self.pages[page_id]
-        self.stack.setCurrentWidget(page)
-        self.page_title.setText(title)
-        for key, button in self.nav_buttons.items():
-            button.setChecked(key == page_id)
-        self.settings_store.update(last_page=page_id)
-        if page_id == "transcription":
+        """Switch a view inside the unified workspace or open a management dialog."""
+        if page_id == "models":
+            self.model_page.refresh_installed()
+            self.model_dialog.show()
+            self.model_dialog.raise_()
+            self.model_dialog.activateWindow()
+            return
+        if page_id == "settings":
+            self.settings_page.refresh_audio_devices()
+            self.settings_dialog.show()
+            self.settings_dialog.raise_()
+            self.settings_dialog.activateWindow()
+            return
+
+        aliases = {
+            "home": "transcription",
+            "workspace": "transcription",
+            "transcription": "transcription",
+            "editor": "editor",
+            "subtitles": "subtitles",
+            "recording": "recording",
+            "batch": "batch",
+            "history": "history",
+            "audio": "audio",
+            "cleanup": "cleanup",
+        }
+        view = aliases.get(page_id, "transcription")
+        self.stack.setCurrentWidget(self.workspace)
+        self.workspace.set_view(view)
+        self.page_title.setText("Workspace")
+        self.settings_store.update(last_page=view)
+
+        if view == "transcription":
             if not self.transcription_page.is_busy:
                 self.transcription_page.refresh_models()
-        elif page_id == "home":
-            self.home_page.refresh()
-        elif page_id == "models":
-            self.model_page.refresh_installed()
-        elif page_id == "history":
+        elif view == "recording":
+            self.recording_page.refresh_devices()
+        elif view == "batch":
+            self.batch_page.refresh()
+        elif view == "history":
             self.history_page.refresh()
-        elif page_id == "settings":
-            self.settings_page.refresh_audio_devices()
-        elif page_id == "audio":
+        elif view == "audio":
             self.audio_page.refresh()
-        elif page_id == "editor":
+        elif view == "editor":
             if not self.editor_page.document.segments and self.transcription_page.segments:
-                self.editor_page.load_segments(self.transcription_page.segments,
-                                               source_path=self.transcription_page.audio_path,
-                                               duration=self._audio_duration_seconds())
-        elif page_id == "subtitles":
+                self.editor_page.load_segments(
+                    self.transcription_page.segments,
+                    source_path=self.transcription_page.audio_path,
+                    duration=self._audio_duration_seconds(),
+                )
+        elif view == "subtitles":
             if not self.subtitle_page.segments and self.transcription_page.segments:
                 self.subtitle_page.load_segments(self.transcription_page.segments)
+
+    def _open_media(self):
+        self.navigate("transcription")
+        self.transcription_page.choose_audio()
+
+    def _handle_workspace_action(self, action: str):
+        handlers = {
+            "record": lambda: self.navigate("recording"),
+            "batch": lambda: self.navigate("batch"),
+            "library": lambda: self.navigate("audio"),
+            "cleanup": lambda: self.navigate("cleanup"),
+            "models": lambda: self.navigate("models"),
+            "settings": lambda: self.navigate("settings"),
+            "export": lambda: self.transcription_page.export_button.click(),
+        }
+        handler = handlers.get(str(action))
+        if handler is not None:
+            handler()
+
+    def _on_workspace_view_changed(self, view: str):
+        if view == "recording":
+            self.recording_page.refresh_devices()
+        elif view == "batch":
+            self.batch_page.refresh()
+        elif view == "history":
+            self.history_page.refresh()
+        elif view == "audio":
+            self.audio_page.refresh()
 
     def open_transcript(self, transcript_id: str):
         if not self.transcription_page.open_history_item(transcript_id):
@@ -1380,8 +1424,7 @@ class MainWindow(QMainWindow):
         self.timeline_dock.setVisible(settings.timeline_visible)
         self._sync_drawer_controls(self.assistant_dock, settings.inspector_visible)
         self._sync_drawer_controls(self.timeline_dock, settings.timeline_visible)
-        self.sidebar.setVisible(settings.sidebar_visible)
-        self.sidebar_action.setChecked(settings.sidebar_visible)
+        self.sidebar.hide()
         QTimer.singleShot(0, self._apply_inspector_width)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
@@ -1444,7 +1487,7 @@ class MainWindow(QMainWindow):
                 f"{bytes(self.saveState().toBase64()).decode('ascii')}"
             ),
             sidebar_collapsed=self._sidebar_collapsed,
-            sidebar_visible=self.sidebar.isVisible(),
+            sidebar_visible=False,
             inspector_visible=not self.assistant_dock.isHidden(),
             timeline_visible=not self.timeline_dock.isHidden(),
         )
