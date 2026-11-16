@@ -17,6 +17,28 @@ def stylesheet(theme: str) -> str:
     QMainWindow, QDialog {{ background: {c['window']}; }}
     QWidget#Root {{ background: {c['window']}; }}
     QFrame#Sidebar {{ background: {c['surface']}; border: 0; }}
+    QFrame#WorkspaceHeader {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QLabel#WorkspaceDocumentTitle {{
+        color: {c['text']};
+        font-size: 14px;
+        font-weight: 700;
+    }}
+    QPushButton#WorkspaceToolButton {{
+        min-height: 16px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 650;
+        background: {c['surface_2']};
+    }}
+    QPushButton#WorkspaceToolButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
     QFrame#Card {{
         background: {c['surface']};
         border: 1px solid {c['border']};
