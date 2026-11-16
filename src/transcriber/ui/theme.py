@@ -49,6 +49,20 @@ def stylesheet(theme: str) -> str:
         min-height: 13px;
         padding: 5px 8px;
     }}
+    QToolButton#WorkspaceToolButton {{
+        min-height: 13px;
+        padding: 5px 9px;
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        color: {c['text']};
+        background: {c['surface_2']};
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QToolButton#WorkspaceToolButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
     QPushButton#WorkspaceToolButton:hover {{
         background: {c['surface_hover']};
         border-color: {c['accent']};
