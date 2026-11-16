@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from transcriber.assistant.ollama_client import OllamaClient
+from transcriber.assistant.ollama_client import OllamaClient, OllamaError
 from transcriber.assistant.prompt_library import PromptLibrary
 from transcriber.opencode.acp_client import OpenCodeACPClient
 from transcriber.ui.components.prompt_library_dialog import PromptLibraryDialog
@@ -564,10 +564,18 @@ class AssistantPanel(QWidget):
         self.connect_button.setEnabled(False)
         self.connection_state.setText("Connecting to Ollama…")
         self.connection_state.setProperty("state", "connecting")
-        self.activity_label.setText("Finding an installed model and loading it into local memory…")
+        self.activity_label.setText(
+            "Checking Ollama, then loading the selected model into RAM/VRAM. "
+            "A first load can take several minutes; Transcriber remains responsive…"
+        )
 
         def connect(_emit):
-            models = client.list_models()
+            try:
+                models = client.list_models()
+            except OllamaError as exc:
+                raise OllamaError(
+                    f"Could not list local Ollama models at {client.base_url}/api/tags: {exc}"
+                ) from exc
             names = [str(item.get("name") or "") for item in models if item.get("name")]
             if not names:
                 raise RuntimeError(
@@ -577,7 +585,13 @@ class AssistantPanel(QWidget):
             keep_alive = (
                 self.settings_store.settings.ollama_keep_alive if self.settings_store else "30m"
             )
-            client.load_model(selected, keep_alive=keep_alive)
+            try:
+                client.load_model(selected, keep_alive=keep_alive)
+            except OllamaError as exc:
+                raise OllamaError(
+                    f"Ollama found '{selected}', but could not finish loading it. "
+                    f"Check available RAM/VRAM and Ollama's server log. {exc}"
+                ) from exc
             return {"models": models, "model": selected}
 
         worker = FunctionWorker(connect)
@@ -623,7 +637,7 @@ class AssistantPanel(QWidget):
         self._streaming_index = None
         self._append_message("error", str(message))
         self.ollama_help.setText(str(message))
-        self.activity_label.setText("Ollama is unavailable or the selected model could not be loaded.")
+        self.activity_label.setText(f"Ollama connection/model startup failed: {message}")
         self.status_message.emit(f"Ollama: {message}")
         if not self._ollama_connected:
             self.connection_state.setText("Ollama unavailable")

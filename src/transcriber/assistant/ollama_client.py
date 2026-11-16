@@ -18,9 +18,18 @@ class OllamaError(RuntimeError):
 
 
 class OllamaClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:11434", *, timeout: float = 12.0):
+    def __init__(
+        self,
+        base_url: str = "http://127.0.0.1:11434",
+        *,
+        timeout: float = 20.0,
+        model_load_timeout: float = 900.0,
+    ):
         self.base_url = self._normalize_base_url(base_url)
         self.timeout = max(1.0, float(timeout))
+        # Loading a cold model can take minutes on consumer hardware. Keep this
+        # separate from the short API discovery timeout.
+        self.model_load_timeout = max(self.timeout, float(model_load_timeout))
 
     @staticmethod
     def _normalize_base_url(value: str) -> str:
@@ -35,8 +44,9 @@ class OllamaClient:
         return base_url
 
     def _open(self, request: Request, *, timeout: float | None = None):
+        request_timeout = self.timeout if timeout is None else max(1.0, float(timeout))
         try:
-            return urlopen(request, timeout=self.timeout if timeout is None else timeout)
+            return urlopen(request, timeout=request_timeout)
         except HTTPError as exc:
             try:
                 detail = exc.read().decode("utf-8", errors="replace")
@@ -45,13 +55,28 @@ class OllamaClient:
             raise OllamaError(f"Ollama returned HTTP {exc.code}: {detail[:1200]}") from exc
         except URLError as exc:
             reason = getattr(exc, "reason", exc)
+            if isinstance(reason, TimeoutError):
+                raise OllamaError(
+                    f"Ollama timed out while opening {request.full_url} "
+                    f"(waited {request_timeout:g}s). Check that the local Ollama server is responsive."
+                ) from exc
             raise OllamaError(
-                f"Cannot reach Ollama at {self.base_url}. Start Ollama and verify its URL. ({reason})"
+                f"Cannot reach Ollama at {self.base_url} while requesting "
+                f"{request.full_url} ({reason}). Start Ollama and verify its URL."
             ) from exc
         except TimeoutError as exc:
-            raise OllamaError(f"Ollama request timed out at {self.base_url}.") from exc
+            raise OllamaError(
+                f"Ollama request to {request.full_url} timed out after {request_timeout:g}s."
+            ) from exc
 
-    def _json_request(self, method: str, endpoint: str, payload: dict | None = None):
+    def _json_request(
+        self,
+        method: str,
+        endpoint: str,
+        payload: dict | None = None,
+        *,
+        timeout: float | None = None,
+    ):
         body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = Request(
             f"{self.base_url}{endpoint}",
@@ -59,13 +84,18 @@ class OllamaClient:
             method=method,
             headers={"Accept": "application/json", "Content-Type": "application/json"},
         )
+        request_timeout = self.timeout if timeout is None else max(1.0, float(timeout))
         try:
-            with self._open(request) as response:
+            with self._open(request, timeout=request_timeout) as response:
                 raw = response.read()
         except OllamaError:
             raise
+        except TimeoutError as exc:
+            raise OllamaError(
+                f"Ollama timed out while reading {endpoint} after {request_timeout:g}s."
+            ) from exc
         except (OSError, ValueError) as exc:
-            raise OllamaError(f"Ollama request failed: {exc}") from exc
+            raise OllamaError(f"Ollama request to {endpoint} failed: {exc}") from exc
         try:
             data = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -96,16 +126,24 @@ class OllamaClient:
                 })
         return sorted(models, key=lambda item: item["name"].casefold())
 
-    def load_model(self, model: str, *, keep_alive: str = "30m") -> dict:
+    def load_model(
+        self,
+        model: str,
+        *,
+        keep_alive: str = "30m",
+        timeout: float | None = None,
+    ) -> dict:
         selected = str(model or "").strip()
         if not selected:
             raise ValueError("Select an installed Ollama model first.")
-        # Empty messages load the model into memory. Do not unload on disconnect:
-        # another local application may be sharing this Ollama service.
+        # Ollama responds only after a cold model has been loaded. This can take
+        # much longer than /api/tags, so use a dedicated, generous timeout.
+        # Do not unload on disconnect: another local application may share Ollama.
         return self._json_request(
             "POST",
             "/api/chat",
             {"model": selected, "messages": [], "stream": False, "keep_alive": keep_alive},
+            timeout=self.model_load_timeout if timeout is None else timeout,
         )
 
     def chat(
@@ -167,6 +205,11 @@ class OllamaClient:
                         final = item
         except OllamaError:
             raise
+        except TimeoutError as exc:
+            raise OllamaError(
+                f"Ollama chat stream for '{selected}' was idle for too long "
+                f"(socket timeout {timeout:g}s)."
+            ) from exc
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             raise OllamaError(f"Ollama chat stream failed: {exc}") from exc
         if not final and not chunks:

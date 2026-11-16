@@ -53,18 +53,47 @@ def test_load_model_uses_empty_chat_and_configured_keep_alive(monkeypatch):
     def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
         return FakeResponse(b'{"done":true,"done_reason":"load"}')
 
     monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
-    client = OllamaClient()
+    client = OllamaClient(timeout=12.0, model_load_timeout=840.0)
 
     result = client.load_model("qwen2.5:7b", keep_alive="1h")
 
     assert captured["url"].endswith("/api/chat")
+    assert captured["timeout"] == 840.0
     assert captured["body"] == {
         "model": "qwen2.5:7b", "messages": [], "stream": False, "keep_alive": "1h"
     }
     assert result["done"] is True
+
+
+def test_model_discovery_keeps_the_short_api_timeout(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        return FakeResponse(b'{"models":[]}')
+
+    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+
+    OllamaClient(timeout=18.0, model_load_timeout=840.0).list_models()
+
+    assert captured["url"].endswith("/api/tags")
+    assert captured["timeout"] == 18.0
+
+
+def test_model_load_timeout_error_identifies_the_model_endpoint(monkeypatch):
+    def fake_urlopen(request, timeout):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    client = OllamaClient(timeout=5.0, model_load_timeout=17.0)
+
+    with pytest.raises(OllamaError, match=r"/api/chat.*17"):
+        client.load_model("qwen2.5:7b")
 
 
 def test_chat_streams_tokens_and_preserves_conversation_messages(monkeypatch):
