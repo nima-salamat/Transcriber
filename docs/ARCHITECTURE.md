@@ -17,7 +17,7 @@
 - `transcription`: shared transcript/word/segment types, service orchestration, jobs, quality report, and export adapters.
 - `editor`: Qt-independent segment-aware document, word timing validation, snapshot undo/redo, search/replace and preview/apply cleanup.
 - `subtitles`: SRT/WebVTT/ASS/SSA codecs plus timing transforms and validation.
-- `assistant`: semantic action registry, permission enforcement, voice state machine and optional local Vosk command capture.
+- `assistant`: semantic action registry, permission enforcement, editable specialist prompt library, local Vosk wake detection, silence-gated PCM capture and Faster-Whisper command transcription.
 - `opencode`: ACP stdio client and persistent session handling. The external OpenCode executable is not bundled.
 - `mcp` / `ipc`: stdio MCP server, compact tool definitions, versioned JSON protocol, per-user local endpoint and authentication token.
 - `storage`: SQLite schema migration, transcript/history repository, independent recording metadata repository and metadata backup/restore.
@@ -33,7 +33,7 @@ The OpenCode ACP client starts `[opencode, acp]` in the selected absolute workin
 
 MCP uses stdio for its host-facing transport. Its tools call the desktop process through IPC, not direct Python object access. The IPC request contains a version, request ID and high-entropy per-run token. Unix uses a private domain socket; Windows uses a loopback-only TCP fallback. Endpoint files are restricted to the current user where OS permissions support it. The GUI must be running for state/actions to be available.
 
-Optional local Vosk capture opens a microphone only after the user explicitly enables it. The PortAudio callback performs bounded non-blocking enqueue into a fixed-size PCM queue; a dedicated recognition worker owns all Vosk calls, silence/noise tracking and command finalization. Overflow is reported and dropped chunks are not persisted. Audio remains in memory and is not intentionally written or uploaded. Voice command submission is manual by default; an explicit setting enables automatic submission to an already connected OpenCode session. Wake phrase and Persian accuracy still need device/language benchmarking; this is not advertised as an always-on low-power multilingual product.
+Optional local voice-agent capture opens a microphone only after the user explicitly enables it. The PortAudio callback performs bounded non-blocking enqueue into a fixed-size PCM queue. A dedicated worker uses Vosk only for the wake phrase, then captures subsequent 16 kHz mono PCM until the configurable continuous-silence interval (1.5 seconds by default) or maximum command duration. The captured command is transcribed off the GUI thread with the installed local Faster-Whisper model; an ephemeral WAV is removed after inference and is not added to recording history. Audio is not sent to a cloud provider. Voice command submission is review-first by default; an explicit setting enables automatic submission to an already connected OpenCode session. Wake phrase and Persian accuracy still need device/language benchmarking; this is not advertised as an always-on low-power multilingual product.
 
 ## Model runtime and resource policy
 

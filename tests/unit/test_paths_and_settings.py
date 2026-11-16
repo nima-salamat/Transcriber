@@ -80,3 +80,20 @@ def test_non_object_settings_json_falls_back_without_destroying_file(tmp_path):
     loaded = SettingsStore(path).load()
     assert loaded == AppSettings()
     assert path.read_text(encoding="utf-8") == broken
+
+
+
+def test_voice_silence_window_is_validated_and_persisted(tmp_path):
+    store = SettingsStore(tmp_path / "settings.json")
+    store.load()
+
+    saved = store.update(voice_silence_seconds=2.3)
+    assert saved.voice_silence_seconds == 2.3
+    assert SettingsStore(store.path).load().voice_silence_seconds == 2.3
+
+    invalid = AppSettings(voice_silence_seconds=0.1)
+    invalid.validate()
+    assert invalid.voice_silence_seconds == 1.5
+    invalid_nan = AppSettings(voice_silence_seconds=float("nan"))
+    invalid_nan.validate()
+    assert invalid_nan.voice_silence_seconds == 1.5

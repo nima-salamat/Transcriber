@@ -26,6 +26,10 @@ def test_assistant_panel_is_a_conversation_surface(qtbot, tmp_path):
     assert isinstance(panel.chat_view, QTextBrowser)
     assert panel.send_button.text() == "Send"
     assert not panel.send_button.isEnabled()
+    assert panel.prompt_library_button.text() == "Prompt library"
+    assert "specialist" in panel.prompt_library.read("00-AGENT.md").casefold()
+    assert panel.voice_silence_spin.value() == 1.5
+    assert not panel.voice_auto_submit_check.isChecked()
 
     panel._append_message("user", "Summarize the open transcript")
     panel._on_notification({

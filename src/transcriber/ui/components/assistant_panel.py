@@ -11,6 +11,8 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -24,7 +26,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from transcriber.assistant.prompt_library import PromptLibrary
 from transcriber.opencode.acp_client import OpenCodeACPClient
+from transcriber.ui.components.prompt_library_dialog import PromptLibraryDialog
 from transcriber.ui.workers import FunctionWorker
 
 
@@ -35,6 +39,10 @@ class _AssistantSignals(QObject):
     prompt_complete = Signal(object)
     voice_state = Signal(str)
     voice_transcript = Signal(str)
+    voice_audio = Signal(object)
+    voice_error = Signal(str)
+    voice_asr_complete = Signal(str)
+    voice_asr_error = Signal(str)
 
 
 class AssistantPanel(QWidget):
@@ -58,12 +66,18 @@ class AssistantPanel(QWidget):
         ),
     }
 
-    def __init__(self, paths, thread_pool, settings_store=None, parent=None):
+    def __init__(self, paths, thread_pool, settings_store=None, parent=None, *, voice_transcriber=None):
         super().__init__(parent)
         self.paths = paths
         self.thread_pool = thread_pool
         self.settings_store = settings_store
+        self.voice_transcriber = voice_transcriber
         self.voice_agent = None
+        self.prompt_library = PromptLibrary(self.paths.config / "agent_prompts")
+        self._agent_instructions_injected = False
+        self._bootstrap_pending = False
+        self._resume_voice_after_prompt = False
+        self._voice_asr_active = False
         self.signals = _AssistantSignals(self)
         self.signals.notification.connect(self._on_notification)
         self.signals.connected.connect(self._on_connected)
@@ -71,6 +85,10 @@ class AssistantPanel(QWidget):
         self.signals.prompt_complete.connect(self._on_prompt_complete)
         self.signals.voice_state.connect(self._on_voice_state)
         self.signals.voice_transcript.connect(self._on_voice_transcript)
+        self.signals.voice_audio.connect(self._on_voice_audio)
+        self.signals.voice_error.connect(self._on_voice_error)
+        self.signals.voice_asr_complete.connect(self._on_voice_asr_complete)
+        self.signals.voice_asr_error.connect(self._on_voice_asr_error)
 
         self.client: OpenCodeACPClient | None = None
         self._worker_active = False
@@ -151,6 +169,13 @@ class AssistantPanel(QWidget):
         suggestion_label.setObjectName("AssistantEyebrow")
         suggestion_header.addWidget(suggestion_label)
         suggestion_header.addStretch(1)
+        self.prompt_library_button = QPushButton("Prompt library")
+        self.prompt_library_button.setObjectName("Subtle")
+        self.prompt_library_button.setToolTip(
+            "Edit specialist instructions, paste prompts or copy the Agent coordinator prompt."
+        )
+        self.prompt_library_button.clicked.connect(self.open_prompt_library)
+        suggestion_header.addWidget(self.prompt_library_button)
         root.addLayout(suggestion_header)
 
         suggestions = QHBoxLayout()
@@ -263,11 +288,45 @@ class AssistantPanel(QWidget):
         voice_actions.addWidget(self.wake_button, 1)
         voice_actions.addWidget(self.ptt_button)
         voice_layout.addLayout(voice_actions)
+
+        voice_options = QHBoxLayout()
+        voice_options.addWidget(QLabel("Finish after"))
+        self.voice_silence_spin = QDoubleSpinBox()
+        self.voice_silence_spin.setRange(0.5, 8.0)
+        self.voice_silence_spin.setDecimals(1)
+        self.voice_silence_spin.setSingleStep(0.1)
+        self.voice_silence_spin.setSuffix(" s silence")
+        self.voice_silence_spin.setValue(
+            getattr(self.settings_store.settings, "voice_silence_seconds", 1.5)
+            if self.settings_store else 1.5
+        )
+        self.voice_silence_spin.valueChanged.connect(self._set_voice_silence_seconds)
+        voice_options.addWidget(self.voice_silence_spin)
+        voice_options.addStretch(1)
+        voice_layout.addLayout(voice_options)
+
+        self.voice_auto_submit_check = QCheckBox(
+            "Send recognized commands to Agent automatically"
+        )
+        self.voice_auto_submit_check.setChecked(
+            bool(self.settings_store and self.settings_store.settings.voice_auto_submit)
+        )
+        self.voice_auto_submit_check.toggled.connect(self._set_voice_auto_submit)
+        voice_layout.addWidget(self.voice_auto_submit_check)
+        voice_help = QLabel(
+            "Vosk listens locally for the wake phrase. The app then records your command, "
+            "waits for the full silence interval and transcribes it with the installed local Faster-Whisper model. "
+            "Commands stay in memory and are not saved as recordings."
+        )
+        voice_help.setObjectName("Muted")
+        voice_help.setWordWrap(True)
+        voice_layout.addWidget(voice_help)
+
         self.voice_panel.setVisible(False)
         root.addWidget(self.voice_panel)
 
         privacy = QLabel(
-            "OpenCode ACP · Local Transcriber MCP tools · Optional Vosk voice input is processed locally."
+            "OpenCode ACP · Transcriber MCP tools · Wake detection and command audio are processed locally."
         )
         privacy.setObjectName("Muted")
         privacy.setWordWrap(True)
@@ -400,6 +459,10 @@ class AssistantPanel(QWidget):
             return
         settings = self.settings_store.settings
         self.wake_phrase.setText(settings.wake_phrase)
+        if hasattr(self, "voice_silence_spin"):
+            self.voice_silence_spin.setValue(settings.voice_silence_seconds)
+        if hasattr(self, "voice_auto_submit_check"):
+            self.voice_auto_submit_check.setChecked(settings.voice_auto_submit)
         model_directory = settings.wake_model_directory
         self.wake_model_label.setText(Path(model_directory).name if model_directory else "No local Vosk model selected")
         self.wake_model_label.setToolTip(model_directory or "")
@@ -461,11 +524,23 @@ class AssistantPanel(QWidget):
             QMessageBox.warning(self, "Voice support unavailable", str(exc))
             return
 
+        if not callable(self.voice_transcriber):
+            QMessageBox.warning(
+                self, "Voice transcription unavailable",
+                "The local Faster-Whisper voice transcription service is not available.",
+            )
+            return
+
+        configured = self.settings_store.settings if self.settings_store else None
         agent = VoskVoiceAgent(
             model_path, phrase,
+            silence_seconds=(
+                self.voice_silence_spin.value() if hasattr(self, "voice_silence_spin") else
+                getattr(configured, "voice_silence_seconds", 1.5)
+            ),
             on_state=lambda state: self.signals.voice_state.emit(state),
-            on_transcript=lambda transcript: self.signals.voice_transcript.emit(transcript),
-            on_error=lambda message: self.signals.error.emit(message),
+            on_audio=lambda audio: self.signals.voice_audio.emit(audio),
+            on_error=lambda message: self.signals.voice_error.emit(message),
         )
         self.voice_agent = agent
         self.wake_button.setEnabled(False)
@@ -487,10 +562,100 @@ class AssistantPanel(QWidget):
         self.wake_button.setText("Stop local wake")
         self.ptt_button.setEnabled(True)
         self.voice_state_label.setText("Wake listening")
-        self._append_message("system", "Local wake detector active. Microphone frames are processed in memory.")
+        self._append_message(
+            "system",
+            "Local wake detection is active. Vosk listens for the wake phrase; Faster-Whisper transcribes the captured command.",
+        )
 
     def _on_voice_state(self, state: str):
         self.voice_state_label.setText(state)
+        normalized = state.casefold()
+        self.ptt_button.setEnabled(
+            self.voice_agent is not None
+            and (
+                "wake listening" in normalized
+                or normalized == "voice agent stopped"
+            )
+        )
+
+    def _on_voice_audio(self, audio: bytes):
+        if not callable(self.voice_transcriber) or self._voice_asr_active:
+            if self.voice_agent:
+                self.voice_agent.resume_after_processing()
+            return
+        self._voice_asr_active = True
+        self.ptt_button.setEnabled(False)
+        self.voice_state_label.setText("Transcribing command…")
+        self._append_message("system", "Command captured · running local Faster-Whisper recognition.")
+
+        worker = FunctionWorker(
+            lambda _emit: self.voice_transcriber(bytes(audio))
+        )
+        worker.signals.result.connect(self.signals.voice_asr_complete.emit)
+        worker.signals.error.connect(self.signals.voice_asr_error.emit)
+        worker.signals.finished.connect(self._voice_asr_finished)
+        self.thread_pool.start(worker)
+
+    def _voice_asr_finished(self):
+        self._voice_asr_active = False
+
+    def _resume_voice_agent(self):
+        if self.voice_agent is not None:
+            self.voice_agent.resume_after_processing()
+            self.ptt_button.setText("Push to talk")
+            self.ptt_button.setEnabled(True)
+            self.voice_state_label.setText("Wake listening")
+
+    def _on_voice_asr_complete(self, text: str):
+        recognized = str(text or "").strip()
+        if not recognized:
+            self._on_voice_asr_error("No speech could be recognized.")
+            return
+        self.prompt.setPlainText(recognized)
+        self.prompt.setFocus()
+        settings = self.settings_store.settings if self.settings_store else None
+        auto_submit = bool(settings and settings.voice_auto_submit)
+        connected = bool(self.client and self.client.connected)
+        if auto_submit and connected and not self._worker_active:
+            self._append_message("system", "Voice command recognized · sending it to the Agent.")
+            self._resume_voice_after_prompt = True
+            self.send_prompt()
+        else:
+            self._append_message(
+                "system",
+                "Voice command transcribed with Faster-Whisper. Review or edit it before sending."
+            )
+            if auto_submit and not connected:
+                self.status_message.emit(
+                    "Voice command recognized but not sent: OpenCode is disconnected."
+                )
+            self.ptt_button.setText("Resume listening")
+            self.ptt_button.setEnabled(self.voice_agent is not None)
+            self.voice_state_label.setText("Command ready for review")
+
+    def _on_voice_asr_error(self, message: str):
+        self._append_message("error", f"Voice transcription failed: {message}")
+        self.status_message.emit(f"Voice transcription: {message}")
+        self.voice_state_label.setText("Voice command failed · wake listening")
+        self._resume_voice_agent()
+
+    def _set_voice_auto_submit(self, enabled: bool):
+        if self.settings_store:
+            self.settings_store.update(voice_auto_submit=bool(enabled))
+
+    def _set_voice_silence_seconds(self, value: float):
+        if self.settings_store:
+            self.settings_store.update(voice_silence_seconds=float(value))
+        if self.voice_agent is not None and self.voice_agent.mode == "command":
+            self._append_message(
+                "system",
+                "The new silence interval will apply to the next voice command."
+            )
+
+    def open_prompt_library(self):
+        dialog = PromptLibraryDialog(self.prompt_library, self)
+        dialog.use_prompt.connect(self._insert_suggestion)
+        dialog.exec()
 
     def _on_voice_error(self, message):
         agent, self.voice_agent = self.voice_agent, None
@@ -513,6 +678,9 @@ class AssistantPanel(QWidget):
         if not self.voice_agent:
             return
         try:
+            if self.voice_agent.mode == "processing":
+                self._resume_voice_agent()
+                return
             self.voice_agent.push_to_talk()
         except Exception as exc:
             QMessageBox.warning(self, "Voice input failed", str(exc))
@@ -587,6 +755,7 @@ class AssistantPanel(QWidget):
         if self._worker_active or (self.client and self.client.connected):
             return
         self._worker_active = True
+        self._agent_instructions_injected = False
         self.connect_button.setEnabled(False)
         self.connection_state.setText("Connecting…")
         self.connection_state.setProperty("state", "connecting")
@@ -668,6 +837,8 @@ class AssistantPanel(QWidget):
             return
 
         self._worker_active = True
+        if self.voice_agent is not None and self.voice_agent.mode == "processing":
+            self._resume_voice_after_prompt = True
         self._streaming_index = None
         self.send_button.setEnabled(False)
         self.stop_button.setEnabled(True)
@@ -675,7 +846,21 @@ class AssistantPanel(QWidget):
         self._append_message("user", prompt)
         self.prompt.clear()
         client = self.client
-        worker = FunctionWorker(lambda _emit: client.prompt(prompt, timeout=None))
+        outbound_prompt = prompt
+        if not self._agent_instructions_injected:
+            outbound_prompt = (
+                self.prompt_library.bootstrap_prompt()
+                + "\n\n--- USER REQUEST ---\n"
+                + prompt
+            )
+            self._bootstrap_pending = True
+            self._append_message(
+                "system",
+                "Loaded the editable Transcriber coordinator and specialist prompt pack for this session."
+            )
+        worker = FunctionWorker(
+            lambda _emit: client.prompt(outbound_prompt, timeout=None)
+        )
         worker.signals.result.connect(self.signals.prompt_complete.emit)
         worker.signals.error.connect(self.signals.error.emit)
         worker.signals.finished.connect(self._worker_finished)
@@ -722,11 +907,16 @@ class AssistantPanel(QWidget):
 
     def _on_prompt_complete(self, result):
         self._streaming_index = None
+        if self._bootstrap_pending:
+            self._agent_instructions_injected = True
+            self._bootstrap_pending = False
         reason = result.get("stopReason", "completed") if isinstance(result, dict) else "completed"
         self.activity_label.setText(f"Turn {reason} · Ready for your next message.")
 
     def _on_error(self, message):
         self._streaming_index = None
+        if self._bootstrap_pending:
+            self._bootstrap_pending = False
         self._append_message("error", str(message))
         self.connection_state.setText("Connection error")
         self.connection_state.setProperty("state", "error")
@@ -747,6 +937,9 @@ class AssistantPanel(QWidget):
         self.disconnect_button.setEnabled(connected)
         if connected and self.activity_label.text().startswith("OpenCode is working"):
             self.activity_label.setText("Ready · Ask another question or choose a suggested task.")
+        if self._resume_voice_after_prompt:
+            self._resume_voice_after_prompt = False
+            self._resume_voice_agent()
 
     def disconnect_opencode(self):
         client, self.client = self.client, None

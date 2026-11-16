@@ -12,6 +12,25 @@ The Recording page enumerates `QMediaDevices.audioInputs()` and listens for devi
 
 Raw PCM is written incrementally to a uniquely named temporary file beside the selected destination with a reserved 44-byte header. On stop, the recorder finalizes RIFF/WAV sizes, flushes and syncs the file, then atomically replaces the final destination. A failed or discarded capture removes only the temporary file, preserving any pre-existing destination. Pause/resume, elapsed duration, RMS input level, device disconnect/error handling, save, and discard are implemented. The default output directory is the user's Music directory under `Transcriber Recordings`; an existing Settings override takes precedence. Each saved capture is indexed independently in SQLite with file/device metadata, whether or not it is transcribed. WAV/PCM is the only recording output format currently exposed; no MP3/M4A/FLAC encoder is advertised.
 
+## Voice-agent command capture
+
+This is distinct from the Recording page and does not create a user recording.
+After the user enables it, Vosk listens locally for the configured wake phrase.
+Once detected, a bounded worker queue captures the audio that follows the wake
+phrase as 16 kHz, mono, signed 16-bit PCM. An adaptive RMS gate tracks the noise
+floor and ends the command only after the configured continuous-silence window
+(1.5 seconds by default); brief pauses do not submit a command. A maximum command
+duration and a no-speech timeout prevent the listener from remaining stuck.
+
+The completed PCM buffer is passed to the installed local Faster-Whisper model
+on a background worker. The adapter receives a short-lived WAV in the app cache
+because the shared engine interface accepts file paths; that file is removed
+after inference. It is not indexed as a recording, saved to transcript history,
+or sent to Google Cloud. The recognized text is placed in the Agent composer for
+review by default. Automatic submission is an explicit opt-in and requires an
+active OpenCode connection. While a turn is being transcribed or handled, the
+wake listener waits and resumes after the turn, preventing overlapping commands.
+
 ## Playback
 
 `AudioPlayer` wraps `QMediaPlayer` and `QAudioOutput`. The transcription workspace exposes play/pause, seek, playback-rate selection, and volume. Segment start/end times are used to seek-highlight the corresponding transcript text while playing.

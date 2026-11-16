@@ -50,6 +50,7 @@ class AppSettings:
     wake_model_directory: str | None = None
     wake_enabled: bool = False
     voice_auto_submit: bool = False
+    voice_silence_seconds: float = 1.5
     voice_auto_sleep_seconds: int = 30
     max_active_models: int = 2
     ram_budget_mb: int = 8192
@@ -109,6 +110,12 @@ class AppSettings:
         except (TypeError, ValueError):
             self.max_active_models, self.ram_budget_mb, self.vram_budget_mb = 2, 8192, 4096
         self.voice_auto_sleep_seconds = max(5, min(600, self.voice_auto_sleep_seconds))
+        try:
+            self.voice_silence_seconds = float(self.voice_silence_seconds)
+        except (TypeError, ValueError):
+            self.voice_silence_seconds = 1.5
+        if not (0.5 <= self.voice_silence_seconds <= 8.0):
+            self.voice_silence_seconds = 1.5
         self.max_active_models = max(1, min(10, self.max_active_models))
         self.ram_budget_mb = max(0, min(1_048_576, self.ram_budget_mb))
         self.vram_budget_mb = max(0, min(1_048_576, self.vram_budget_mb))

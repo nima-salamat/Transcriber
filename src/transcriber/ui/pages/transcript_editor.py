@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -49,8 +50,8 @@ class TranscriptEditorPage(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(12)
         root.addWidget(page_header(
-            "Transcript Editor",
-            "Edit timestamped segments while preserving source timing and speaker metadata.",
+            "Transcript editor",
+            "Correct recognized words, speakers and segment timing. For subtitle cue layout and file formats, use Subtitles & timing.",
         ))
 
         toolbar = Card()
@@ -69,27 +70,24 @@ class TranscriptEditorPage(QWidget):
         for button in (self.undo_button, self.redo_button, self.split_button,
                        self.merge_button, self.delete_button):
             row1.addWidget(button)
-        word_button = QPushButton("Edit word…")
-        word_button.clicked.connect(self.edit_word)
-        speaker_button = QPushButton("Set speaker…")
-        speaker_button.clicked.connect(self.set_selected_speaker)
-        bookmark_button = QPushButton("Bookmark")
-        bookmark_button.clicked.connect(self.toggle_selected_bookmark)
-        review_button = QPushButton("Mark reviewed")
-        review_button.clicked.connect(self.mark_selected_reviewed)
-        lock_button = QPushButton("Lock / unlock")
-        lock_button.clicked.connect(self.toggle_selected_lock)
-        note_button = QPushButton("Add note…")
-        note_button.clicked.connect(self.add_selected_note)
-        export_button = QPushButton("Export selected…")
-        export_button.clicked.connect(self.export_selected)
-        quality_button = QPushButton("Quality report")
-        quality_button.clicked.connect(self.show_quality_report)
-        compare_button = QPushButton("Compare original")
-        compare_button.clicked.connect(self.compare_original)
-        for button in (word_button, speaker_button, bookmark_button, review_button, lock_button, note_button,
-                       export_button, quality_button, compare_button):
-            row1.addWidget(button)
+        more_button = QPushButton("More tools  ▾")
+        more_menu = QMenu(more_button)
+        for label, handler in (
+            ("Edit word…", self.edit_word),
+            ("Set speaker…", self.set_selected_speaker),
+            ("Bookmark / unbookmark", self.toggle_selected_bookmark),
+            ("Mark reviewed", self.mark_selected_reviewed),
+            ("Lock / unlock", self.toggle_selected_lock),
+            ("Add note…", self.add_selected_note),
+            ("Export selected…", self.export_selected),
+            ("Quality report", self.show_quality_report),
+            ("Compare original", self.compare_original),
+        ):
+            action = more_menu.addAction(label)
+            action.triggered.connect(handler)
+        more_button.setMenu(more_menu)
+        more_button.setToolTip("Less frequent segment, review and diagnostic tools")
+        row1.addWidget(more_button)
         row1.addStretch(1)
         controls.addLayout(row1)
         row2 = QHBoxLayout()

@@ -38,7 +38,7 @@ class SubtitleStudioPage(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(12)
         root.addWidget(page_header(
-            "Subtitle Studio", "Edit subtitle cues, validate timing and export SRT, WebVTT, ASS or SSA.",
+            "Subtitles & timing", "Edit subtitle cue text and timing, validate readability, and export SRT, WebVTT, ASS or SSA. To correct recognized words in the transcript, use Transcript editor.",
         ))
         card = Card()
         toolbar = QVBoxLayout(card)

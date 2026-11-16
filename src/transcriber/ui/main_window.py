@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
+import wave
 from concurrent.futures import CancelledError, Future
 from pathlib import Path
+from threading import Event
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QThread, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
@@ -51,6 +55,7 @@ from transcriber.ui.pages.subtitle_studio import SubtitleStudioPage
 from transcriber.ui.pages.transcript_editor import TranscriptEditorPage
 from transcriber.ui.pages.transcription import TranscriptionPage
 from transcriber.ui.theme import stylesheet
+from transcriber.transcription.segments import TranscriptionOptions
 from transcriber.ui.workers import FunctionWorker
 
 
@@ -111,12 +116,12 @@ class MainWindow(QMainWindow):
     NAVIGATION = [
         ("home", "home", "Home"),
         ("transcription", "projects", "New transcription"),
-        ("recording", "record", "Live recording"),
+        ("recording", "record", "Record audio"),
         ("batch", "activity", "Batch processing"),
-        ("history", "projects", "Projects / Transcripts"),
+        ("history", "projects", "Projects"),
         ("editor", "controls", "Transcript editor"),
-        ("subtitles", "activity", "Subtitle studio"),
-        ("models", "models", "Model library"),
+        ("subtitles", "activity", "Subtitles & timing"),
+        ("models", "models", "AI models"),
         ("audio", "projects", "Audio library"),
         ("cleanup", "controls", "Audio cleanup"),
         ("settings", "settings", "Settings"),
@@ -200,7 +205,12 @@ class MainWindow(QMainWindow):
             button.setObjectName("Nav")
             button.setIcon(self.icon_registry.icon(icon_name, size=18))
             button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
-            button.setToolTip(title)
+            button.setToolTip({
+                "Record audio": "Capture and save a microphone recording; this page does not perform live transcription.",
+                "Transcript editor": "Correct recognized words, speakers and timed transcript segments.",
+                "Subtitles & timing": "Edit subtitle cues, validate readability and export subtitle files.",
+                "AI models": "Discover, install and manage local speech-recognition models.",
+            }.get(title, title))
             button.setCheckable(True)
             button.setMinimumHeight(40)
             button.clicked.connect(lambda _checked=False, page=key: self.navigate(page))
@@ -277,12 +287,12 @@ class MainWindow(QMainWindow):
         self.pages = {
             "home": ("Home", self.home_page),
             "transcription": ("New transcription", self.transcription_page),
-            "recording": ("Live recording", self.recording_page),
+            "recording": ("Record audio", self.recording_page),
             "batch": ("Batch processing", self.batch_page),
-            "history": ("Projects / Transcripts", self.history_page),
+            "history": ("Projects", self.history_page),
             "editor": ("Transcript editor", self.editor_page),
-            "subtitles": ("Subtitle studio", self.subtitle_page),
-            "models": ("Model library", self.model_page),
+            "subtitles": ("Subtitles & timing", self.subtitle_page),
+            "models": ("AI models", self.model_page),
             "audio": ("Audio library", self.audio_page),
             "cleanup": ("Audio cleanup", self.audio_cleanup_page),
             "settings": ("Settings", self.settings_page),
@@ -327,7 +337,10 @@ class MainWindow(QMainWindow):
         properties_layout.addWidget(self.inspector_title)
         properties_layout.addWidget(self.inspector_details)
         properties_layout.addStretch(1)
-        self.assistant_panel = AssistantPanel(self.paths, self.thread_pool, self.settings_store)
+        self.assistant_panel = AssistantPanel(
+            self.paths, self.thread_pool, self.settings_store,
+            voice_transcriber=self._transcribe_voice_audio,
+        )
         self.assistant_panel.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
         inspector_tabs.addTab(properties, "Properties")
         inspector_tabs.addTab(self.assistant_panel, "AI Assistant")
@@ -810,6 +823,73 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             self.ipc_server = None
             self.status_bar.showMessage(f"Local Agent IPC unavailable: {exc}", 8000)
+
+    def _transcribe_voice_audio(self, pcm_audio: bytes) -> str:
+        """Transcribe an in-memory voice command with the installed local Whisper model."""
+        if self.transcription_page.is_busy:
+            raise RuntimeError(
+                "Finish or cancel the current transcription before using voice commands."
+            )
+        configured = self.settings_store.settings
+        candidates = [
+            item for item in self.model_manager.installed(include_sizes=False)
+            if item.get("compatible")
+            and str(item.get("runtime") or "faster-whisper") == "faster-whisper"
+        ]
+        if not candidates:
+            raise RuntimeError(
+                "Install a compatible Faster-Whisper model in AI models before using voice commands."
+            )
+        candidates.sort(key=lambda item: (
+            item.get("repo_id") != configured.default_model,
+            str(item.get("repo_id") or "").casefold(),
+        ))
+        repo_id = str(candidates[0]["repo_id"])
+        audio = bytes(pcm_audio)
+        audio = audio[: len(audio) - (len(audio) % 2)]
+        if len(audio) < 3200:
+            raise RuntimeError("The voice command was too short to recognize.")
+
+        self.paths.cache.mkdir(parents=True, exist_ok=True)
+        handle, temporary_name = tempfile.mkstemp(
+            prefix="voice-command-", suffix=".wav", dir=self.paths.cache
+        )
+        os.close(handle)
+        temporary_path = Path(temporary_name)
+        try:
+            with wave.open(str(temporary_path), "wb") as output:
+                output.setnchannels(1)
+                output.setsampwidth(2)
+                output.setframerate(16_000)
+                output.writeframes(audio)
+
+            engine = self.model_manager.get_engine(repo_id, configured)
+            language = (
+                None if configured.default_language == "auto"
+                else configured.default_language
+            )
+            options = TranscriptionOptions(
+                language=language,
+                task="transcribe",
+                beam_size=max(1, min(5, configured.beam_size)),
+                vad_filter=True,
+                word_timestamps=False,
+                initial_prompt=(
+                    "Transcribe this spoken voice-assistant command verbatim. "
+                    "Preserve the language spoken. Do not answer the command."
+                ),
+            )
+            result = engine.transcribe(
+                temporary_path, options, cancel_event=Event()
+            )
+            recognized = str(result.text or "").strip()
+            if not recognized:
+                raise RuntimeError(
+                    "Faster-Whisper could not recognize words in that voice command."
+                )
+            return recognized
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
     def _register_agent_actions(self):
         register = self.action_registry.register

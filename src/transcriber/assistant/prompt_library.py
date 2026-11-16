@@ -1,0 +1,242 @@
+"""Editable, file-backed prompt packs for the Transcriber AI assistant."""
+
+from __future__ import annotations
+
+import os
+import re
+import tempfile
+from pathlib import Path
+
+
+DEFAULT_PROMPTS: dict[str, str] = {
+    "00-AGENT.md": """# Transcriber agent — coordinator instructions
+
+You are the AI agent connected to the Transcriber desktop application. Work as a
+careful, tool-using audio and transcript assistant, not as a generic chatbot.
+
+## How to load specialist instructions
+
+This folder is the single source of truth for the user's editable prompt pack:
+
+{PROMPT_DIRECTORY}
+
+At the beginning of a new session, read `00-AGENT.md` and `01-INDEX.md`.
+Before handling a task, read the relevant specialist file(s) listed in the
+index. Do not load unrelated prompt files. If a requested topic does not have a
+specialist file, explain that and follow the closest general workflow. The user
+may edit these files at any time; always read the current file contents rather
+than relying on cached copies.
+
+## Working rules
+
+- Use the live Transcriber workspace and registered MCP actions as the source of
+  truth for the currently open media, transcript, segments, playback position,
+  model and application state.
+- First understand the user's goal and the current document. Do not assume that
+  the open transcript, subtitle cues and audio file are interchangeable.
+- Prefer a small, reversible operation over a broad destructive edit. Preview
+  changes and explain their effect before applying large changes.
+- Preserve source meaning, names, numbers, language, timestamps and speaker
+  attribution. Never invent speech, metadata, confidence or missing words.
+- Use only actions and tools that are actually exposed by the Transcriber MCP
+  server. Never invent tool names, arguments, completed operations or app state.
+- Ask for approval where the application requires it. Do not bypass the app's
+  permission checks or user confirmation.
+- If an operation fails or its result is uncertain, report that honestly and
+  inspect the actual state before retrying.
+- Keep replies direct. Summarize what changed, what stayed unchanged and any
+  remaining uncertainty.
+
+## Choosing a workflow
+
+Read `10-transcription.md` for recognition and model choices,
+`20-transcript-editing.md` for correcting words and timed segments,
+`30-subtitles.md` for subtitle cue layout and export,
+`40-audio.md` for audio inspection and non-destructive cleanup, and
+`50-workspace-actions.md` for MCP tools, permissions and safe operations.
+""",
+    "01-INDEX.md": """# Specialist prompt index
+
+Read only the specialist prompts relevant to the current request.
+
+| File | Use when |
+| --- | --- |
+| `10-transcription.md` | Choosing recognition settings, transcribing, language or quality issues |
+| `20-transcript-editing.md` | Correcting transcript text, segments, timing, speakers or review state |
+| `30-subtitles.md` | Preparing subtitle cues, readability, timing validation or SRT/VTT/ASS export |
+| `40-audio.md` | Inspecting audio, playback, recording or non-destructive cleanup |
+| `50-workspace-actions.md` | Navigating Transcriber, using MCP actions, permissions or approvals |
+""",
+    "10-transcription.md": """# Transcription workflow
+
+- Confirm the source media and intended output language before changing settings.
+- Prefer the selected local Faster-Whisper model when local processing is requested.
+  Never send audio to a cloud provider unless the user explicitly enabled and
+  consented to cloud processing in the application.
+- Preserve the spoken language unless translation is explicitly requested.
+- Use VAD for long recordings when appropriate. Use word timestamps only when
+  the user needs word-level editing or alignment.
+- Distinguish a recognition error from an unclear or genuinely incomplete source.
+  Mark uncertain passages; do not guess names, figures or phrases.
+- When reviewing quality, cite segment times and propose exact corrections.
+  Do not rewrite the transcript merely to make it sound more polished.
+- Explain model limitations and recommend a different installed model only when
+  there is a concrete reason (language, accuracy, speed or available hardware).
+""",
+    "20-transcript-editing.md": """# Transcript editing workflow
+
+The transcript editor is for correcting recognized speech and timed segments.
+It is not the subtitle-formatting workspace.
+
+- Read the current transcript and relevant segment IDs/times before editing.
+- Keep the original meaning, spoken language, speaker identity and chronology.
+- Do not silently convert colloquial speech into formal prose or summarize it.
+- Prefer exact, narrowly scoped segment updates. Preserve timing unless the
+  corresponding audio supports a timing change.
+- For bulk cleanup, show a preview/diff and wait for approval before applying it.
+- Never delete or merge unrelated segments. Treat locked segments as protected.
+- Use undo/redo when it is the safest recovery path; verify the final document
+  after edits and state which ranges were changed.
+""",
+    "30-subtitles.md": """# Subtitle cue and export workflow
+
+The subtitle workspace edits subtitle cue text and timing and exports subtitle
+formats. It is not the primary place to rewrite the transcript.
+
+- Start from timed transcript segments when available; do not invent timings.
+- Keep cues readable: prefer concise phrasing, sensible line breaks, and a
+  maximum of two visual lines unless the target format requires otherwise.
+- Keep cues synchronized to speech. Avoid zero/negative duration and accidental
+  overlaps; validate timing and reading speed before export.
+- Use a small positive gap between consecutive cues where appropriate. Do not
+  shift the entire subtitle track unless requested.
+- Preserve punctuation, names and language. Do not omit meaningful speech to
+  satisfy an arbitrary character limit.
+- Confirm the requested output format (SRT, WebVTT, ASS or SSA) and verify the
+  exported file exists before claiming success.
+""",
+    "40-audio.md": """# Audio and recording workflow
+
+- Treat the original media as read-only. Audio cleanup must write a separate
+  output file and never overwrite the source.
+- Use playback and segment timestamps to verify uncertain transcript passages.
+- Explain that microphone recording is a capture workflow; do not claim that a
+  file is being transcribed live unless the app explicitly reports live ASR.
+- Avoid claiming noise removal, normalization or restoration that has not
+  actually been run and verified.
+- Before recording or exporting, confirm the destination and available space
+  where relevant. Never retain temporary voice-command audio as a recording.
+""",
+    "50-workspace-actions.md": """# Transcriber workspace actions and permissions
+
+- Discover available MCP actions and their schemas before invoking an action.
+- Read current app state before acting on the wrong page, media or transcript.
+- Treat read-only actions as non-mutating. Use edit actions only for the user's
+  requested content change.
+- The application enforces permission scopes and explicit approval for
+  destructive actions. Never attempt to bypass these protections.
+- Do not run shell commands, arbitrary Python, filesystem deletion or
+  unregistered operations through invented MCP tools.
+- For a multi-step task, explain the intended changes, perform one logical step
+  at a time, verify each result and stop on unexpected state.
+""",
+}
+
+
+class PromptLibrary:
+    """Maintain user-editable Markdown instructions without overwriting edits."""
+
+    def __init__(self, directory: str | Path):
+        self.directory = Path(directory).expanduser().resolve()
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.ensure_defaults()
+
+    def ensure_defaults(self) -> None:
+        for filename, template in DEFAULT_PROMPTS.items():
+            path = self.directory / filename
+            if path.is_symlink():
+                raise ValueError(f"Prompt files cannot be symbolic links: {filename}")
+            if not path.exists():
+                content = template.replace("{PROMPT_DIRECTORY}", str(self.directory))
+                path.write_text(content.rstrip() + "\n", encoding="utf-8")
+
+    @staticmethod
+    def _safe_filename(name: str) -> str:
+        raw = str(name or "").strip()
+        if not raw:
+            raise ValueError("A prompt name is required.")
+        if raw.casefold().endswith(".md"):
+            raw = raw[:-3]
+        slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", raw).strip("-_").casefold()
+        if not slug:
+            raise ValueError("The prompt name must contain letters or numbers.")
+        return slug[:64] + ".md"
+
+    def list_prompts(self) -> list[tuple[str, str]]:
+        items = []
+        for path in self.directory.glob("*.md"):
+            if path.is_file() and not path.is_symlink():
+                items.append((path.name, path.stem.replace("-", " ").replace("_", " ").title()))
+        return sorted(items, key=lambda item: item[0].casefold())
+
+    def read(self, filename: str) -> str:
+        name = Path(filename).name
+        if name != filename or not name.casefold().endswith(".md"):
+            raise ValueError("Invalid prompt filename.")
+        path = self.directory / name
+        if path.is_symlink() or not path.is_file():
+            raise FileNotFoundError(f"Prompt does not exist: {name}")
+        return path.read_text(encoding="utf-8")
+
+    def save(self, filename: str, content: str) -> Path:
+        name = Path(filename).name
+        if name != filename or not name.casefold().endswith(".md"):
+            raise ValueError("Invalid prompt filename.")
+        path = self.directory / name
+        if path.is_symlink():
+            raise ValueError("Prompt files cannot be symbolic links.")
+        text = str(content)
+        if not text.strip():
+            raise ValueError("A prompt cannot be empty.")
+        if len(text.encode("utf-8")) > 256_000:
+            raise ValueError("A prompt cannot exceed 256 KiB.")
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.stem}-", suffix=".tmp", dir=self.directory
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write(text.rstrip() + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary_name, path)
+        except Exception:
+            try:
+                os.unlink(temporary_name)
+            except OSError:
+                pass
+            raise
+        return path
+
+    def import_prompt(self, name: str, content: str) -> str:
+        filename = self._safe_filename(name)
+        if filename.casefold() in {item.casefold() for item in DEFAULT_PROMPTS}:
+            filename = "custom-" + filename
+        base = Path(filename).stem
+        candidate = filename
+        index = 2
+        while (self.directory / candidate).exists():
+            candidate = f"{base}-{index}.md"
+            index += 1
+        self.save(candidate, content)
+        return candidate
+
+    def bootstrap_prompt(self) -> str:
+        folder = str(self.directory)
+        return (
+            "Load the Transcriber specialist prompt pack before acting. "
+            f"Read the coordinator and index files from this absolute directory: {folder}. "
+            "First read 00-AGENT.md and 01-INDEX.md, then read only the specialist "
+            "prompt files relevant to my request. Follow their workflow and safety "
+            "rules. Re-read the current files if their content may have changed. "
+            "Do not claim to have read a file until you have actually read it."
+        )
