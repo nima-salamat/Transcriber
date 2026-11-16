@@ -50,11 +50,6 @@ class AppSettings:
     wake_model_directory: str | None = None
     wake_enabled: bool = False
     voice_auto_submit: bool = False
-    voice_asr_model: str = ""
-    chat_provider: str = "opencode"
-    ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = ""
-    ollama_keep_alive: str = "30m"
     voice_silence_seconds: float = 1.5
     voice_auto_sleep_seconds: int = 30
     max_active_models: int = 2
@@ -125,17 +120,6 @@ class AppSettings:
         self.ram_budget_mb = max(0, min(1_048_576, self.ram_budget_mb))
         self.vram_budget_mb = max(0, min(1_048_576, self.vram_budget_mb))
         self.wake_phrase = " ".join(str(self.wake_phrase or "transcriber").split())[:80]
-        self.voice_asr_model = str(self.voice_asr_model or "").strip()[:256]
-        self.chat_provider = str(self.chat_provider or "opencode").strip().casefold()
-        if self.chat_provider not in {"opencode", "ollama"}:
-            self.chat_provider = "opencode"
-        self.ollama_base_url = str(self.ollama_base_url or "http://127.0.0.1:11434").strip().rstrip("/")[:512]
-        if not self.ollama_base_url.startswith(("http://", "https://")):
-            self.ollama_base_url = "http://127.0.0.1:11434"
-        self.ollama_model = str(self.ollama_model or "").strip()[:256]
-        self.ollama_keep_alive = str(self.ollama_keep_alive or "30m").strip()[:32]
-        if not self.ollama_keep_alive:
-            self.ollama_keep_alive = "30m"
         self.opencode_path = str(self.opencode_path) if self.opencode_path else None
         self.opencode_project_directory = str(self.opencode_project_directory) if self.opencode_project_directory else None
         self.opencode_session_id = str(self.opencode_session_id) if self.opencode_session_id else None
