@@ -52,7 +52,7 @@ def test_prompt_context_includes_current_coordinator_index_and_relevant_speciali
     assert "PROMPT FILE: 01-INDEX.md" in context
     assert "PROMPT FILE: 50-workspace-actions.md" in context
     assert "PROMPT FILE: 60-voice-agent.md" in context
-    assert "phrase made of words the selected model can recognize" in context
+    assert "Do not promise reliable detection for an out-of-vocabulary" in context
     assert "PROMPT FILE: 30-subtitles.md" not in context
 
 
