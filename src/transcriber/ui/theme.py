@@ -49,11 +49,6 @@ def stylesheet(theme: str) -> str:
         border: 1px solid {c['border']};
         border-radius: 12px;
     }}
-    QFrame#VoiceHero {{
-        background: {c['surface_2']};
-        border: 1px solid {c['border']};
-        border-radius: 18px;
-    }}
     QLabel#AssistantSectionTitle {{ font-size: 14px; font-weight: 700; }}
     QWidget#AssistantConversationPage, QWidget#AssistantSettingsPage,
     QWidget#AssistantSettingsContent {{ background: transparent; }}
@@ -73,11 +68,41 @@ def stylesheet(theme: str) -> str:
         background: {c['surface_hover']};
         border-color: {c['accent']};
     }}
+    QPushButton#AssistantNewChatButton {{
+        background: transparent;
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+        padding: 7px 11px;
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QPushButton#AssistantNewChatButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QPushButton#AssistantVoiceButton {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+        padding: 7px 12px;
+        min-height: 16px;
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QPushButton#AssistantVoiceButton[active="true"] {{
+        color: {c['success']};
+        border-color: {c['success']};
+    }}
+    QCheckBox#AssistantAgentMode {{
+        color: {c['muted']};
+        font-size: 11px;
+        font-weight: 650;
+    }}
     QTextBrowser#AssistantChat {{
         background: {c['window']};
         border: 1px solid {c['border']};
-        border-radius: 12px;
-        padding: 5px;
+        border-radius: 15px;
+        padding: 8px;
         selection-background-color: {c['accent']};
     }}
     QPlainTextEdit#AssistantPrompt {{
