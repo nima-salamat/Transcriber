@@ -43,10 +43,35 @@ def stylesheet(theme: str) -> str:
     }}
     QLabel#AssistantStatus[state="connecting"] {{ color: {c['warning']}; }}
     QLabel#AssistantStatus[state="error"] {{ color: {c['danger']}; border-color: {c['danger']}; }}
-    QFrame#AssistantContext, QFrame#AssistantComposer, QFrame#AssistantVoicePanel {{
+    QFrame#AssistantContext, QFrame#AssistantComposer, QFrame#AssistantVoicePanel,
+    QFrame#AssistantSettingsCard {{
         background: {c['surface']};
         border: 1px solid {c['border']};
         border-radius: 12px;
+    }}
+    QFrame#VoiceHero {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 18px;
+    }}
+    QLabel#AssistantSectionTitle {{ font-size: 14px; font-weight: 700; }}
+    QWidget#AssistantConversationPage, QWidget#AssistantSettingsPage,
+    QWidget#AssistantSettingsContent {{ background: transparent; }}
+    QScrollArea#AssistantSettingsScroll {{ background: transparent; border: 0; }}
+    QPushButton#AssistantSettingsButton {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+        padding: 0;
+        font-size: 20px;
+        min-width: 36px;
+        max-width: 40px;
+        min-height: 36px;
+        max-height: 40px;
+    }}
+    QPushButton#AssistantSettingsButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
     }}
     QTextBrowser#AssistantChat {{
         background: {c['window']};
