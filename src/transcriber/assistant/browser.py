@@ -201,6 +201,8 @@ class WindowsBrowserController:
         term = str(query or "").strip()
         if not term or len(term) > 500:
             raise ValueError("Enter a search query (maximum 500 characters).")
+        if engine not in {"google", "bing"}:
+            raise ValueError("Search engine must be Google or Bing.")
         base = "https://www.google.com/search?q=" if engine == "google" else "https://www.bing.com/search?q="
         return self.open(base + quote(term, safe=""))
 
@@ -244,6 +246,11 @@ class WindowsBrowserController:
                 locator = page.get_by_label(label, exact=False).first
             else:
                 locator = page.get_by_placeholder(placeholder, exact=False).first
+            field_type = str(locator.get_attribute("type") or "").casefold()
+            if field_type == "password":
+                raise BrowserAutomationError(
+                    "The Agent cannot enter passwords or authentication secrets into browser forms."
+                )
             locator.fill(str(value), timeout=12_000)
             return self._page_summary(page, include_elements=False)
         return self._with_page(interact)

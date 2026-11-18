@@ -207,6 +207,16 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "path": {"type": "string"},
         }, "required": ["name", "path"]},
     },
+    "agent.skills_catalog": {
+        "description": "List curated public Agent Skills available for installation from GitHub.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    "agent.skill_install": {
+        "description": "Download and install one Agent Skill from a public GitHub folder URL after user approval.",
+        "parameters": {"type": "object", "properties": {
+            "url": {"type": "string", "description": "Public GitHub tree URL pointing to a folder containing SKILL.md"},
+        }, "required": ["url"]},
+    },
     "desktop.launch_app": {
         "description": "Launch one built-in allowlisted Windows application. User approval is required.",
         "parameters": {"type": "object", "properties": {
@@ -313,6 +323,7 @@ class OllamaAgent:
         cancellation=None,
         on_chunk: Callable[[str], None] | None = None,
         on_tool_status: Callable[[str], None] | None = None,
+        on_tool_result: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         working = [dict(item) for item in messages]
         tool_count = 0
@@ -411,6 +422,12 @@ class OllamaAgent:
                     "tool_name": str((call.get("function") or {}).get("name") or "unknown"),
                     "content": result_text,
                 })
+                if on_tool_result:
+                    on_tool_result({
+                        "name": name,
+                        "ok": result_text.startswith('{"ok":true'),
+                        "content": result_text,
+                    })
                 if cancellation and cancellation.cancelled:
                     return {
                         "model": model,

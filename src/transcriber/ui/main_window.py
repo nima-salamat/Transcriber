@@ -1031,19 +1031,19 @@ class MainWindow(QMainWindow):
             "browser.open", "Open a website in the dedicated controlled Chrome/Edge browser.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.open(args["url"]), required=("url",),
-        ))
+        , background=True))
         register(ActionSpec(
             "browser.search", "Search the web in the dedicated controlled Chrome/Edge browser.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.search(
                 args["query"], engine=str(args.get("engine") or "google")
             ), required=("query",),
-        ))
+        , background=True))
         register(ActionSpec(
             "browser.snapshot", "Read the controlled browser tab and visible interactive elements.",
             AgentPermission.BROWSER_CONTROL,
             lambda _args: self.agent_browser.snapshot(),
-        ))
+        , background=True))
         register(ActionSpec(
             "browser.click", "Click a browser element after the user approves the target.",
             AgentPermission.BROWSER_CONTROL,
@@ -1073,14 +1073,14 @@ class MainWindow(QMainWindow):
         register(ActionSpec(
             "browser.back", "Navigate back one page in the controlled browser.",
             AgentPermission.BROWSER_CONTROL, lambda _args: self.agent_browser.back(),
-        ))
+        , background=True))
         register(ActionSpec(
             "browser.screenshot", "Save a screenshot of the controlled browser page.",
             AgentPermission.BROWSER_CONTROL,
             lambda _args: self.agent_browser.screenshot(
                 self.paths.data / "agent-browser-screenshots"
             ),
-        ))
+        , background=True))
         register(ActionSpec(
             "browser.close", "Close the controlled browser and its dedicated profile window.",
             AgentPermission.BROWSER_CONTROL, lambda _args: self.agent_browser.close(),
@@ -1369,7 +1369,7 @@ class MainWindow(QMainWindow):
         if sys.platform != "win32":
             raise RuntimeError("Custom command execution is currently supported on Windows only.")
         command = str(args.get("command") or "").strip()
-        if not command or len(command) > 6000 or "\\x00" in command:
+        if not command or len(command) > 6000 or "\x00" in command:
             raise ValueError("Enter a PowerShell command between 1 and 6,000 characters.")
         hard_blocked = (
             r"(?i)\b(format|diskpart|clear-disk|initialize-disk|remove-partition|set-partition|bcdedit|shutdown|restart-computer|stop-computer)\b",

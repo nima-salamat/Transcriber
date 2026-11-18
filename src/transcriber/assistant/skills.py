@@ -215,6 +215,57 @@ class AgentSkillManager:
     def summaries(self) -> list[dict[str, str]]:
         return [skill.summary() for skill in self.list_skills()]
 
+    @staticmethod
+    def _intent_matches(request: str, intent: str) -> bool:
+        """Recognize common English and Persian task cues without an LLM round trip."""
+        cues = {
+            "browser": (
+                "browser", "chrome", "edge", "website", "webpage", "web site", "internet",
+                "search online", "google", "browse", "url", "website", "کروم", "مرورگر",
+                "اینترنت", "وب", "سایت", "جستجو", "سرچ", "صفحه وب",
+            ),
+            "desktop": (
+                "windows", "desktop", "application", "app", "program", "launch", "open app",
+                "powershell", "terminal", "command", "cmd", "run command", "ویندوز",
+                "برنامه", "اپلیکیشن", "باز کن", "اجرا کن", "دستور", "پاورشل",
+            ),
+            "files": (
+                "file", "folder", "directory", "document", "downloads", "rename", "move file",
+                "copy file", "search files", "فایل", "پوشه", "سند", "دانلود", "تغییر نام",
+                "انتقال فایل", "کپی فایل",
+            ),
+            "browser-testing": (
+                "test website", "browser test", "uat", "regression", "screenshot evidence",
+                "تست سایت", "آزمایش وب", "بررسی رابط",
+            ),
+        }
+        return any(cue in request for cue in cues.get(intent, ()))
+
+    def relevant_skills(self, request: str, *, limit: int = 3) -> list[dict[str, object]]:
+        """Load matching skill bodies automatically, ordered by task-intent confidence."""
+        query = str(request or "").casefold()
+        if not query:
+            return []
+        ranked: list[tuple[int, AgentSkill]] = []
+        for skill in self.list_skills():
+            identity = f"{skill.name} {skill.description}".casefold()
+            score = 0
+            if skill.name in {"browser-automation", "agent-browser", "web-browsing"}:
+                score += 6 if self._intent_matches(query, "browser") else 0
+            elif skill.name in {"windows-desktop", "desktop-control"}:
+                score += 6 if self._intent_matches(query, "desktop") else 0
+            elif skill.name in {"file-workflows", "file-management"}:
+                score += 6 if self._intent_matches(query, "files") else 0
+            if skill.name in {"browser-uat-analyst", "webapp-testing"}:
+                score += 8 if self._intent_matches(query, "browser-testing") else 0
+            for token in re.findall(r"[a-z0-9][a-z0-9_-]{2,}", identity):
+                if token in query:
+                    score += 1
+            if score:
+                ranked.append((score, skill))
+        ranked.sort(key=lambda item: (-item[0], item[1].name))
+        return [self.load_skill(skill.name) for _score, skill in ranked[:max(0, min(limit, 5))]]
+
     def load_skill(self, name: str) -> dict[str, object]:
         skill = self._find(name)
         content = (skill.path / "SKILL.md").read_text(encoding="utf-8")
