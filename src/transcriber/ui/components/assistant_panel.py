@@ -724,6 +724,16 @@ class AssistantPanel(QWidget):
         self.disconnect_opencode()
 
     def start_voice_chat(self):
+        # The orb can cancel the pending voice start while the provider connects.
+        if self._start_voice_after_connect and self.voice_agent is None:
+            self._start_voice_after_connect = False
+            self._voice_conversation_mode = False
+            self._set_voice_activity(
+                "Voice chat start cancelled · provider connection may continue",
+                stage="cancelled",
+                log_message="Voice chat startup was cancelled before microphone activation.",
+            )
+            return
         if self.voice_agent is not None:
             self._voice_conversation_mode = False
             self.toggle_voice_agent()
@@ -1037,6 +1047,7 @@ class AssistantPanel(QWidget):
         phrase = self.wake_phrase.text().strip()
         if not phrase:
             self._voice_conversation_mode = False
+            self._sync_voice_orb()
             QMessageBox.information(
                 self, "Activation phrase required",
                 "Enter the keyword or phrase that Vosk should listen for.",
@@ -1049,6 +1060,7 @@ class AssistantPanel(QWidget):
             )
         if not model_path or not Path(model_path).is_dir():
             self._voice_conversation_mode = False
+            self._sync_voice_orb()
             QMessageBox.information(
                 self, "Vosk model required",
                 "Choose a locally installed Vosk model before enabling wake detection.",
@@ -1058,12 +1070,14 @@ class AssistantPanel(QWidget):
             from transcriber.assistant.speech_input import VoskVoiceAgent
         except ImportError as exc:
             self._voice_conversation_mode = False
+            self._sync_voice_orb()
             self.voice_chat_button.setEnabled(True)
             QMessageBox.warning(self, "Voice support unavailable", str(exc))
             return
 
         if not callable(self.voice_transcriber):
             self._voice_conversation_mode = False
+            self._sync_voice_orb()
             QMessageBox.warning(
                 self, "Voice transcription unavailable",
                 "The local Faster-Whisper voice transcription service is not available.",
