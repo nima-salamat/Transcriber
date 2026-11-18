@@ -7,13 +7,11 @@ permissions and per-action user approval before handlers run.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import json
+from collections.abc import Callable
 from typing import Any
 
 from transcriber.assistant.ollama_client import OllamaCancelled
-
-
 _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "app.get_state": {
         "description": "Read the current Transcriber page, audio, transcript and active model state.",
