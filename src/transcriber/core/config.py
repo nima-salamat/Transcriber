@@ -45,7 +45,9 @@ class AppSettings:
     opencode_path: str | None = None
     opencode_project_directory: str | None = None
     opencode_session_id: str | None = None
-    agent_permissions: list[str] = field(default_factory=lambda: ["read_only", "edit_content"])
+    agent_permissions: list[str] = field(default_factory=lambda: [
+        "read_only", "edit_content", "desktop_control", "browser_control", "command_execution"
+    ])
     wake_phrase: str = "transcriber"
     wake_model_directory: str | None = None
     wake_enabled: bool = False
@@ -144,7 +146,7 @@ class AppSettings:
             "file_export", "model_management", "destructive_actions", "desktop_control",
             "browser_control", "command_execution",
         }
-        raw_permissions = self.agent_permissions if isinstance(self.agent_permissions, list) else ["read_only", "edit_content"]
+        raw_permissions = self.agent_permissions if isinstance(self.agent_permissions, list) else ["read_only", "edit_content", "desktop_control", "browser_control", "command_execution"]
         self.agent_permissions = list(dict.fromkeys(
             str(value) for value in raw_permissions if str(value) in valid_permissions
         ))

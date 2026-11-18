@@ -1028,69 +1028,123 @@ class MainWindow(QMainWindow):
             self.paths.config / "agent-browser-profile"
         )
         register(ActionSpec(
-            "browser.open", "Open a website in the dedicated controlled Chrome/Edge browser.",
+            "browser.open",
+            "Open a website in the dedicated controlled Chrome/Edge browser.",
             AgentPermission.BROWSER_CONTROL,
-            lambda args: self.agent_browser.open(args["url"]), required=("url",),
-        , background=True))
+            lambda args: self.agent_browser.open(args["url"]),
+            required=("url",),
+            background=True,
+        ))
         register(ActionSpec(
-            "browser.search", "Search the web in the dedicated controlled Chrome/Edge browser.",
+            "browser.search",
+            "Search the public web in the dedicated controlled Chrome/Edge browser.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.search(
                 args["query"], engine=str(args.get("engine") or "google")
-            ), required=("query",),
-        , background=True))
+            ),
+            required=("query",),
+            background=True,
+        ))
         register(ActionSpec(
-            "browser.snapshot", "Read the controlled browser tab and visible interactive elements.",
+            "browser.snapshot",
+            "Read the current browser tab and its visible interactive elements.",
             AgentPermission.BROWSER_CONTROL,
             lambda _args: self.agent_browser.snapshot(),
-        , background=True))
+            background=True,
+        ))
         register(ActionSpec(
-            "browser.click", "Click a browser element after the user approves the target.",
+            "browser.click",
+            "Click a browser element after the user approves the target.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.click(
                 text=str(args.get("text") or ""),
                 selector=str(args.get("selector") or ""),
                 role=str(args.get("role") or ""),
-            ), requires_approval=True, background=True,
+            ),
+            requires_approval=True,
+            background=True,
         ))
         register(ActionSpec(
-            "browser.fill", "Fill a browser form field after the user approves the value.",
+            "browser.fill",
+            "Fill a browser form field after the user approves the value.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.fill(
                 str(args.get("value") or ""),
                 selector=str(args.get("selector") or ""),
                 label=str(args.get("label") or ""),
                 placeholder=str(args.get("placeholder") or ""),
-            ), required=("value",), requires_approval=True, background=True,
+            ),
+            required=("value",),
+            requires_approval=True,
+            background=True,
         ))
         register(ActionSpec(
-            "browser.press", "Press a limited keyboard key in the controlled browser.",
+            "browser.press",
+            "Press a limited keyboard key in the controlled browser.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.press(
                 str(args.get("key") or ""), selector=str(args.get("selector") or "")
-            ), required=("key",), requires_approval=True, background=True,
+            ),
+            required=("key",),
+            requires_approval=True,
+            background=True,
         ))
         register(ActionSpec(
-            "browser.back", "Navigate back one page in the controlled browser.",
-            AgentPermission.BROWSER_CONTROL, lambda _args: self.agent_browser.back(),
-        , background=True))
+            "browser.back",
+            "Navigate back one page in the controlled browser.",
+            AgentPermission.BROWSER_CONTROL,
+            lambda _args: self.agent_browser.back(),
+            background=True,
+        ))
         register(ActionSpec(
-            "browser.screenshot", "Save a screenshot of the controlled browser page.",
+            "browser.screenshot",
+            "Save a screenshot of the controlled browser page.",
             AgentPermission.BROWSER_CONTROL,
             lambda _args: self.agent_browser.screenshot(
                 self.paths.data / "agent-browser-screenshots"
             ),
-        , background=True))
+            background=True,
+        ))
         register(ActionSpec(
-            "browser.close", "Close the controlled browser and its dedicated profile window.",
-            AgentPermission.BROWSER_CONTROL, lambda _args: self.agent_browser.close(),
-            requires_approval=True, background=True,
+            "browser.close",
+            "Close the controlled browser and its dedicated profile window.",
+            AgentPermission.BROWSER_CONTROL,
+            lambda _args: self.agent_browser.close(),
+            requires_approval=True,
+            background=True,
         ))
         register(ActionSpec(
             "system.run_command",
             "Run a custom PowerShell command as the current Windows user; every command requires approval.",
-            AgentPermission.COMMAND_EXECUTION, self._agent_run_command,
-            required=("command",), requires_approval=True, background=True,
+            AgentPermission.COMMAND_EXECUTION,
+            self._agent_run_command,
+            required=("command",),
+            requires_approval=True,
+            background=True,
+        ))
+        register(ActionSpec(
+            "agent.skills_search",
+            "Find Agent Skills that best match a task so the model can choose one before acting.",
+            AgentPermission.READ_ONLY,
+            lambda args: self.assistant_panel.skill_manager.search_skills(
+                args["query"], limit=int(args.get("limit") or 8)
+            ),
+            required=("query",),
+        ))
+        register(ActionSpec(
+            "agent.skills_catalog",
+            "List curated public Agent Skills available for installation from GitHub.",
+            AgentPermission.READ_ONLY,
+            lambda _args: list(self.assistant_panel.skill_manager.CATALOG),
+        ))
+        register(ActionSpec(
+            "agent.skill_install",
+            "Download and install a Skill from a public GitHub folder URL.",
+            AgentPermission.COMMAND_EXECUTION,
+            lambda args: self.assistant_panel.skill_manager.install_from_github(args["url"]).summary(),
+            required=("url",),
+            requires_approval=True,
+            background=True,
         ))
         register(ActionSpec(
             "agent.skills_list", "List locally installed portable Agent Skills.",

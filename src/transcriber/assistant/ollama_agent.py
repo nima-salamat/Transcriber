@@ -190,6 +190,23 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 120},
         }, "required": ["command"]},
     },
+    "agent.skills_search": {
+        "description": "Find matching installed Agent Skills for the user's task. This should be the first tool for multi-step browser, desktop, file, research or coding work.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "The user's complete task"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 8},
+        }, "required": ["query"]},
+    },
+    "agent.skills_catalog": {
+        "description": "List curated public Agent Skills that can be installed from GitHub.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    "agent.skill_install": {
+        "description": "Download and install a public GitHub Agent Skill folder. Use only when the user asked to install or download a skill; user approval is required.",
+        "parameters": {"type": "object", "properties": {
+            "url": {"type": "string", "description": "Public GitHub folder URL containing SKILL.md"},
+        }, "required": ["url"]},
+    },
     "agent.skills_list": {
         "description": "List installed portable Agent Skills with their names and descriptions.",
         "parameters": {"type": "object", "properties": {}},
