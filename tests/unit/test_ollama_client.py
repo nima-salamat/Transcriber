@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from transcriber.assistant.ollama_client import OllamaClient, OllamaError
+from transcriber.assistant.ollama_client import OllamaCancellation, OllamaCancelled, OllamaClient, OllamaError
 
 
 class FakeResponse:
@@ -123,6 +123,73 @@ def test_chat_streams_tokens_and_preserves_conversation_messages(monkeypatch):
     assert result["metrics"]["eval_count"] == 2
 
 
+
+def test_chat_sends_function_schemas_and_preserves_tool_history(monkeypatch):
+    captured = {}
+    def fake_urlopen(request, timeout):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        payload = {"message": {"role": "assistant", "content": "Done."}, "done": True}
+        return FakeResponse((json.dumps(payload) + "\\n").encode("utf-8"))
+    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    tool = {"type": "function", "function": {"name": "desktop.launch_app", "parameters": {"type": "object"}}}
+    history = [
+        {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "desktop.launch_app", "arguments": {"app": "notepad"}}}]},
+        {"role": "tool", "tool_name": "desktop.launch_app", "content": "{\\\"ok\\\":true}"},
+        {"role": "user", "content": "Thanks"},
+    ]
+
+    result = OllamaClient().chat("qwen2.5:7b", history, tools=[tool])
+
+    assert captured["body"]["tools"] == [tool]
+    assert captured["body"]["messages"] == history
+    assert result["text"] == "Done."
+    assert result["tool_calls"] == []
+
+
+def test_chat_collects_tool_calls_from_streaming_chunks(monkeypatch):
+    call = {"function": {"name": "desktop.launch_app", "arguments": {"app": "notepad"}}}
+    chunks = [
+        {"message": {"role": "assistant", "content": "", "tool_calls": [call]}, "done": False},
+        {"message": {"role": "assistant", "content": ""}, "done": True},
+    ]
+    payload = "".join(json.dumps(item) + "\\n" for item in chunks).encode("utf-8")
+    monkeypatch.setattr(
+        "transcriber.assistant.ollama_client.urlopen",
+        lambda request, timeout: FakeResponse(payload),
+    )
+
+    result = OllamaClient().chat(
+        "qwen2.5:7b", [{"role": "user", "content": "Open Notepad"}],
+        tools=[{"type": "function", "function": {"name": "desktop.launch_app"}}],
+    )
+
+    assert result["tool_calls"] == [call]
+
+
+def test_chat_cancellation_before_network_does_not_send_request(monkeypatch):
+    def forbidden_urlopen(*_args, **_kwargs):
+        raise AssertionError("a cancelled chat must not make a network request")
+    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", forbidden_urlopen)
+    token = OllamaCancellation()
+    token.cancel()
+
+    with pytest.raises(OllamaCancelled):
+        OllamaClient().chat("qwen2.5:7b", [{"role": "user", "content": "Hello"}], cancellation=token)
+
+
+def test_cancellation_closes_an_attached_response():
+    class Closable:
+        closed = False
+        def close(self):
+            self.closed = True
+    response = Closable()
+    token = OllamaCancellation()
+
+    token.attach(response)
+    token.cancel()
+
+    assert token.cancelled
+    assert response.closed
 def test_chat_reports_server_error(monkeypatch):
     def fake_urlopen(request, timeout):
         return FakeResponse(b'{"error":"model not found"}\n')

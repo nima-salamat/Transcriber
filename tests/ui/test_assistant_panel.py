@@ -120,12 +120,12 @@ def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
     panel = AssistantPanel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
-    assert "START" in panel.voice_chat_button.text()
+    assert "Voice" in panel.voice_chat_button.text()
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
     panel._voice_conversation_mode = True
     panel._sync_voice_orb()
-    assert "STOP" in panel.voice_chat_button.text()
+    assert "Stop voice" in panel.voice_chat_button.text()
     assert panel.voice_chat_button.accessibleName() == "Stop voice conversation"
 
     panel._voice_conversation_mode = False
@@ -133,6 +133,60 @@ def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
     assert "START" in panel.voice_chat_button.text()
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
+
+
+def test_agent_runtime_controls_the_agent_tools_toggle(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    panel = AssistantPanel(paths, QThreadPool())
+    qtbot.addWidget(panel)
+
+    assert not panel.agent_mode_check.isEnabled()
+    registry = SimpleNamespace(describe=lambda **_kwargs: [])
+    panel.set_agent_runtime(registry)
+    assert panel.agent_mode_check.isEnabled()
+    assert panel.agent_mode_check.isChecked()
+
+
+def test_new_local_chat_clears_only_the_current_conversation(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    panel = AssistantPanel(paths, QThreadPool())
+    qtbot.addWidget(panel)
+    panel._chat_provider = "ollama"
+    panel._ollama_messages = [
+        {"role": "system", "content": "instructions"},
+        {"role": "user", "content": "old conversation"},
+    ]
+    panel._messages = [{"role": "user", "text": "old conversation"}]
+
+    panel.new_chat()
+
+    assert panel._ollama_messages == []
+    assert "old conversation" not in panel.chat_view.toPlainText()
+    assert "New local conversation started." in panel._messages[-1]["text"]
+
+
+def test_ollama_stop_is_independent_of_opencode_connection(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    panel = AssistantPanel(paths, QThreadPool())
+    qtbot.addWidget(panel)
+    class Cancellation:
+        cancelled = False
+        def cancel(self):
+            self.cancelled = True
+    token = Cancellation()
+    panel._chat_provider = "ollama"
+    panel._ollama_cancellation = token
+
+    panel.cancel_prompt()
+
+    assert token.cancelled
+    assert "Stop requested" in panel._messages[-1]["text"]
 
 def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
@@ -171,7 +225,7 @@ def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path)
     assert panel.ollama_controls.isHidden() is False
     assert panel.project_card.isHidden() is True
     assert panel.connect_button.text() == "Connect Ollama"
-    assert panel.voice_chat_button.objectName() == "VoiceOrb"
+    assert panel.voice_chat_button.objectName() == "AssistantVoiceButton"
     assert "START" in panel.voice_chat_button.text()
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 

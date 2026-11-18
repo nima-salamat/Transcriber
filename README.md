@@ -20,7 +20,7 @@
 - Generic model runtime service with resource budgets, lazy loading, pinning, LRU eviction and a configurable 1–10 loaded-model ceiling for compatible adapters. The integrated Faster-Whisper application manager remains single-active-model for now.
 - Optional OpenCode ACP client with persistent sessions, streaming updates and cancellation; standalone MCP stdio server exposes application state, action discovery and registered actions through authenticated local IPC.
 - Optional local Vosk wake/voice input. Choose the activation keyword and one installed Vosk wake-word model from **AI Assistant → Settings (gear) → Voice input**. Vosk detects only the wake phrase; the installed local Faster-Whisper model transcribes the command.
-- Dedicated **AI Assistant** workspace with a conversational history, OpenCode ACP or local Ollama provider, and a large central voice control. **Start** connects the selected provider, warms the local Faster-Whisper model, loads the Vosk wake detector, and continuously cycles through wake phrase → microphone capture until silence → local transcription → Agent response → wake listening. The response is displayed in the conversation; speech playback is not included.
+- Dedicated **AI Assistant** workspace with a ChatGPT-style Markdown conversation, separate **New chat**, streaming replies and an independent **Stop** control. OpenCode ACP and local Ollama are supported. The Ollama Agent can call only tools enabled by Transcriber permissions, feeds action results back into the model and enforces a bounded tool-calling loop. The voice control is compact and independent of text chat; it can run a local Vosk wake detector followed by local Faster-Whisper command transcription. Speech playback is not included.
 - SQLite transcript persistence, editor metadata, history, favorites, autosave and metadata-only backup/restore.
 
 The full scope and verified gaps are listed in [Feature extraction](docs/product/feature-extraction.md) and [Known limitations](docs/KNOWN_LIMITATIONS.md).
@@ -139,6 +139,13 @@ This page records microphone audio; it does **not** claim to perform continuous 
 Vosk is the wake detector, not the command transcription model. The wake model and activation phrase are saved in Transcriber settings. Voice input remains off until explicitly enabled, and review-before-send remains the default.
 
 The **Prompt library** under **AI Assistant → Settings → Agent instructions** stores editable Markdown instructions. **Copy full prompt pack** copies the actual current contents, rather than only a folder path. For messages sent through Transcriber, the application reads the current coordinator, index and task-relevant specialist files and embeds their contents in requests to OpenCode or the local Ollama model; it does not rely on an external client independently opening Transcriber's AppData directory.
+
+
+### Local Ollama Agent tools
+
+Enable **Agent tools** in the AI Assistant composer to let a local Ollama model request application actions. Available tools are limited to the permissions enabled in **Settings → Agent permissions**. Read-only tools can inspect the current Transcriber workspace, transcript, audio state and subtitle validation. Desktop actions additionally require the separate **Desktop control** permission and a confirmation dialog for each request. The built-in desktop allowlist can open Notepad, Calculator, Explorer, Task Manager, Paint or Windows Terminal; open the Downloads, Documents or Desktop folders; open an existing local path; and open HTTP/HTTPS URLs in the default browser. Windows Settings is available as a preset on Windows.
+
+Transcriber does not expose a general shell, arbitrary command runner or Python execution tool to the model. Action loops are bounded, tool calls are recorded in the chat and action results are returned to the model before it writes its final answer. **Stop** cancels Ollama generation and prevents further tools from starting. A desktop action that has already been approved and started may finish before the worker can stop; it is never silently retried. Agent tools require a model that supports Ollama function/tool calling.
 
 ## Data locations
 

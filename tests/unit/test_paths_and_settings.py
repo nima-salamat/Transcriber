@@ -110,6 +110,7 @@ def test_ollama_and_voice_model_settings_round_trip(tmp_path):
         ollama_model="qwen2.5:7b",
         ollama_keep_alive="1h",
         voice_asr_model="Systran/faster-whisper-small",
+        agent_permissions=["read_only", "desktop_control"],
     )
     loaded = SettingsStore(store.path).load()
 
@@ -118,6 +119,7 @@ def test_ollama_and_voice_model_settings_round_trip(tmp_path):
     assert loaded.ollama_model == "qwen2.5:7b"
     assert loaded.ollama_keep_alive == "1h"
     assert loaded.voice_asr_model == "Systran/faster-whisper-small"
+    assert loaded.agent_permissions == ["read_only", "desktop_control"]
 
 
 def test_invalid_chat_provider_and_ollama_url_fall_back_safely():
