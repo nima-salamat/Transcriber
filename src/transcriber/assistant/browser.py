@@ -14,8 +14,8 @@ import sys
 import time
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen
 from urllib.parse import quote, urlparse
+from urllib.request import urlopen
 
 
 class BrowserAutomationError(RuntimeError):
