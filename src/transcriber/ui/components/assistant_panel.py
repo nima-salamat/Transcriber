@@ -1263,14 +1263,19 @@ class AssistantPanel(QWidget):
         surface_color = palette.color(QPalette.ColorRole.AlternateBase).name()
         accent_color = palette.color(QPalette.ColorRole.Highlight).name()
         accent_text = palette.color(QPalette.ColorRole.HighlightedText).name()
-        assistant_label = "ASSISTANT" if self._chat_provider == "ollama" else "OPENCODE AGENT"
+        assistant_label = "ASSISTANT"
 
+        has_messages = bool(self._messages)
+        if hasattr(self, "suggestions_container"):
+            self.suggestions_container.setVisible(not has_messages)
+        if hasattr(self, "session_title_label"):
+            self.session_title_label.setText(self._session_title())
         if not self._messages:
             content = (
-                '<div align="center" style="margin:34px 12px 14px 12px;">'
-                '<div style="font-size:22px;font-weight:700;">What can I help you with?</div>'
+                '<div align="center" style="margin:54px 12px 24px 12px;">'
+                '<div style="font-size:25px;font-weight:700;">What would you like to get done?</div>'
                 f'<p style="color:{muted_color};line-height:1.7;max-width:560px;">Ask a question, '
-                'search the web, open an application, work with files or run a command. '
+                'research a topic, open an application, work with files, automate the browser or run a command. '
                 'Your Agent can combine multiple steps and show you the result.</p>'
                 '</div>'
             )
@@ -1282,21 +1287,21 @@ class AssistantPanel(QWidget):
                 safe_text = self._markdown_fragment(raw_text)
                 if role == "user":
                     blocks.append(
-                        '<div style="margin:12px 2px 12px 18px;">'
+                        '<div style="margin:16px 4px 16px 20px;">'
                         '<div align="right" style="font-size:10px;font-weight:700;'
                         f'color:{muted_color};margin-bottom:4px;">YOU</div>'
                         '<div align="right">'
                         f'<span style="background:{accent_color};color:{accent_text};'
-                        f'padding:9px 11px;border-radius:12px;">{safe_text}</span>'
+                        f'padding:10px 14px;border-radius:16px;">{safe_text}</span>'
                         '</div></div>'
                     )
                 elif role == "assistant":
                     blocks.append(
-                        '<div style="margin:12px 18px 12px 2px;">'
+                        '<div style="margin:16px 20px 16px 4px;">'
                         '<div style="font-size:10px;font-weight:700;'
                         f'color:{muted_color};margin-bottom:4px;">{assistant_label}</div>'
                         f'<div style="color:{text_color};'
-                        f'padding:4px 2px 8px 2px;line-height:1.65;font-size:13px;">{safe_text}</div>'
+                        f'padding:4px 2px 8px 2px;line-height:1.72;font-size:14px;">{safe_text}</div>'
                         '</div>'
                     )
                 elif role == "tool":
@@ -1329,9 +1334,10 @@ class AssistantPanel(QWidget):
 
     def _append_message(self, role: str, text: str):
         self._messages.append({"role": role, "text": str(text)})
-        if len(self._messages) > 180:
-            del self._messages[:-180]
+        if len(self._messages) > 400:
+            del self._messages[:-400]
         self._schedule_chat_refresh()
+        self._schedule_session_persist()
 
     def _append_stream_chunk(self, text: str):
         if not text:
@@ -1349,6 +1355,7 @@ class AssistantPanel(QWidget):
                 )
         self._messages[self._streaming_index]["text"] += str(text)
         self._schedule_chat_refresh()
+        self._schedule_session_persist()
 
     def _append(self, text):
         """Compatibility helper that turns former log lines into typed chat items."""
@@ -1594,7 +1601,8 @@ class AssistantPanel(QWidget):
             or self._start_voice_after_connect
             or self._voice_conversation_mode
         )
-        button.setText("■  Stop voice" if active else "🎙  Voice")
+        button.setText("Stop voice" if active else "Start voice")
+        button.setIcon(self.ui_icons.icon("stop" if active else "mic", size=17))
         button.setAccessibleName(
             "Stop voice conversation" if active else "Start voice conversation"
         )
@@ -2096,6 +2104,7 @@ class AssistantPanel(QWidget):
 
     def _on_ollama_chat_complete(self, result):
         self._ollama_messages = list(result.get("messages") or self._ollama_messages)
+        self._schedule_session_persist()
         self._ollama_cancellation = None
         self._streaming_index = None
         if result.get("cancelled"):
@@ -2108,6 +2117,7 @@ class AssistantPanel(QWidget):
         self.activity_label.setText(
             f"Ollama turn complete{detail}{tool_detail} · Ready for your next message."
         )
+        self._persist_current_session()
         if self.voice_agent is not None and self._resume_voice_after_prompt:
             self._set_voice_activity(
                 "Ollama response received · preparing to listen again…",
