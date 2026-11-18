@@ -25,6 +25,17 @@ class IconRegistry:
         "discard": "trash-2.svg",
         "skip_back": "skip-back.svg",
         "skip_forward": "skip-forward.svg",
+        "new_chat": "message-square-plus.svg",
+        "sessions": "messages-square.svg",
+        "skills": "blocks.svg",
+        "connect": "plug-zap.svg",
+        "send": "arrow-up.svg",
+        "sparkles": "sparkles.svg",
+        "globe": "globe.svg",
+        "terminal": "terminal.svg",
+        "file_search": "file-search.svg",
+        "mic": "mic.svg",
+        "stop": "square.svg",
     }
 
     def __init__(self, asset_dir: Path | None = None):
