@@ -127,7 +127,9 @@ def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path)
     assert panel.ollama_controls.isHidden() is False
     assert panel.project_card.isHidden() is True
     assert panel.connect_button.text() == "Connect Ollama"
-    assert panel.voice_chat_button.text() == "Start voice chat"
+    assert panel.voice_chat_button.objectName() == "VoiceOrb"
+    assert "START" in panel.voice_chat_button.text()
+    assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
 
 def test_assistant_exposes_installed_faster_whisper_voice_models(qtbot, tmp_path):

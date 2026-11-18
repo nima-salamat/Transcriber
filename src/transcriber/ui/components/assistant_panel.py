@@ -221,6 +221,65 @@ class AssistantPanel(QWidget):
         self.project_card = project_card
         root.addWidget(project_card)
 
+        voice_hero = QFrame()
+        voice_hero.setObjectName("VoiceHero")
+        voice_hero.setStyleSheet(
+            "QFrame#VoiceHero { background: rgba(100, 130, 180, 0.08); "
+            "border: 1px solid rgba(130, 155, 195, 0.24); border-radius: 18px; }"
+        )
+        voice_hero_layout = QVBoxLayout(voice_hero)
+        voice_hero_layout.setContentsMargins(16, 14, 16, 14)
+        voice_hero_layout.setSpacing(9)
+        voice_eyebrow = QLabel("VOICE CONVERSATION")
+        voice_eyebrow.setObjectName("AssistantEyebrow")
+        voice_eyebrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        voice_hero_layout.addWidget(voice_eyebrow)
+
+        self.voice_chat_button = QPushButton("🎙\\nSTART")
+        self.voice_chat_button.setObjectName("VoiceOrb")
+        self.voice_chat_button.setFixedSize(136, 136)
+        self.voice_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.voice_chat_button.setAccessibleName("Start voice conversation")
+        self.voice_chat_button.setToolTip(
+            "Start or stop hands-free voice chat. Vosk waits for your wake phrase, "
+            "then Faster-Whisper transcribes your speech."
+        )
+        self.voice_chat_button.setStyleSheet(
+            "QPushButton#VoiceOrb { color: white; font-size: 15px; font-weight: 800; "
+            "letter-spacing: 1px; border: 2px solid rgba(139, 180, 255, 0.9); "
+            "border-radius: 68px; padding: 0; "
+            "background: qradialgradient(cx:0.35, cy:0.28, radius:0.95, "
+            "fx:0.35, fy:0.28, stop:0 #6498e8, stop:1 #315aa5); } "
+            "QPushButton#VoiceOrb:hover { border-color: #d4e3ff; "
+            "background: qradialgradient(cx:0.35, cy:0.28, radius:0.95, "
+            "fx:0.35, fy:0.28, stop:0 #79a9f3, stop:1 #3a67b8); } "
+            "QPushButton#VoiceOrb[active=\\"true\\"] { border-color: #78d7b1; "
+            "background: qradialgradient(cx:0.35, cy:0.28, radius:0.95, "
+            "fx:0.35, fy:0.28, stop:0 #399f83, stop:1 #176b5c); } "
+            "QPushButton#VoiceOrb:disabled { color: rgba(255,255,255,0.78); "
+            "border-color: rgba(150,165,190,0.5); }"
+        )
+        self.voice_chat_button.clicked.connect(self.start_voice_chat)
+        voice_hero_layout.addWidget(
+            self.voice_chat_button, 0, Qt.AlignmentFlag.AlignHCenter
+        )
+
+        self.voice_live_status = QLabel("Voice chat is off")
+        self.voice_live_status.setObjectName("AssistantStatus")
+        self.voice_live_status.setWordWrap(True)
+        self.voice_live_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.voice_live_status.setAccessibleName("Voice chat status")
+        voice_hero_layout.addWidget(self.voice_live_status)
+        voice_hint = QLabel(
+            "Press Start, then say your wake phrase. Your speech is captured until silence, "
+            "transcribed locally and sent to the selected AI agent."
+        )
+        voice_hint.setObjectName("Muted")
+        voice_hint.setWordWrap(True)
+        voice_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        voice_hero_layout.addWidget(voice_hint)
+        root.addWidget(voice_hero)
+
         self.chat_view = QTextBrowser()
         self.chat_view.setObjectName("AssistantChat")
         self.chat_view.setOpenExternalLinks(False)
@@ -229,20 +288,6 @@ class AssistantPanel(QWidget):
         self.chat_view.setPlaceholderText("Connect to OpenCode or Ollama to start a conversation.")
         self.chat_view.setMinimumHeight(150)
         root.addWidget(self.chat_view, 1)
-        self.voice_chat_button = QPushButton("Start voice chat")
-        self.voice_chat_button.setObjectName("Primary")
-        self.voice_chat_button.setToolTip(
-            "Connect the selected chat model, activate the microphone and start a continuous voice conversation."
-        )
-        self.voice_chat_button.clicked.connect(self.start_voice_chat)
-        root.addWidget(self.voice_chat_button)
-
-        # Keep live voice feedback visible even while the detailed settings panel is collapsed.
-        self.voice_live_status = QLabel("Voice chat is off")
-        self.voice_live_status.setObjectName("Muted")
-        self.voice_live_status.setWordWrap(True)
-        self.voice_live_status.setAccessibleName("Voice chat status")
-        root.addWidget(self.voice_live_status)
 
         # Retain the old attribute name for integrations which inspect the panel.
         self.log = self.chat_view
@@ -460,6 +505,7 @@ class AssistantPanel(QWidget):
         self._chat_refresh_timer.timeout.connect(self._refresh_chat)
         self._refresh_chat()
         self._apply_provider_ui()
+        self._sync_voice_orb()
 
 
     def _chat_is_connected(self) -> bool:
@@ -979,7 +1025,7 @@ class AssistantPanel(QWidget):
             worker.signals.error.connect(self._on_voice_error)
             self.thread_pool.start(worker)
             self.wake_button.setText("Enable local wake")
-            self.voice_chat_button.setText("Start voice chat")
+            self._sync_voice_orb()
             self.voice_chat_button.setEnabled(True)
             self._voice_conversation_mode = False
             self.ptt_button.setEnabled(False)
@@ -1037,7 +1083,7 @@ class AssistantPanel(QWidget):
         )
         self.voice_agent = agent
         self.wake_button.setEnabled(False)
-        self.voice_chat_button.setText("Starting voice chat…")
+        self._sync_voice_orb()
         self.voice_chat_button.setEnabled(False)
 
         def start_agent(_emit):
@@ -1057,7 +1103,7 @@ class AssistantPanel(QWidget):
 
     def _voice_started(self):
         self.wake_button.setText("Stop local wake")
-        self.voice_chat_button.setText("Stop voice chat")
+        self._sync_voice_orb()
         self.voice_chat_button.setEnabled(True)
         self.ptt_button.setEnabled(True)
         self._set_voice_activity(
@@ -1070,6 +1116,25 @@ class AssistantPanel(QWidget):
             "Vosk is listening locally for the activation phrase. Faster-Whisper will transcribe your command.",
         )
 
+    def _sync_voice_orb(self):
+        """Keep the large voice control and its accessible label in sync with the loop."""
+        button = getattr(self, "voice_chat_button", None)
+        if button is None:
+            return
+        active = bool(
+            self.voice_agent is not None
+            or self._start_voice_after_connect
+            or self._voice_conversation_mode
+        )
+        button.setText("■\\nSTOP" if active else "🎙\\nSTART")
+        button.setAccessibleName(
+            "Stop voice conversation" if active else "Start voice conversation"
+        )
+        button.setProperty("active", active)
+        button.style().unpolish(button)
+        button.style().polish(button)
+        button.update()
+
     def _set_voice_activity(
         self, message: str, *, stage: str | None = None, log_message: str | None = None
     ):
@@ -1077,6 +1142,7 @@ class AssistantPanel(QWidget):
         display = str(message or "Voice chat is active")
         self.voice_live_status.setText(display)
         self.voice_state_label.setText(display)
+        self._sync_voice_orb()
         if stage is not None and stage != self._last_voice_stage:
             self._last_voice_stage = stage
             if log_message:
@@ -1194,7 +1260,7 @@ class AssistantPanel(QWidget):
             self.voice_state_label.setText("Command ready for review")
             if self._voice_conversation_mode:
                 self._voice_conversation_mode = False
-                self.voice_chat_button.setText("Start voice chat")
+                self._sync_voice_orb()
 
     def _on_voice_asr_error(self, message: str):
         self._append_message("error", f"Voice transcription failed: {message}")
@@ -1233,7 +1299,7 @@ class AssistantPanel(QWidget):
             self.thread_pool.start(worker)
         self.wake_button.setText("Enable local wake")
         self.wake_button.setEnabled(True)
-        self.voice_chat_button.setText("Start voice chat")
+        self._sync_voice_orb()
         self.voice_chat_button.setEnabled(True)
         self._voice_conversation_mode = False
         self._start_voice_after_connect = False

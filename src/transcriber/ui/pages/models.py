@@ -686,7 +686,7 @@ class ModelLibraryPage(QWidget):
         self.curated_button.setText("Recommended models" if is_vosk else "Curated models")
         self.search_button.setText("Search Vosk" if is_vosk else "Search Hub")
         self.search_input.setPlaceholderText(
-            "Search Vosk model name or language (Persian / Farsi / fa)…"
+            "Search Vosk model name or language (English / en, Persian / fa)…"
             if is_vosk else "Search model name or publisher on Hugging Face…"
         )
         self.discover_hint.setText(
@@ -756,7 +756,7 @@ class ModelLibraryPage(QWidget):
             )
             worker.signals.result.connect(self._show_search_results)
             worker.signals.error.connect(
-                lambda message: self.discover_hint.setText(f"Could not load Persian Vosk models: {message}")
+                lambda message: self.discover_hint.setText(f"Could not load recommended Vosk models: {message}")
             )
             self.thread_pool.start(worker)
             return

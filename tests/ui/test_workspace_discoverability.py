@@ -66,7 +66,7 @@ def test_view_menu_can_reopen_each_closeable_workspace_dock(qtbot, tmp_path, mon
 
     actions = _menu_actions(_view_menu(window))
     expected = {
-        "Inspector / AI Assistant": window.assistant_dock,
+        "Inspector": window.assistant_dock,
         "Audio Timeline": window.timeline_dock,
     }
     for title, dock in expected.items():

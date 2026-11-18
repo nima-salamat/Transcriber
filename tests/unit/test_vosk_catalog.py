@@ -108,6 +108,31 @@ def _model(
     )
 
 
+def test_offline_vosk_recommendations_include_english_wake_models(monkeypatch):
+    catalog = _offline_catalog(monkeypatch)
+
+    models = catalog.curated("en")
+
+    assert [item.name for item in models] == [
+        "vosk-model-small-en-us-0.15",
+        "vosk-model-en-us-0.22-lgraph",
+    ]
+    assert models[0].language == "en-us"
+    assert models[0].size_bytes == 41_205_931
+    assert models[0].checksum == "09ab50ccd62b674cbaa231b825f9c1cb"
+    assert models[0].model_type == "small"
+    assert models[1].size_bytes == 130_557_655
+    assert models[1].model_type == "big-lgraph"
+
+
+def test_offline_vosk_search_can_find_english_models(monkeypatch):
+    catalog = _offline_catalog(monkeypatch)
+
+    models = catalog.search(language="english")
+
+    assert "vosk-model-small-en-us-0.15" in {item.name for item in models}
+
+
 def test_curated_vosk_recommendations_are_dynamic_and_size_ranked(monkeypatch):
     catalog = vosk.VoskModelCatalog()
     catalogue_entries = [

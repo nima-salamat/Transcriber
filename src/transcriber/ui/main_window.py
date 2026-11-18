@@ -115,6 +115,7 @@ class MainThreadDispatcher(QObject):
 class MainWindow(QMainWindow):
     NAVIGATION = [
         ("home", "home", "Home"),
+        ("assistant", "sparkles", "AI Assistant"),
         ("transcription", "projects", "New transcription"),
         ("recording", "record", "Record audio"),
         ("batch", "activity", "Batch processing"),
@@ -250,8 +251,8 @@ class MainWindow(QMainWindow):
         self.global_search.setMaximumWidth(250)
         self.command_button = QPushButton("Ctrl+K  Commands")
         self.command_button.clicked.connect(self.show_command_palette)
-        self.assistant_button = QPushButton("AI workspace")
-        self.assistant_button.setToolTip("Open the AI assistant in the inspector")
+        self.assistant_button = QPushButton("AI Assistant")
+        self.assistant_button.setToolTip("Open the dedicated AI conversation page")
         self.assistant_button.clicked.connect(self.show_ai_assistant)
         new_button = QPushButton("＋  New transcription")
         new_button.setObjectName("Primary")
@@ -315,7 +316,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         self._inspector_width = 430
 
-        self.assistant_dock = QDockWidget("Inspector / AI Assistant", self)
+        self.assistant_dock = QDockWidget("Inspector", self)
         self.assistant_dock.setObjectName("AssistantDock")
         self.assistant_dock.setLayoutDirection(Qt.LeftToRight)
         # Inspector is the right-hand child of an explicit LTR splitter.
@@ -344,11 +345,12 @@ class MainWindow(QMainWindow):
             model_manager=self.model_manager,
         )
         self.assistant_panel.status_message.connect(lambda message: self.status_bar.showMessage(message, 7000))
+        self.pages["assistant"] = ("AI Assistant", self.assistant_panel)
+        self.stack.addWidget(self.assistant_panel)
         inspector_tabs.addTab(properties, "Properties")
-        inspector_tabs.addTab(self.assistant_panel, "AI Assistant")
         self.assistant_dock.setWidget(inspector_tabs)
         self._install_drawer_title_bar(
-            self.assistant_dock, "Inspector / AI Assistant", "☷", "width"
+            self.assistant_dock, "Inspector", "☷", "width"
         )
         self.workspace_splitter.addWidget(self.assistant_dock)
         self.workspace_splitter.setStretchFactor(1, 0)
@@ -380,7 +382,7 @@ class MainWindow(QMainWindow):
         self.assistant_drawer_button.setIconSize(QSize(14, 14))
         self.assistant_drawer_button.setCheckable(True)
         self.assistant_drawer_button.setChecked(not self.assistant_dock.isHidden())
-        self.assistant_drawer_button.setToolTip("Show or hide the Inspector / AI Assistant drawer")
+        self.assistant_drawer_button.setToolTip("Show or hide the Inspector drawer")
         self.assistant_drawer_button.setAccessibleName("Toggle Inspector drawer")
         self.assistant_drawer_button.toggled.connect(
             lambda visible: self._animate_drawer(self.assistant_dock, visible, "width")
@@ -589,9 +591,8 @@ class MainWindow(QMainWindow):
         return action
 
     def show_ai_assistant(self):
-        """Open the inspector directly on its AI conversation tab."""
-        self._animate_drawer(self.assistant_dock, True, "width")
-        self.inspector_tabs.setCurrentWidget(self.assistant_panel)
+        """Open the dedicated AI voice/chat workspace."""
+        self.navigate("assistant")
         self.assistant_panel.prompt.setFocus()
 
     def _build_menus(self):
@@ -632,7 +633,7 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.sidebar_action)
         panels_menu.addAction(self.sidebar_action)
 
-        self.assistant_view_action = QAction("Inspector / AI Assistant", self)
+        self.assistant_view_action = QAction("Inspector", self)
         self.assistant_view_action.setCheckable(True)
         self.assistant_view_action.setChecked(not self.assistant_dock.isHidden())
         self.assistant_view_action.setShortcut(QKeySequence("Ctrl+Shift+I"))

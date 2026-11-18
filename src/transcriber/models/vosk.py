@@ -501,6 +501,48 @@ class VoskModelCatalog:
         )
 
     @staticmethod
+    def _pinned_english_official_models() -> tuple[VoskModelInfo, ...]:
+        """Known-good official US English models, available even when the catalogue is offline."""
+        return (
+            VoskModelInfo(
+                repo_id="vosk/vosk-model-small-en-us-0.15",
+                name="vosk-model-small-en-us-0.15",
+                language="en-us",
+                language_name="US English",
+                model_type="small",
+                size_bytes=41_205_931,
+                size_text="39.3 MiB",
+                md5="09ab50ccd62b674cbaa231b825f9c1cb",
+                url=MODEL_PAGE_URL,
+                download_url="https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+                version="0.15",
+                license_name="Apache-2.0",
+                description=(
+                    "US English · compact 39.3 MiB Vosk / Kaldi model. "
+                    "Recommended first choice for lightweight English wake-word detection."
+                ),
+            ),
+            VoskModelInfo(
+                repo_id="vosk/vosk-model-en-us-0.22-lgraph",
+                name="vosk-model-en-us-0.22-lgraph",
+                language="en-us",
+                language_name="US English",
+                model_type="big-lgraph",
+                size_bytes=130_557_655,
+                size_text="124.5 MiB",
+                md5="2df36985f8ed8eb7b78476cadcdab48f",
+                url=MODEL_PAGE_URL,
+                download_url="https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip",
+                version="0.22-lgraph",
+                license_name="Apache-2.0",
+                description=(
+                    "US English · 124.5 MiB Vosk / Kaldi model with a dynamic decoding graph. "
+                    "A larger alternative when the compact wake model is not accurate enough."
+                ),
+            ),
+        )
+
+    @staticmethod
     def _huggingface_curated_models() -> tuple[VoskModelInfo, ...]:
         """Pinned Vosk ZIP mirrors whose files are validated after extraction."""
         return (
@@ -548,18 +590,24 @@ class VoskModelCatalog:
                 include_obsolete=include_obsolete, refresh=refresh,
             )
         except RuntimeError:
-            # Keep the two known-good current Persian models discoverable even when
-            # AlphaCephei's live catalogue cannot be reached. The Hugging Face mirror
-            # is added below as a separately identifiable download source.
+            # Keep known-good Persian and English models discoverable even when
+            # AlphaCephei's live catalogue cannot be reached. The Hugging Face
+            # mirror is added below as a separately identifiable download source.
             with self._lock:
                 models = [
                     item for item in self._models
                     if include_obsolete or not item.obsolete
                 ]
             if not models and not include_obsolete:
-                models.extend(self._pinned_persian_official_models())
+                models.extend((
+                    *self._pinned_persian_official_models(),
+                    *self._pinned_english_official_models(),
+                ))
             elif not models and include_obsolete:
-                models.extend(self._pinned_persian_official_models())
+                models.extend((
+                    *self._pinned_persian_official_models(),
+                    *self._pinned_english_official_models(),
+                ))
         if include_huggingface:
             with self._lock:
                 if self._hub_models is None:
@@ -652,6 +700,7 @@ class VoskModelCatalog:
 
         recommendations = list(unique.values())
         recommendations.sort(key=lambda item: (
+            0 if not selected and item.name == "vosk-model-small-en-us-0.15" else 1,
             item.model_type != "small",
             item.size_bytes if item.size_bytes else 10**18,
             item.language_name.casefold(),
