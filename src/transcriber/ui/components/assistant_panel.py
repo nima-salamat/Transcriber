@@ -158,11 +158,6 @@ class AssistantPanel(QWidget):
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_button.setToolTip("Assistant settings")
         self.settings_button.setAccessibleName("Open assistant settings")
-        self.settings_button.setStyleSheet(
-            "QPushButton#AssistantSettingsButton { border: 1px solid palette(mid); "
-            "border-radius: 12px; padding: 0; font-size: 20px; } "
-            "QPushButton#AssistantSettingsButton:hover { background: palette(alternate-base); }"
-        )
         self.settings_button.clicked.connect(self.show_settings)
         header.addWidget(self.settings_button)
         root.addLayout(header)
@@ -291,10 +286,6 @@ class AssistantPanel(QWidget):
 
         voice_hero = QFrame()
         voice_hero.setObjectName("VoiceHero")
-        voice_hero.setStyleSheet(
-            "QFrame#VoiceHero { background: rgba(100, 130, 180, 0.08); "
-            "border: 1px solid rgba(130, 155, 195, 0.24); border-radius: 18px; }"
-        )
         voice_hero_layout = QVBoxLayout(voice_hero)
         voice_hero_layout.setContentsMargins(16, 14, 16, 14)
         voice_hero_layout.setSpacing(9)
@@ -875,10 +866,6 @@ class AssistantPanel(QWidget):
     def _provider_base_url_changed(self):
         if self.settings_store:
             self.settings_store.update(ollama_base_url=self.ollama_url.text().strip())
-
-    def _toggle_voice_panel(self, expanded: bool):
-        self.voice_panel.setVisible(expanded)
-        self.voice_toggle.setText("−  Voice input settings" if expanded else "＋  Voice input settings")
 
     def _insert_suggestion(self, prompt: str):
         current = self.prompt.toPlainText().strip()
