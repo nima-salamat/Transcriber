@@ -883,20 +883,17 @@ class AssistantPanel(QWidget):
         self._apply_provider_ui()
 
     def new_chat(self):
-        """Start a fresh local conversation or OpenCode ACP session."""
+        """Create a separate, locally persisted conversation without discarding older chats."""
         if self._worker_active:
             return
-        if self._chat_provider == "ollama":
-            self._ollama_messages = []
-            self._messages.clear()
-            self._streaming_index = None
-            self._append_message("system", "New local conversation started.")
-            self.activity_label.setText("New conversation · ready for your message.")
-            return
-        if self.client and self.client.connected:
+        self._persist_current_session()
+        session = self.session_store.create_session(self._chat_provider)
+        self._load_session_state(session)
+        self.activity_label.setText("New conversation · ready for your message.")
+        if self._chat_provider == "opencode" and self.client and self.client.connected:
             self._worker_active = True
-            self.new_chat_button.setEnabled(False)
-            self.activity_label.setText("Starting a fresh OpenCode session…")
+            self.send_button.setEnabled(False)
+            self.connect_button.setEnabled(False)
             client = self.client
             mcp_servers = self._mcp_server_config()
             worker = FunctionWorker(
@@ -906,32 +903,13 @@ class AssistantPanel(QWidget):
             worker.signals.error.connect(self.signals.new_session_error.emit)
             worker.signals.finished.connect(self._worker_finished)
             self.thread_pool.start(worker)
-            return
-        self._messages.clear()
-        self._ollama_messages = []
-        self._streaming_index = None
-        self._append_message("system", "New conversation started. Connect a provider to continue.")
-
     def _on_new_session_ready(self, session_id: str):
-        try:
-            self._session_file.parent.mkdir(parents=True, exist_ok=True)
-            temporary = self._session_file.with_suffix(".tmp")
-            temporary.write_text(
-                json.dumps({"cwd": str(self.project_dir), "session_id": session_id}, indent=2),
-                encoding="utf-8",
-            )
-            try:
-                os.chmod(temporary, 0o600)
-            except OSError:
-                pass
-            os.replace(temporary, self._session_file)
-        except OSError as exc:
-            self._append_message("system", f"Session persistence warning: {exc}")
-        self._messages.clear()
-        self._streaming_index = None
+        self._active_opencode_session_id = session_id
+        self.session_store.update_metadata(
+            self._active_session_id, opencode_session_id=session_id
+        )
         self._append_message("system", "New OpenCode conversation started.")
         self.activity_label.setText("Fresh OpenCode session · ready for your message.")
-
     def _on_new_session_error(self, message: str):
         self._append_message("error", f"Could not start a new OpenCode session: {message}")
         self.activity_label.setText("The previous conversation is still active.")
@@ -959,7 +937,7 @@ class AssistantPanel(QWidget):
         ollama = self._chat_provider == "ollama"
         self.project_card.setVisible(not ollama)
         self.ollama_controls.setVisible(ollama)
-        self.connect_button.setText("Connect Ollama" if ollama else "Connect OpenCode")
+        self.connect_button.setText("Connect")
         connected = self._chat_is_connected()
         self.ollama_model_combo.setEnabled(ollama and not connected)
         self.ollama_url.setEnabled(ollama and not connected)
@@ -970,12 +948,10 @@ class AssistantPanel(QWidget):
         self.agent_mode_check.setEnabled(
             ollama and self._action_registry is not None and not self._worker_active
         )
-        self.sidebar_provider_label.setText(
-            ("OLLAMA · local model" if ollama else "OPENCODE · workspace agent")
-            + ("\\nConnected" if connected else "\\nNot connected")
-        )
+
         self.disconnect_button.setEnabled(connected)
         self.connect_button.setEnabled(not connected and not self._worker_active)
+        self.connect_button.setToolTip("Connect to " + ("Ollama" if ollama else "OpenCode"))
         if connected:
             self.connection_state.setText("Connected · Ollama" if ollama else "Connected · OpenCode")
             self.connection_state.setProperty("state", "connected")
@@ -989,20 +965,26 @@ class AssistantPanel(QWidget):
         if self.voice_agent is not None:
             self._voice_conversation_mode = False
             self.toggle_voice_agent()
+        if self._worker_active:
+            self.provider_combo.blockSignals(True)
+            self.provider_combo.setCurrentIndex(
+                max(0, self.provider_combo.findData(self._chat_provider))
+            )
+            self.provider_combo.blockSignals(False)
+            return
+        self._persist_current_session()
         self._chat_provider = str(self.provider_combo.currentData() or "opencode")
-        self._messages.clear()
-        self._streaming_index = None
-        self._refresh_chat()
+        session = self.session_store.create_session(self._chat_provider)
+        self._load_session_state(session)
         if self.settings_store:
             self.settings_store.update(chat_provider=self._chat_provider)
-        self._apply_provider_ui()
-        if self._chat_provider == "ollama":
-            self.activity_label.setText("Choose a locally installed Ollama model, then connect.")
-            if self.ollama_model_combo.count() <= 1:
-                self.refresh_ollama_models()
-        else:
-            self.activity_label.setText("Connect to OpenCode to use its Agent and Transcriber workspace tools.")
-
+        self.activity_label.setText(
+            "Choose a local model and connect."
+            if self._chat_provider == "ollama"
+            else "Connect to OpenCode to start a workspace-enabled conversation."
+        )
+        if self._chat_provider == "ollama" and self.ollama_model_combo.count() <= 1:
+            self.refresh_ollama_models()
     def refresh_ollama_models(self):
         if self._worker_active:
             return
@@ -1909,16 +1891,11 @@ class AssistantPanel(QWidget):
         self.thread_pool.start(worker)
 
     def _load_or_create_session(self, client, mcp_servers):
-        stored = {}
-        try:
-            stored = json.loads(self._session_file.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            pass
-        if stored.get("cwd") == str(self.project_dir) and stored.get("session_id"):
+        stored = self.session_store.get_session(self._active_session_id) or {}
+        session_id = str((stored.get("metadata") or {}).get("opencode_session_id") or "")
+        if session_id:
             try:
-                client.load_session(
-                    str(stored["session_id"]), mcp_servers=mcp_servers, timeout=20
-                )
+                client.load_session(session_id, mcp_servers=mcp_servers, timeout=20)
                 return client.session_id
             except Exception:
                 pass
@@ -1926,6 +1903,9 @@ class AssistantPanel(QWidget):
 
     def _on_connected(self, result):
         session_id = result.get("session_id")
+        self._active_opencode_session_id = str(session_id or "")
+        if self._active_opencode_session_id:
+            self.session_store.update_metadata(self._active_session_id, opencode_session_id=self._active_opencode_session_id)
         try:
             self._session_file.parent.mkdir(parents=True, exist_ok=True)
             temporary = self._session_file.with_suffix(".tmp")
