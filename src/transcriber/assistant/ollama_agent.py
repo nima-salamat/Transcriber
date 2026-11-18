@@ -129,6 +129,84 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "format": {"type": "string", "enum": ["srt", "vtt", "ass", "ssa"]},
         }, "required": ["format"]},
     },
+    "browser.open": {
+        "description": "Open an HTTP or HTTPS website in the controlled Chrome/Edge browser and return its visible page content.",
+        "parameters": {"type": "object", "properties": {
+            "url": {"type": "string", "description": "Absolute HTTP or HTTPS URL"},
+        }, "required": ["url"]},
+    },
+    "browser.search": {
+        "description": "Search the web in the controlled Chrome/Edge browser and return visible search results.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Search terms"},
+            "engine": {"type": "string", "enum": ["google", "bing"]},
+        }, "required": ["query"]},
+    },
+    "browser.snapshot": {
+        "description": "Read the current controlled browser page and list visible links, buttons and form fields.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    "browser.click": {
+        "description": "Click a visible browser element by text, CSS selector or ARIA role. The user must approve the click.",
+        "parameters": {"type": "object", "properties": {
+            "text": {"type": "string"},
+            "selector": {"type": "string"},
+            "role": {"type": "string"},
+        }},
+    },
+    "browser.fill": {
+        "description": "Fill one browser form field by its label, placeholder or CSS selector. The user must approve the data submission step.",
+        "parameters": {"type": "object", "properties": {
+            "value": {"type": "string"},
+            "selector": {"type": "string"},
+            "label": {"type": "string"},
+            "placeholder": {"type": "string"},
+        }, "required": ["value"]},
+    },
+    "browser.press": {
+        "description": "Press a limited browser keyboard key such as Enter or Tab. The user must approve the key action.",
+        "parameters": {"type": "object", "properties": {
+            "key": {"type": "string"},
+            "selector": {"type": "string"},
+        }, "required": ["key"]},
+    },
+    "browser.back": {
+        "description": "Navigate back one page in the controlled browser.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    "browser.screenshot": {
+        "description": "Capture a screenshot of the current controlled browser tab and save it to the app's browser screenshots folder.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    "browser.close": {
+        "description": "Close the controlled browser and its dedicated profile window. User approval is required.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    "system.run_command": {
+        "description": "Run a custom PowerShell command as the current Windows user. Every command requires explicit user approval; no elevation is allowed. Output and runtime are bounded.",
+        "parameters": {"type": "object", "properties": {
+            "command": {"type": "string", "description": "PowerShell command or script"},
+            "cwd": {"type": "string", "description": "Optional existing working directory"},
+            "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 120},
+        }, "required": ["command"]},
+    },
+    "agent.skills_list": {
+        "description": "List installed portable Agent Skills with their names and descriptions.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    "agent.skill_load": {
+        "description": "Load the full SKILL.md instructions for one installed Agent Skill when its description matches the task.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    "agent.skill_read_resource": {
+        "description": "Read a text resource from scripts/, references/ or assets/ inside an installed Agent Skill. This does not execute the file.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "path": {"type": "string"},
+        }, "required": ["name", "path"]},
+    },
     "desktop.launch_app": {
         "description": "Launch one built-in allowlisted Windows application. User approval is required.",
         "parameters": {"type": "object", "properties": {
