@@ -7,8 +7,8 @@ permissions and per-action user approval before handlers run.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
+import json
 from typing import Any
 
 from transcriber.assistant.ollama_client import OllamaCancelled
