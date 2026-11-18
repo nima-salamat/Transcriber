@@ -133,6 +133,95 @@ def test_offline_vosk_search_can_find_english_models(monkeypatch):
     assert "vosk-model-small-en-us-0.15" in {item.name for item in models}
 
 
+@pytest.mark.parametrize(
+    ("name", "language", "language_name", "model_type"),
+    [
+        ("vosk-model-small-en-us-0.15", "en-us", "US English", "small"),
+        ("vosk-model-small-en-gb-0.15", "en-gb", "UK English", "small"),
+        ("vosk-model-en-us-0.22-lgraph", "en-us", "US English", "big-lgraph"),
+        ("vosk-model-small-fa-0.42", "fa", "Farsi", "small"),
+        ("vosk-model-small-pt-0.3", "pt", "Portuguese", "small"),
+    ],
+)
+def test_official_catalogue_parser_accepts_decimal_versions_and_all_language_names(
+    name, language, language_name, model_type
+):
+    entry = {
+        "lang": language,
+        "lang_text": language_name,
+        "md5": "0" * 32,
+        "name": name,
+        "obsolete": "false",
+        "size": 40_000_000,
+        "size_text": "38.1MiB",
+        "type": model_type,
+        "url": f"https://alphacephei.com/vosk/models/{name}.zip",
+        "version": "0.15",
+    }
+
+    model = vosk._parse_catalogue_entry(entry)
+
+    assert model is not None
+    assert model.name == name
+    assert model.language == language
+    assert model.language_name == language_name
+    assert model.model_type == model_type
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../vosk-model-small-en-us-0.15",
+        "vosk-model-small-en-us-0..15",
+        "vosk-model-small-en-us-0.15/",
+        "vosk-model-small_en-us-0.15",
+    ],
+)
+def test_vosk_model_name_validation_allows_version_dots_but_rejects_unsafe_names(name):
+    with pytest.raises(ValueError, match="Invalid Vosk model name"):
+        vosk._normalise_model_name(name)
+
+
+def test_live_catalogue_search_returns_english_variants_and_other_languages(monkeypatch):
+    catalog = vosk.VoskModelCatalog()
+    entries = [
+        _model("vosk-model-small-en-us-0.15", "en-us", "US English", "small", 41_205_931),
+        _model("vosk-model-small-en-gb-0.15", "en-gb", "UK English", "small", 42_757_500),
+        _model("vosk-model-small-en-in-0.4", "en-in", "Indian English", "small", 37_573_330),
+        _model("vosk-model-small-uk-v3", "uk", "Ukrainian", "small", 45_000_000),
+        _model("vosk-model-small-pt-0.3", "pt", "Portuguese", "small", 32_000_000),
+    ]
+    monkeypatch.setattr(
+        catalog, "list_models",
+        lambda **_kwargs: list(entries),
+    )
+
+    english = catalog.search(language="en")
+    text_search = catalog.search(query="English")
+    all_languages = catalog.available_languages()
+
+    assert {item.language for item in english} == {"en-us", "en-gb", "en-in"}
+    assert {item.language for item in text_search} == {"en-us", "en-gb", "en-in"}
+    assert {code for code, _name in all_languages} >= {"en-us", "en-gb", "en-in", "uk", "pt"}
+
+
+def test_live_catalogue_curated_results_keep_models_with_decimal_versions(monkeypatch):
+    catalog = vosk.VoskModelCatalog()
+    entries = [
+        _model("vosk-model-en-us-0.22-lgraph", "en-us", "US English", "big-lgraph", 130_557_655),
+        _model("vosk-model-small-en-us-0.15", "en-us", "US English", "small", 41_205_931),
+        _model("vosk-model-small-pt-0.3", "pt", "Portuguese", "small", 32_000_000),
+    ]
+    monkeypatch.setattr(catalog, "list_models", lambda **_kwargs: list(entries))
+
+    models = catalog.curated("en")
+
+    assert [item.name for item in models] == [
+        "vosk-model-small-en-us-0.15",
+        "vosk-model-en-us-0.22-lgraph",
+    ]
+
+
 def test_curated_vosk_recommendations_are_dynamic_and_size_ranked(monkeypatch):
     catalog = vosk.VoskModelCatalog()
     catalogue_entries = [

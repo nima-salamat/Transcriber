@@ -6,6 +6,12 @@
 
 Search results are candidates, not compatibility claims. The Inspect action reads the live repository file list, exact revision, sizes and model metadata. Install remains disabled until the CTranslate2 validator confirms the required root-level files. Missing descriptions, licenses, language tags and sizes remain unknown rather than being inferred from model names. Curated repository IDs are shortcuts, not compatibility guarantees.
 
+## Vosk model catalogue
+
+The Vosk provider reads the official `model-list.json` catalogue and keeps active entries across all published languages. Model IDs may contain dotted version components (for example, `0.15`, `0.22` and `0.42`); validation permits these separators while continuing to reject path separators and unsafe names. The language filter is extended from the live catalogue, including regional variants such as US, UK and Indian English.
+
+When the official catalogue is unreachable on a fresh install, only a small pinned fallback set is available offline; a successful live catalogue refresh is required to discover the complete language list.
+
 ## Faster-Whisper compatibility gate
 
 The production local ASR adapter currently supports Faster-Whisper / CTranslate2 repositories. The validator requires root-level `model.bin`, `config.json`, `tokenizer.json`, and one supported vocabulary file (`vocabulary.txt`, `vocabulary.json`, or `vocab.json`). A regular Transformers/PyTorch checkpoint such as `pytorch_model.bin` is not accepted as a Faster-Whisper model. Nested model artefacts are not interpreted heuristically.

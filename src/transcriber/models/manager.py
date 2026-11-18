@@ -176,6 +176,9 @@ class ModelManager:
     def curated_vosk(self, language: str = "fa"):
         return self.vosk_catalog.curated(language)
 
+    def vosk_languages(self):
+        return self.vosk_catalog.available_languages()
+
     def inspect_vosk(self, model_id: str):
         return self.vosk_catalog.inspect(model_id)
 

@@ -30,7 +30,7 @@ from transcriber.models.registry import ModelRegistry
 MODEL_LIST_URL = "https://alphacephei.com/vosk/models/model-list.json"
 MODEL_PAGE_URL = "https://alphacephei.com/vosk/models.html"
 MODEL_HOST = "alphacephei.com"
-_MODEL_NAME = re.compile(r"^vosk-model(?:-small)?-[a-z0-9][a-z0-9-]*$")
+_MODEL_NAME = re.compile(r"^vosk-model(?:-small)?-[a-z0-9]+(?:[-.][a-z0-9]+)*$")
 _MAX_ARCHIVE_ENTRIES = 20_000
 _MAX_UNPACKED_BYTES = 32 * 1024**3
 _CHUNK_SIZE = 1024 * 1024
@@ -615,6 +615,21 @@ class VoskModelCatalog:
                 mirrors = self._hub_models
             models.extend(mirrors)
         return models
+
+    def available_languages(self) -> list[tuple[str, str]]:
+        """Return every active language code and display name in the Vosk catalogue."""
+        languages: dict[str, str] = {}
+        for model in self.list_all_models(include_obsolete=False):
+            code = str(model.language or "").strip().casefold()
+            name = str(model.language_name or "").strip()
+            if code and name:
+                # Preserve regional codes (en-us, en-gb, etc.) so the UI can offer
+                # precise filters as well as its broad language-family shortcuts.
+                languages.setdefault(code, name)
+        return sorted(
+            languages.items(),
+            key=lambda item: (item[1].casefold(), item[0].casefold()),
+        )
 
     def search(
         self,

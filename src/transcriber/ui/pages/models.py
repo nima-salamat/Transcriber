@@ -686,7 +686,7 @@ class ModelLibraryPage(QWidget):
         self.curated_button.setText("Recommended models" if is_vosk else "Curated models")
         self.search_button.setText("Search Vosk" if is_vosk else "Search Hub")
         self.search_input.setPlaceholderText(
-            "Search Vosk model name or language (English / en, Persian / fa)…"
+            "Search Vosk model name or language (English / en, Persian / fa, or a language name)…"
             if is_vosk else "Search model name or publisher on Hugging Face…"
         )
         self.discover_hint.setText(
@@ -694,6 +694,53 @@ class ModelLibraryPage(QWidget):
             if is_vosk else
             "Hugging Face Hub · CTranslate2 model, tokenizer, configuration and vocabulary files are checked."
         )
+
+        if is_vosk:
+            self._refresh_vosk_languages()
+
+    def _refresh_vosk_languages(self):
+        """Load every language present in the active official Vosk catalogue."""
+        worker = FunctionWorker(lambda _emit: self.model_manager.vosk_languages())
+        worker.signals.result.connect(self._merge_vosk_languages)
+        worker.signals.error.connect(
+            lambda message: self.discover_hint.setText(
+                "Could not refresh Vosk language filters: " + str(message)
+            )
+            if self.provider_combo.currentData() == "vosk" else None
+        )
+        self.thread_pool.start(worker)
+
+    def _merge_vosk_languages(self, languages):
+        """Add catalogue languages without removing the broad, built-in language filters."""
+        if self.provider_combo.currentData() != "vosk":
+            return
+        selected = self.language_filter.currentData()
+        self.language_filter.blockSignals(True)
+        known_codes = {
+            str(self.language_filter.itemData(index) or "").casefold()
+            for index in range(self.language_filter.count())
+        }
+        added = 0
+        for code, name in languages:
+            normalized_code = str(code or "").strip().casefold()
+            display_name = str(name or "").strip()
+            if not normalized_code or not display_name or normalized_code in known_codes:
+                continue
+            self.language_filter.addItem(
+                f"{display_name} ({normalized_code})",
+                normalized_code,
+            )
+            known_codes.add(normalized_code)
+            added += 1
+        selected_index = self.language_filter.findData(selected)
+        if selected_index >= 0:
+            self.language_filter.setCurrentIndex(selected_index)
+        self.language_filter.blockSignals(False)
+        if added:
+            self.discover_hint.setText(
+                self.discover_hint.text()
+                + f" · {added} additional language filter(s) loaded from the catalogue."
+            )
 
     def search_models(self):
         query = self.search_input.text().strip()
