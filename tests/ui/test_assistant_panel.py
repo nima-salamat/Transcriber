@@ -143,13 +143,15 @@ def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
 
     assert panel.page_stack.currentWidget() is panel.conversation_page
     assert panel.settings_button.toolTip() == "Assistant settings"
-    assert panel.provider_combo.parentWidget() is not panel.conversation_page
+    assert not panel.conversation_page.isAncestorOf(panel.provider_combo)
+    assert not panel.conversation_page.isAncestorOf(panel.prompt_library_button)
 
     panel.settings_button.click()
     assert panel.page_stack.currentWidget() is panel.settings_page
-    assert panel.provider_combo.parentWidget() is not panel.conversation_page
-    assert panel.voice_panel.parentWidget() is panel.settings_content
-    assert panel.project_card.parentWidget() is panel.settings_content
+    assert panel.settings_content.isAncestorOf(panel.provider_combo)
+    assert panel.settings_content.isAncestorOf(panel.voice_panel)
+    assert panel.settings_content.isAncestorOf(panel.project_card)
+    assert panel.settings_content.isAncestorOf(panel.prompt_library_button)
 
     panel.settings_back_button.click()
     assert panel.page_stack.currentWidget() is panel.conversation_page
