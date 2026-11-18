@@ -113,6 +113,27 @@ def test_assistant_wake_model_selector_lists_installed_vosk_models(qtbot, tmp_pa
 
 
 
+def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    panel = AssistantPanel(paths, QThreadPool())
+    qtbot.addWidget(panel)
+
+    assert "START" in panel.voice_chat_button.text()
+    assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
+
+    panel._voice_conversation_mode = True
+    panel._sync_voice_orb()
+    assert "STOP" in panel.voice_chat_button.text()
+    assert panel.voice_chat_button.accessibleName() == "Stop voice conversation"
+
+    panel._voice_conversation_mode = False
+    panel._sync_voice_orb()
+    assert "START" in panel.voice_chat_button.text()
+    assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
+
+
 def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
