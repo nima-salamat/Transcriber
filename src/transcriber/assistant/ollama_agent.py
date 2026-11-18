@@ -319,16 +319,6 @@ class OllamaAgent:
                     if on_tool_status:
                         on_tool_status(f"Running {name}…")
                     result = self.action_executor(name, arguments)
-                    if cancellation and cancellation.cancelled:
-                        return {
-                            "model": model,
-                            "text": answer,
-                            "messages": working,
-                            "tool_count": tool_count,
-                            "tool_rounds": tool_rounds,
-                            "cancelled": True,
-                            "metrics": response.get("metrics", {}),
-                        }
                     result_text = self._tool_result_text({"ok": True, "result": result})
                     status = f"Completed {name}"
                 except Exception as exc:
@@ -343,10 +333,27 @@ class OllamaAgent:
                     "tool_name": str((call.get("function") or {}).get("name") or "unknown"),
                     "content": result_text,
                 })
+                if cancellation and cancellation.cancelled:
+                    return {
+                        "model": model,
+                        "text": answer,
+                        "messages": working,
+                        "tool_count": tool_count,
+                        "tool_rounds": tool_rounds,
+                        "cancelled": True,
+                        "metrics": response.get("metrics", {}),
+                    }
 
+        limit_message = (
+            "I stopped because this request reached the maximum number of Agent rounds. "
+            "The actions already completed are listed above."
+        )
+        working.append({"role": "assistant", "content": limit_message})
+        if on_chunk:
+            on_chunk(limit_message)
         return {
             "model": model,
-            "text": "I reached the maximum number of tool-calling rounds. Tell me whether to continue.",
+            "text": limit_message,
             "messages": working,
             "tool_count": tool_count,
             "tool_rounds": tool_rounds,

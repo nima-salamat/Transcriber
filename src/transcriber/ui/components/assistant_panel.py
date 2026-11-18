@@ -580,7 +580,6 @@ class AssistantPanel(QWidget):
     def set_agent_runtime(self, action_registry):
         """Attach the application's permission-aware action registry."""
         self._action_registry = action_registry
-        self.agent_mode_check.setEnabled(action_registry is not None)
         if action_registry is None:
             self.agent_mode_check.setChecked(False)
         else:
@@ -588,6 +587,7 @@ class AssistantPanel(QWidget):
                 "Ollama sees only currently permitted tools. Desktop actions remain hidden "
                 "until Desktop control is enabled in Settings, and each action asks before running."
             )
+        self._apply_provider_ui()
 
     def new_chat(self):
         """Start a fresh local conversation or OpenCode ACP session."""
@@ -1706,7 +1706,16 @@ class AssistantPanel(QWidget):
             history.insert(0, {"role": "system", "content": system_prompt})
         history.append({"role": "user", "content": prompt})
         if len(history) > 41:
-            history = [history[0], *history[-40:]]
+            recent = history[-40:]
+            while recent and (
+                recent[0].get("role") == "tool"
+                or (
+                    recent[0].get("role") == "assistant"
+                    and recent[0].get("tool_calls")
+                )
+            ):
+                recent.pop(0)
+            history = [history[0], *recent]
         self._ollama_messages = history
         self._worker_active = True
         if self.voice_agent is not None and self.voice_agent.mode == "processing":

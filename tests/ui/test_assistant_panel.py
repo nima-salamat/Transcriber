@@ -145,8 +145,11 @@ def test_agent_runtime_controls_the_agent_tools_toggle(qtbot, tmp_path):
     assert not panel.agent_mode_check.isEnabled()
     registry = SimpleNamespace(describe=lambda **_kwargs: [])
     panel.set_agent_runtime(registry)
-    assert panel.agent_mode_check.isEnabled()
+    assert not panel.agent_mode_check.isEnabled()
     assert panel.agent_mode_check.isChecked()
+
+    panel.provider_combo.setCurrentIndex(panel.provider_combo.findData("ollama"))
+    assert panel.agent_mode_check.isEnabled()
 
 
 def test_new_local_chat_clears_only_the_current_conversation(qtbot, tmp_path):
