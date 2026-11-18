@@ -53,6 +53,9 @@ class _AssistantSignals(QObject):
     ollama_chunk = Signal(str)
     ollama_complete = Signal(object)
     ollama_error = Signal(str)
+    ollama_tool_status = Signal(str)
+    new_session_ready = Signal(str)
+    new_session_error = Signal(str)
 
 
 class AssistantPanel(QWidget):
@@ -118,6 +121,9 @@ class AssistantPanel(QWidget):
         self.signals.ollama_chunk.connect(self._append_stream_chunk)
         self.signals.ollama_complete.connect(self._on_ollama_chat_complete)
         self.signals.ollama_error.connect(self._on_ollama_error)
+        self.signals.ollama_tool_status.connect(self._on_ollama_tool_status)
+        self.signals.new_session_ready.connect(self._on_new_session_ready)
+        self.signals.new_session_error.connect(self._on_new_session_error)
 
         self.client: OpenCodeACPClient | None = None
         self._worker_active = False
@@ -146,6 +152,13 @@ class AssistantPanel(QWidget):
         title_group.addWidget(title)
         title_group.addWidget(subtitle)
         header.addLayout(title_group, 1)
+
+        self.new_chat_button = QPushButton("＋  New chat")
+        self.new_chat_button.setObjectName("AssistantNewChatButton")
+        self.new_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.new_chat_button.setToolTip("Start a fresh conversation")
+        self.new_chat_button.clicked.connect(self.new_chat)
+        header.addWidget(self.new_chat_button)
 
         self.connection_state = QLabel("Disconnected")
         self.connection_state.setObjectName("AssistantStatus")
@@ -307,60 +320,22 @@ class AssistantPanel(QWidget):
         prompt_library_layout.addWidget(self.prompt_library_button)
         self.settings_layout.addWidget(prompt_library_card)
 
-        voice_hero = QFrame()
-        voice_hero.setObjectName("VoiceHero")
-        voice_hero_layout = QVBoxLayout(voice_hero)
-        voice_hero_layout.setContentsMargins(16, 14, 16, 14)
-        voice_hero_layout.setSpacing(9)
-        voice_eyebrow = QLabel("VOICE CONVERSATION")
-        voice_eyebrow.setObjectName("AssistantEyebrow")
-        voice_eyebrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        voice_hero_layout.addWidget(voice_eyebrow)
-
-        self.voice_chat_button = QPushButton("🎙\nSTART")
-        self.voice_chat_button.setObjectName("VoiceOrb")
-        self.voice_chat_button.setFixedSize(136, 136)
+        voice_status_row = QHBoxLayout()
+        self.voice_chat_button = QPushButton("🎙  Voice")
+        self.voice_chat_button.setObjectName("AssistantVoiceButton")
         self.voice_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.voice_chat_button.setAccessibleName("Start voice conversation")
         self.voice_chat_button.setToolTip(
-            "Start or stop hands-free voice chat. Vosk waits for your wake phrase, "
-            "then Faster-Whisper transcribes your speech."
-        )
-        self.voice_chat_button.setStyleSheet(
-            "QPushButton#VoiceOrb { color: white; font-size: 15px; font-weight: 800; "
-            "letter-spacing: 1px; border: 2px solid rgba(139, 180, 255, 0.9); "
-            "border-radius: 68px; padding: 0; "
-            "background: qradialgradient(cx:0.35, cy:0.28, radius:0.95, "
-            "fx:0.35, fy:0.28, stop:0 #6498e8, stop:1 #315aa5); } "
-            "QPushButton#VoiceOrb:hover { border-color: #d4e3ff; "
-            "background: qradialgradient(cx:0.35, cy:0.28, radius:0.95, "
-            "fx:0.35, fy:0.28, stop:0 #79a9f3, stop:1 #3a67b8); } "
-            "QPushButton#VoiceOrb[active=\"true\"] { border-color: #78d7b1; "
-            "background: qradialgradient(cx:0.35, cy:0.28, radius:0.95, "
-            "fx:0.35, fy:0.28, stop:0 #399f83, stop:1 #176b5c); } "
-            "QPushButton#VoiceOrb:disabled { color: rgba(255,255,255,0.78); "
-            "border-color: rgba(150,165,190,0.5); }"
+            "Start or stop voice chat. Microphone capture is independent of text chat."
         )
         self.voice_chat_button.clicked.connect(self.start_voice_chat)
-        voice_hero_layout.addWidget(
-            self.voice_chat_button, 0, Qt.AlignmentFlag.AlignHCenter
-        )
-
-        self.voice_live_status = QLabel("Voice chat is off")
-        self.voice_live_status.setObjectName("AssistantStatus")
+        voice_status_row.addWidget(self.voice_chat_button)
+        self.voice_live_status = QLabel("Voice input is off")
+        self.voice_live_status.setObjectName("Muted")
         self.voice_live_status.setWordWrap(True)
-        self.voice_live_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.voice_live_status.setAccessibleName("Voice chat status")
-        voice_hero_layout.addWidget(self.voice_live_status)
-        voice_hint = QLabel(
-            "Press Start, then say your wake phrase. Your speech is captured until silence, "
-            "transcribed locally and sent to the selected AI agent."
-        )
-        voice_hint.setObjectName("Muted")
-        voice_hint.setWordWrap(True)
-        voice_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        voice_hero_layout.addWidget(voice_hint)
-        self.conversation_layout.addWidget(voice_hero)
+        voice_status_row.addWidget(self.voice_live_status, 1)
+        self.conversation_layout.addLayout(voice_status_row)
 
         self.chat_view = QTextBrowser()
         self.chat_view.setObjectName("AssistantChat")
@@ -414,6 +389,14 @@ class AssistantPanel(QWidget):
         composer_hint = QLabel("Ctrl + Enter to send")
         composer_hint.setObjectName("Muted")
         composer_actions.addWidget(composer_hint)
+        self.agent_mode_check = QCheckBox("Agent tools")
+        self.agent_mode_check.setObjectName("AssistantAgentMode")
+        self.agent_mode_check.setChecked(True)
+        self.agent_mode_check.setToolTip(
+            "Allow Ollama to request approved Transcriber and local desktop tools."
+        )
+        self.agent_mode_check.setEnabled(False)
+        composer_actions.addWidget(self.agent_mode_check)
         composer_actions.addStretch(1)
 
         self.stop_button = QPushButton("Stop")
@@ -593,6 +576,75 @@ class AssistantPanel(QWidget):
         self._apply_provider_ui()
         self._sync_voice_orb()
 
+    def set_agent_runtime(self, action_registry):
+        """Attach the application's permission-aware action registry."""
+        self._action_registry = action_registry
+        self.agent_mode_check.setEnabled(action_registry is not None)
+        if action_registry is None:
+            self.agent_mode_check.setChecked(False)
+        else:
+            self.agent_mode_check.setToolTip(
+                "Ollama sees only currently permitted tools. Desktop actions remain hidden "
+                "until Desktop control is enabled in Settings, and each action asks before running."
+            )
+
+    def new_chat(self):
+        """Start a fresh local conversation or OpenCode ACP session."""
+        if self._worker_active:
+            return
+        if self._chat_provider == "ollama":
+            self._ollama_messages = []
+            self._messages.clear()
+            self._streaming_index = None
+            self._append_message("system", "New local conversation started.")
+            self.activity_label.setText("New conversation · ready for your message.")
+            return
+        if self.client and self.client.connected:
+            self._worker_active = True
+            self.new_chat_button.setEnabled(False)
+            self.activity_label.setText("Starting a fresh OpenCode session…")
+            client = self.client
+            mcp_servers = self._mcp_server_config()
+            worker = FunctionWorker(
+                lambda _emit: client.new_session(mcp_servers=mcp_servers, timeout=20)
+            )
+            worker.signals.result.connect(self.signals.new_session_ready.emit)
+            worker.signals.error.connect(self.signals.new_session_error.emit)
+            worker.signals.finished.connect(self._worker_finished)
+            self.thread_pool.start(worker)
+            return
+        self._messages.clear()
+        self._ollama_messages = []
+        self._streaming_index = None
+        self._append_message("system", "New conversation started. Connect a provider to continue.")
+
+    def _on_new_session_ready(self, session_id: str):
+        try:
+            self._session_file.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self._session_file.with_suffix(".tmp")
+            temporary.write_text(
+                json.dumps({"cwd": str(self.project_dir), "session_id": session_id}, indent=2),
+                encoding="utf-8",
+            )
+            try:
+                os.chmod(temporary, 0o600)
+            except OSError:
+                pass
+            os.replace(temporary, self._session_file)
+        except OSError as exc:
+            self._append_message("system", f"Session persistence warning: {exc}")
+        self._messages.clear()
+        self._streaming_index = None
+        self._append_message("system", "New OpenCode conversation started.")
+        self.activity_label.setText("Fresh OpenCode session · ready for your message.")
+
+    def _on_new_session_error(self, message: str):
+        self._append_message("error", f"Could not start a new OpenCode session: {message}")
+        self.activity_label.setText("The previous conversation is still active.")
+    def _on_ollama_tool_status(self, message: str):
+        self._streaming_index = None
+        self._append_message("tool", str(message))
+        self.activity_label.setText(str(message))
     def show_settings(self):
         """Switch to the dedicated assistant settings page."""
         self.page_stack.setCurrentWidget(self.settings_page)
@@ -619,6 +671,11 @@ class AssistantPanel(QWidget):
         self.ollama_url.setEnabled(ollama and not connected)
         self.refresh_ollama_button.setEnabled(ollama and not self._worker_active)
         self.send_button.setEnabled(connected and not self._worker_active)
+        self.stop_button.setEnabled(self._worker_active)
+        self.new_chat_button.setEnabled(not self._worker_active)
+        self.agent_mode_check.setEnabled(
+            ollama and self._action_registry is not None and not self._worker_active
+        )
         self.disconnect_button.setEnabled(connected)
         self.connect_button.setEnabled(not connected and not self._worker_active)
         if connected:
