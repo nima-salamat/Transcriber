@@ -243,8 +243,16 @@ class OllamaAgent:
         last_result: dict[str, Any] = {"text": "", "metrics": {}}
 
         for _round in range(self.max_rounds):
-            if cancellation:
-                cancellation.raise_if_cancelled()
+            if cancellation and cancellation.cancelled:
+                return {
+                    "model": model,
+                    "text": "",
+                    "messages": working,
+                    "tool_count": tool_count,
+                    "tool_rounds": tool_rounds,
+                    "cancelled": True,
+                    "metrics": last_result.get("metrics", {}),
+                }
             turn_chunks: list[str] = []
 
             def collect(chunk: str) -> None:
@@ -290,12 +298,19 @@ class OllamaAgent:
                     }
                 tool_count += 1
                 if tool_count > self.max_tool_calls:
+                    limit_message = (
+                        "I stopped because this request reached the configured tool-action limit. "
+                        "The actions already completed are listed above; no additional actions were run."
+                    )
                     working.append({
                         "role": "tool", "tool_name": "agent.limit",
-                        "content": "Tool-call limit reached. Summarize the results already obtained.",
+                        "content": "Tool-call limit reached. No more actions may be run in this turn.",
                     })
+                    working.append({"role": "assistant", "content": limit_message})
+                    if on_chunk:
+                        on_chunk(limit_message)
                     return {
-                        "model": model, "text": answer, "messages": working,
+                        "model": model, "text": limit_message, "messages": working,
                         "tool_count": tool_count - 1, "tool_rounds": tool_rounds,
                         "cancelled": False, "metrics": response.get("metrics", {}),
                     }
@@ -305,6 +320,16 @@ class OllamaAgent:
                     if on_tool_status:
                         on_tool_status(f"Running {name}…")
                     result = self.action_executor(name, arguments)
+                    if cancellation and cancellation.cancelled:
+                        return {
+                            "model": model,
+                            "text": answer,
+                            "messages": working,
+                            "tool_count": tool_count,
+                            "tool_rounds": tool_rounds,
+                            "cancelled": True,
+                            "metrics": response.get("metrics", {}),
+                        }
                     result_text = self._tool_result_text({"ok": True, "result": result})
                     status = f"Completed {name}"
                 except Exception as exc:

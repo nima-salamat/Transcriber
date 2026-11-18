@@ -1684,17 +1684,17 @@ class AssistantPanel(QWidget):
                 "or operate the app or desktop. Never claim an action succeeded until its tool result "
                 "confirms it. Desktop actions require user approval; if denied, do not retry or work "
                 "around the denial. There is no general shell, Python or arbitrary command execution "
-                "tool. For requests outside enabled tools, explain the limitation.\\n"
-                "Enabled tools: " + ", ".join(tool_names) + "\\n\\n"
+                "tool. For requests outside enabled tools, explain the limitation.\n"
+                "Enabled tools: " + ", ".join(tool_names) + "\n\n"
             )
         else:
             capability_text = (
                 "You are a conversational assistant inside Transcriber. No application tools are "
-                "enabled for this turn. Do not claim to inspect, control or modify the desktop.\\n\\n"
+                "enabled for this turn. Do not claim to inspect, control or modify the desktop.\n\n"
             )
         system_prompt = (
             "You are Transcriber's local AI assistant. Answer in the user's language. "
-            "Be practical and honest about uncertainty.\\n"
+            "Be practical and honest about uncertainty.\n"
             + capability_text
             + prompt_context
         )

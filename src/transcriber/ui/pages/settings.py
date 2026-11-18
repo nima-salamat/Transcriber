@@ -518,7 +518,7 @@ class SettingsPage(QWidget):
             ("Model runtime limits", "Model runtime", "loaded models RAM VRAM memory budget", "runtime"),
             ("OpenCode executable and project", "OpenCode & Voice Agent", "agent executable path project directory", "agent"),
             ("Voice wake phrase and model", "OpenCode & Voice Agent", "microphone wake word vosk voice assistant", "agent"),
-            ("Agent permissions", "OpenCode & Voice Agent", "permissions access microphone file export destructive", "agent"),
+            ("Agent permissions", "OpenCode & Voice Agent", "permissions access microphone file export destructive desktop control", "agent"),
             ("Local-only and cloud consent", "Privacy", "privacy internet online offline audio consent", "privacy"),
             ("Model and recording folders", "Storage", "paths directories recordings models", "storage"),
             ("Backup and restore", "Storage", "backup metadata restore database", "storage"),
@@ -625,7 +625,7 @@ class SettingsPage(QWidget):
             current.discard(permission)
         ordered = [name for name in (
             "read_only", "edit_content", "modify_settings", "audio_capture",
-            "file_export", "model_management", "destructive_actions",
+            "file_export", "model_management", "destructive_actions", "desktop_control",
         ) if name in current]
         self._save(agent_permissions=ordered)
         self.permission_changed.emit(permission, enabled)
