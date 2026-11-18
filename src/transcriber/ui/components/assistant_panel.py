@@ -696,6 +696,8 @@ class AssistantPanel(QWidget):
         self._chat_refresh_timer.timeout.connect(self._refresh_chat)
         self._refresh_chat()
         self._apply_provider_ui()
+        self._refresh_session_list()
+        self._refresh_chat()
         self._sync_voice_orb()
 
     def refresh_skills(self):
@@ -951,6 +953,7 @@ class AssistantPanel(QWidget):
 
         self.disconnect_button.setEnabled(connected)
         self.connect_button.setEnabled(not connected and not self._worker_active)
+        self.connect_button.setToolTip("Connect to " + ("Ollama" if ollama else "OpenCode"))
         self.connect_button.setToolTip("Connect to " + ("Ollama" if ollama else "OpenCode"))
         if connected:
             self.connection_state.setText("Connected · Ollama" if ollama else "Connected · OpenCode")
@@ -1900,9 +1903,11 @@ class AssistantPanel(QWidget):
             except Exception:
                 pass
         return client.new_session(mcp_servers=mcp_servers, timeout=20)
-
     def _on_connected(self, result):
         session_id = result.get("session_id")
+        self._active_opencode_session_id = str(session_id or "")
+        if self._active_opencode_session_id:
+            self.session_store.update_metadata(self._active_session_id, opencode_session_id=self._active_opencode_session_id)
         self._active_opencode_session_id = str(session_id or "")
         if self._active_opencode_session_id:
             self.session_store.update_metadata(self._active_session_id, opencode_session_id=self._active_opencode_session_id)
@@ -2246,6 +2251,7 @@ class AssistantPanel(QWidget):
 
     def _worker_finished(self):
         self._worker_active = False
+        self._refresh_session_list()
         connected = self._chat_is_connected()
         self.send_button.setEnabled(connected)
         self.stop_button.setEnabled(False)
@@ -2282,6 +2288,8 @@ class AssistantPanel(QWidget):
         self._append_message("system", "OpenCode disconnected.")
 
     def shutdown(self):
+        self._session_persist_timer.stop()
+        self._persist_current_session()
         if self.voice_agent:
             agent, self.voice_agent = self.voice_agent, None
             worker = FunctionWorker(lambda _emit: agent.stop())
