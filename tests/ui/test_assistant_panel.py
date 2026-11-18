@@ -134,6 +134,27 @@ def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
 
+def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    panel = AssistantPanel(paths, QThreadPool())
+    qtbot.addWidget(panel)
+
+    assert panel.page_stack.currentWidget() is panel.conversation_page
+    assert panel.settings_button.toolTip() == "Assistant settings"
+    assert panel.provider_combo.parentWidget() is not panel.conversation_page
+
+    panel.settings_button.click()
+    assert panel.page_stack.currentWidget() is panel.settings_page
+    assert panel.provider_combo.parentWidget() is not panel.conversation_page
+    assert panel.voice_panel.parentWidget() is panel.settings_content
+    assert panel.project_card.parentWidget() is panel.settings_content
+
+    panel.settings_back_button.click()
+    assert panel.page_stack.currentWidget() is panel.conversation_page
+
+
 def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
@@ -173,14 +194,15 @@ def test_assistant_exposes_installed_faster_whisper_voice_models(qtbot, tmp_path
 
 
 
-def test_voice_lifecycle_status_is_visible_when_voice_settings_are_collapsed(qtbot, tmp_path):
+def test_voice_lifecycle_status_is_visible_on_the_conversation_page(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
     panel = AssistantPanel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
-    assert panel.voice_panel.isHidden()
+    assert panel.page_stack.currentWidget() is panel.conversation_page
+    assert panel.voice_panel.parentWidget() is panel.settings_content
     assert not panel.voice_live_status.isHidden()
 
     panel.voice_agent = SimpleNamespace(mode="command")
