@@ -235,7 +235,7 @@ class AssistantPanel(QWidget):
         voice_eyebrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
         voice_hero_layout.addWidget(voice_eyebrow)
 
-        self.voice_chat_button = QPushButton("🎙\\nSTART")
+        self.voice_chat_button = QPushButton("🎙\nSTART")
         self.voice_chat_button.setObjectName("VoiceOrb")
         self.voice_chat_button.setFixedSize(136, 136)
         self.voice_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -253,7 +253,7 @@ class AssistantPanel(QWidget):
             "QPushButton#VoiceOrb:hover { border-color: #d4e3ff; "
             "background: qradialgradient(cx:0.35, cy:0.28, radius:0.95, "
             "fx:0.35, fy:0.28, stop:0 #79a9f3, stop:1 #3a67b8); } "
-            "QPushButton#VoiceOrb[active=\\"true\\"] { border-color: #78d7b1; "
+            "QPushButton#VoiceOrb[active=\"true\"] { border-color: #78d7b1; "
             "background: qradialgradient(cx:0.35, cy:0.28, radius:0.95, "
             "fx:0.35, fy:0.28, stop:0 #399f83, stop:1 #176b5c); } "
             "QPushButton#VoiceOrb:disabled { color: rgba(255,255,255,0.78); "
@@ -1126,7 +1126,7 @@ class AssistantPanel(QWidget):
             or self._start_voice_after_connect
             or self._voice_conversation_mode
         )
-        button.setText("■\\nSTOP" if active else "🎙\\nSTART")
+        button.setText("■\nSTOP" if active else "🎙\nSTART")
         button.setAccessibleName(
             "Stop voice conversation" if active else "Start voice conversation"
         )
