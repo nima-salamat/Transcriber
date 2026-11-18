@@ -1051,7 +1051,7 @@ class MainWindow(QMainWindow):
                 text=str(args.get("text") or ""),
                 selector=str(args.get("selector") or ""),
                 role=str(args.get("role") or ""),
-            ), requires_approval=True,
+            ), requires_approval=True, background=True,
         ))
         register(ActionSpec(
             "browser.fill", "Fill a browser form field after the user approves the value.",
@@ -1061,14 +1061,14 @@ class MainWindow(QMainWindow):
                 selector=str(args.get("selector") or ""),
                 label=str(args.get("label") or ""),
                 placeholder=str(args.get("placeholder") or ""),
-            ), required=("value",), requires_approval=True,
+            ), required=("value",), requires_approval=True, background=True,
         ))
         register(ActionSpec(
             "browser.press", "Press a limited keyboard key in the controlled browser.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.press(
                 str(args.get("key") or ""), selector=str(args.get("selector") or "")
-            ), required=("key",), requires_approval=True,
+            ), required=("key",), requires_approval=True, background=True,
         ))
         register(ActionSpec(
             "browser.back", "Navigate back one page in the controlled browser.",
@@ -1084,13 +1084,13 @@ class MainWindow(QMainWindow):
         register(ActionSpec(
             "browser.close", "Close the controlled browser and its dedicated profile window.",
             AgentPermission.BROWSER_CONTROL, lambda _args: self.agent_browser.close(),
-            requires_approval=True,
+            requires_approval=True, background=True,
         ))
         register(ActionSpec(
             "system.run_command",
             "Run a custom PowerShell command as the current Windows user; every command requires approval.",
             AgentPermission.COMMAND_EXECUTION, self._agent_run_command,
-            required=("command",), requires_approval=True,
+            required=("command",), requires_approval=True, background=True,
         ))
         register(ActionSpec(
             "agent.skills_list", "List locally installed portable Agent Skills.",

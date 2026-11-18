@@ -23,6 +23,7 @@ class ActionSpec:
     required: tuple[str, ...] = ()
     destructive: bool = False
     requires_approval: bool = False
+    background: bool = False
 
     def public_schema(self) -> dict[str, Any]:
         return {
@@ -32,6 +33,7 @@ class ActionSpec:
             "required": list(self.required),
             "destructive": self.destructive,
             "requires_approval": self.requires_approval,
+            "background": self.background,
         }
 
 
@@ -42,9 +44,11 @@ class ActionRegistry:
         permissions: set[AgentPermission] | frozenset[AgentPermission] | None = None,
         dispatcher: Callable[[Callable, dict[str, Any]], Any] | None = None,
         approval: Callable[[ActionSpec, dict[str, Any]], bool] | None = None,
+        approval_dispatcher: Callable[[Callable, dict[str, Any]], Any] | None = None,
     ):
         self.permissions = set(DEFAULT_PERMISSIONS if permissions is None else permissions)
         self.dispatcher = dispatcher or (lambda handler, arguments: handler(arguments))
+        self.approval_dispatcher = approval_dispatcher or self.dispatcher
         self.approval = approval
         self._actions: dict[str, ActionSpec] = {}
         self._lock = threading.RLock()
@@ -82,12 +86,16 @@ class ActionRegistry:
         if spec.destructive or spec.requires_approval:
             if self.approval is None:
                 raise PermissionDenied("This operation requires explicit user approval")
-            approved = self.dispatcher(
+            approved = self.approval_dispatcher(
                 lambda payload: self.approval(payload[0], payload[1]),
                 (spec, args),
             )
             if not approved:
                 raise PermissionDenied("The user denied this Agent action")
+        # I/O-bound tools run on the caller's worker thread. Qt/domain handlers
+        # still use the GUI dispatcher so they never touch widgets off-thread.
+        if spec.background:
+            return spec.handler(args)
         return self.dispatcher(spec.handler, args)
 
     def set_permission(self, permission: AgentPermission, enabled: bool) -> None:

@@ -149,9 +149,9 @@ class AgentSkillManager:
 
     CATALOG = (
         {
-            "label": "Browser automation · agent-browser",
-            "url": "https://github.com/pedronauck/skills/tree/main/skills/curated/agent-browser",
-            "description": "Browser workflows and accessibility-based page interaction.",
+            "label": "Browser automation · Vercel agent-browser",
+            "url": "https://github.com/vercel-labs/agent-browser/tree/main/skills/agent-browser",
+            "description": "Chrome automation, page snapshots, element interaction and browser workflows.",
         },
         {
             "label": "Browser UAT analyst · Microsoft",
@@ -159,9 +159,9 @@ class AgentSkillManager:
             "description": "Evidence-driven browser testing, screenshots and regression checks.",
         },
         {
-            "label": "Integrated browser · Microsoft VS Code",
-            "url": "https://github.com/microsoft/vscode/tree/main/.github/skills/integrated-browser",
-            "description": "Browser-agent architecture and secure browser interaction guidance.",
+            "label": "Playwright browser testing · Microsoft",
+            "url": "https://github.com/microsoft/cat-agent-skills/tree/main/submissions/browser-uat-analyst",
+            "description": "Evidence-based browser testing, screenshots and regression workflows.",
         },
     )
 
