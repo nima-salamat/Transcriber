@@ -134,7 +134,7 @@ def test_chat_sends_function_schemas_and_preserves_tool_history(monkeypatch):
     def fake_urlopen(request, timeout):
         captured["body"] = json.loads(request.data.decode("utf-8"))
         payload = {"message": {"role": "assistant", "content": "Done."}, "done": True}
-        return FakeResponse((json.dumps(payload) + "\\n").encode("utf-8"))
+        return FakeResponse((json.dumps(payload) + "\n").encode("utf-8"))
     monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
     tool = {"type": "function", "function": {"name": "desktop.launch_app", "parameters": {"type": "object"}}}
     history = [
@@ -157,7 +157,7 @@ def test_chat_collects_tool_calls_from_streaming_chunks(monkeypatch):
         {"message": {"role": "assistant", "content": "", "tool_calls": [call]}, "done": False},
         {"message": {"role": "assistant", "content": ""}, "done": True},
     ]
-    payload = "".join(json.dumps(item) + "\\n" for item in chunks).encode("utf-8")
+    payload = "".join(json.dumps(item) + "\n" for item in chunks).encode("utf-8")
     monkeypatch.setattr(
         "transcriber.assistant.ollama_client.urlopen",
         lambda request, timeout: FakeResponse(payload),

@@ -94,6 +94,7 @@ class AssistantPanel(QWidget):
         self._ollama_connected = False
         self._ollama_model = ""
         self._ollama_messages: list[dict] = []
+        self._action_registry = None
         self._ollama_cancellation = None
         self._chat_provider = (
             self.settings_store.settings.chat_provider if self.settings_store else "opencode"
