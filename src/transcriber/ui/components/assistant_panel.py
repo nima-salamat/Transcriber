@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QKeySequence, QPalette, QShortcut, QTextCursor
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut, QTextCursor, QTextDocument
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -895,6 +895,26 @@ class AssistantPanel(QWidget):
         if not self._chat_refresh_timer.isActive():
             self._chat_refresh_timer.start()
 
+    @staticmethod
+    def _markdown_fragment(value: str) -> str:
+        """Render message Markdown using Qt's rich-text parser."""
+        document = QTextDocument()
+        document.setMarkdown(str(value or ""))
+        rendered = document.toHtml()
+        lowered = rendered.casefold()
+        body_start = lowered.find("<body")
+        if body_start >= 0:
+            opening_end = rendered.find(">", body_start)
+            closing_start = lowered.find("</body>", opening_end)
+            if opening_end >= 0 and closing_start >= 0:
+                fragment = rendered[opening_end + 1:closing_start]
+            elif opening_end >= 0:
+                fragment = rendered[opening_end + 1:]
+            else:
+                fragment = rendered
+        else:
+            fragment = rendered
+        return fragment
     def _refresh_chat(self):
         palette = self.chat_view.palette()
         text_color = palette.color(QPalette.ColorRole.Text).name()
@@ -917,7 +937,7 @@ class AssistantPanel(QWidget):
             for message in self._messages[-180:]:
                 role = message["role"]
                 raw_text = str(message.get("text", ""))
-                safe_text = html.escape(raw_text).replace("\n", "<br>")
+                safe_text = self._markdown_fragment(raw_text)
                 if role == "user":
                     blocks.append(
                         '<div style="margin:12px 2px 12px 18px;">'
