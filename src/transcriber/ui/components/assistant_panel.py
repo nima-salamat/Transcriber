@@ -1,4 +1,4 @@
-"""Conversational OpenCode ACP panel with workspace-aware MCP assistance."""
+"""ChatGPT-style general desktop Agent with persistent conversations and voice input."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -28,11 +30,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from transcriber.assistant.chat_sessions import ChatSessionStore
 from transcriber.assistant.ollama_client import OllamaCancellation, OllamaClient, OllamaError
 from transcriber.assistant.prompt_library import PromptLibrary
 from transcriber.assistant.skills import AgentSkillManager
 from transcriber.opencode.acp_client import OpenCodeACPClient
 from transcriber.ui.components.prompt_library_dialog import PromptLibraryDialog
+from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.workers import FunctionWorker
 
 
@@ -56,6 +60,9 @@ class _AssistantSignals(QObject):
     ollama_tool_status = Signal(str)
     new_session_ready = Signal(str)
     new_session_error = Signal(str)
+    session_loaded = Signal(str)
+    session_load_error = Signal(str)
+    ollama_tool_result = Signal(object)
 
 
 class AssistantPanel(QWidget):
@@ -64,18 +71,13 @@ class AssistantPanel(QWidget):
     status_message = Signal(str)
 
     QUICK_PROMPTS = {
-        "Summarize": (
-            "Use the current Transcriber workspace context to summarize the open transcript. "
-            "Keep the summary concise and preserve important names, dates and decisions."
-        ),
+        "Search the web": "Search the web for reliable information about the topic I provide, compare sources and summarize the findings with source links.",
+        "Open an app": "Open the desktop application I name and tell me when it is ready.",
+        "Find a file": "Help me locate a file or folder on this computer. Ask for a useful clue if the location is unclear.",
         "Review transcript": (
             "Review the currently open transcript for likely speech-recognition mistakes, "
             "unclear passages and inconsistencies. Explain suggested corrections first; "
             "do not modify the transcript until I approve."
-        ),
-        "Action items": (
-            "Extract decisions, tasks, owners and deadlines from the current transcript. "
-            "Clearly mark information that is not explicitly stated."
         ),
     }
 
@@ -94,11 +96,23 @@ class AssistantPanel(QWidget):
         self.ollama_client: OllamaClient | None = None
         self._ollama_connected = False
         self._ollama_model = ""
-        self._ollama_messages: list[dict] = []
         self._action_registry = None
         self._ollama_cancellation = None
-        self._chat_provider = (
-            self.settings_store.settings.chat_provider if self.settings_store else "opencode"
+        self.ui_icons = IconRegistry()
+        session_directory = getattr(self.paths, "data", None) or self.paths.config
+        self.session_store = ChatSessionStore(Path(session_directory) / "assistant_sessions.json")
+        active_session = self.session_store.active_session()
+        if active_session is None:
+            default_provider = (
+                self.settings_store.settings.chat_provider if self.settings_store else "opencode"
+            )
+            active_session = self.session_store.create_session(default_provider)
+        self._active_session_id = active_session["id"]
+        self._chat_provider = active_session["provider"]
+        self._messages: list[dict[str, str]] = list(active_session["messages"])
+        self._ollama_messages: list[dict] = list(active_session["provider_messages"])
+        self._active_opencode_session_id = str(
+            (active_session.get("metadata") or {}).get("opencode_session_id") or ""
         )
         self._start_voice_after_connect = False
         self._voice_conversation_mode = False
@@ -127,12 +141,18 @@ class AssistantPanel(QWidget):
         self.signals.ollama_tool_status.connect(self._on_ollama_tool_status)
         self.signals.new_session_ready.connect(self._on_new_session_ready)
         self.signals.new_session_error.connect(self._on_new_session_error)
+        self.signals.session_loaded.connect(self._on_session_loaded)
+        self.signals.session_load_error.connect(self._on_session_load_error)
+        self.signals.ollama_tool_result.connect(self._on_ollama_tool_result)
 
         self.client: OpenCodeACPClient | None = None
         self._worker_active = False
-        self._messages: list[dict[str, str]] = []
         self._streaming_index: int | None = None
         self._session_file = self.paths.config / "opencode-session.json"
+        self._session_persist_timer = QTimer(self)
+        self._session_persist_timer.setSingleShot(True)
+        self._session_persist_timer.setInterval(350)
+        self._session_persist_timer.timeout.connect(self._persist_current_session)
         self.project_dir = Path.cwd()
         if self.settings_store:
             saved_project = self.settings_store.settings.opencode_project_directory
