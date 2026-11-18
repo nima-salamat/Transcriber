@@ -1253,8 +1253,7 @@ class MainWindow(QMainWindow):
             completed = subprocess.run(
                 [resolved, *arguments],
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
