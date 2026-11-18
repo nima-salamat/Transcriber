@@ -1226,6 +1226,46 @@ class MainWindow(QMainWindow):
                 raise RuntimeError("Windows Settings is only available on Windows.")
             os.startfile("ms-settings:")
             return {"opened": "Windows Settings"}
+        diagnostic_commands = {
+            "network_config": ("ipconfig.exe", ["/all"], 20.0),
+            "running_processes": ("tasklist.exe", [], 20.0),
+            "user_identity": ("whoami.exe", [], 10.0),
+        }
+        if preset in diagnostic_commands:
+            if sys.platform != "win32":
+                raise RuntimeError("These predefined diagnostic commands are currently Windows-only.")
+            executable, arguments, timeout = diagnostic_commands[preset]
+            resolved = shutil.which(executable)
+            if resolved is None:
+                windows_dir = os.environ.get("WINDIR", r"C:\\Windows")
+                candidate = Path(windows_dir) / "System32" / executable
+                if candidate.is_file():
+                    resolved = str(candidate)
+            if not resolved:
+                raise FileNotFoundError(f"{executable} was not found on this Windows installation.")
+            completed = subprocess.run(
+                [resolved, *arguments],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                check=False,
+                shell=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            output = (completed.stdout or completed.stderr or "").strip()
+            if completed.returncode:
+                raise RuntimeError(
+                    f"{preset} exited with code {completed.returncode}: {output[:1200]}"
+                )
+            return {
+                "command": [executable, *arguments],
+                "output": output[:9000],
+                "truncated": len(output) > 9000,
+            }
         raise ValueError("Choose a predefined desktop shortcut.")
 
     def _approve_agent_action(self, spec, args):

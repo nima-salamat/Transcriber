@@ -94,7 +94,8 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "parameters": {"type": "object", "properties": {
             "preset": {"type": "string", "enum": [
                 "downloads_folder", "documents_folder", "desktop_folder",
-                "task_manager", "calculator", "notepad", "windows_settings"
+                "task_manager", "calculator", "notepad", "windows_settings",
+                "network_config", "running_processes", "user_identity"
             ]},
         }, "required": ["preset"]},
     },
