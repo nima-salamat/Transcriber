@@ -750,6 +750,126 @@ class AssistantPanel(QWidget):
         )
         self.skills_custom_url.clear()
 
+    def _session_title(self) -> str:
+        for message in self._messages:
+            if message.get("role") == "user":
+                value = " ".join(str(message.get("text") or "").split())
+                if value:
+                    return value[:44] + ("…" if len(value) > 44 else "")
+        return "New chat"
+
+    def _schedule_session_persist(self):
+        if hasattr(self, "_session_persist_timer"):
+            self._session_persist_timer.start()
+
+    def _persist_current_session(self):
+        session_id = getattr(self, "_active_session_id", "")
+        if not session_id:
+            return
+        try:
+            self.session_store.save_state(
+                session_id,
+                messages=self._messages,
+                provider_messages=self._ollama_messages,
+                title=self._session_title(),
+            )
+        except (OSError, KeyError, ValueError) as exc:
+            if hasattr(self, "activity_label"):
+                self.activity_label.setText(f"Could not save this chat locally: {exc}")
+            return
+        if hasattr(self, "session_list"):
+            self._refresh_session_list()
+
+    def _refresh_session_list(self):
+        if not hasattr(self, "session_list"):
+            return
+        active_id = self._active_session_id
+        self.session_list.blockSignals(True)
+        self.session_list.clear()
+        selected_row = -1
+        for row, session in enumerate(self.session_store.list_sessions()):
+            title = session.get("title") or "New chat"
+            provider = "Ollama" if session["provider"] == "ollama" else "OpenCode"
+            item = QListWidgetItem(self.ui_icons.icon("sessions", size=16), title)
+            item.setData(Qt.ItemDataRole.UserRole, session["id"])
+            item.setToolTip(title + "\\n" + provider + " · " + session.get("updated_at", ""))
+            self.session_list.addItem(item)
+            if session["id"] == active_id:
+                selected_row = row
+        if selected_row >= 0:
+            self.session_list.setCurrentRow(selected_row)
+        self.session_list.blockSignals(False)
+        active = self.session_store.get_session(active_id)
+        if hasattr(self, "session_title_label"):
+            self.session_title_label.setText((active or {}).get("title") or "New chat")
+            provider = (active or {}).get("provider") or self._chat_provider
+            model = self._ollama_model if provider == "ollama" else "workspace agent"
+            self.session_subtitle_label.setText(
+                "Ollama · " + model if provider == "ollama" else "OpenCode · workspace agent"
+            )
+
+    def _load_session_state(self, session: dict):
+        self._active_session_id = session["id"]
+        self.session_store.set_active(self._active_session_id)
+        self._chat_provider = session["provider"]
+        self.provider_combo.blockSignals(True)
+        self.provider_combo.setCurrentIndex(
+            max(0, self.provider_combo.findData(self._chat_provider))
+        )
+        self.provider_combo.blockSignals(False)
+        self._messages = list(session.get("messages") or [])
+        self._ollama_messages = list(session.get("provider_messages") or [])
+        metadata = session.get("metadata") or {}
+        self._active_opencode_session_id = str(metadata.get("opencode_session_id") or "")
+        self._streaming_index = None
+        self._apply_provider_ui()
+        self._refresh_chat()
+        self._refresh_session_list()
+
+    def _on_session_item_clicked(self, item):
+        session_id = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        if not session_id or session_id == self._active_session_id or self._worker_active:
+            return
+        self._persist_current_session()
+        session = self.session_store.get_session(session_id)
+        if session is None:
+            self._refresh_session_list()
+            return
+        self._load_session_state(session)
+        if self._chat_provider == "opencode" and self.client and self.client.connected:
+            self._worker_active = True
+            self.send_button.setEnabled(False)
+            self.connect_button.setEnabled(False)
+            client = self.client
+            stored_id = self._active_opencode_session_id
+            mcp_servers = self._mcp_server_config()
+            self._switching_to_session_id = self._active_session_id
+
+            def restore(_emit):
+                if stored_id:
+                    client.load_session(stored_id, mcp_servers=mcp_servers, timeout=20)
+                    return stored_id
+                return client.new_session(mcp_servers=mcp_servers, timeout=20)
+
+            worker = FunctionWorker(restore)
+            worker.signals.result.connect(self.signals.session_loaded.emit)
+            worker.signals.error.connect(self.signals.session_load_error.emit)
+            worker.signals.finished.connect(self._worker_finished)
+            self.thread_pool.start(worker)
+
+    def _on_session_loaded(self, session_id: str):
+        if getattr(self, "_switching_to_session_id", "") != self._active_session_id:
+            return
+        self._active_opencode_session_id = session_id
+        self.session_store.update_metadata(
+            self._active_session_id, opencode_session_id=session_id
+        )
+        self._switching_to_session_id = ""
+        self.activity_label.setText("Conversation restored · ready to continue.")
+
+    def _on_session_load_error(self, message: str):
+        self._switching_to_session_id = ""
+        self._append_message("error", "Could not restore the OpenCode session: " + str(message))
     def set_agent_runtime(self, action_registry):
         """Attach the application's permission-aware action registry."""
         self._action_registry = action_registry
