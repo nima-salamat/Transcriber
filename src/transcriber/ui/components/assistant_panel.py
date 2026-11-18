@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from transcriber.assistant.ollama_client import OllamaCancellation, OllamaClient, OllamaError
 from transcriber.assistant.prompt_library import PromptLibrary
+from transcriber.assistant.skills import AgentSkillManager
 from transcriber.opencode.acp_client import OpenCodeACPClient
 from transcriber.ui.components.prompt_library_dialog import PromptLibraryDialog
 from transcriber.ui.workers import FunctionWorker
@@ -102,6 +103,7 @@ class AssistantPanel(QWidget):
         self._start_voice_after_connect = False
         self._voice_conversation_mode = False
         self.prompt_library = PromptLibrary(self.paths.config / "agent_prompts")
+        self.skill_manager = AgentSkillManager(self.paths.config / "agent-skills")
         self._resume_voice_after_prompt = False
         self._voice_asr_active = False
         self._last_voice_stage = ""
@@ -138,7 +140,7 @@ class AssistantPanel(QWidget):
                 self.project_dir = Path(saved_project).resolve()
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 18, 20, 16)
+        root.setContentsMargins(16, 14, 16, 14)
         root.setSpacing(14)
 
         header = QHBoxLayout()
@@ -147,19 +149,12 @@ class AssistantPanel(QWidget):
         title_group.setSpacing(3)
         title = QLabel("AI assistant")
         title.setObjectName("AssistantTitle")
-        subtitle = QLabel("A focused space for voice and text conversations")
+        subtitle = QLabel("General desktop agent · browser, apps, commands and skills")
         subtitle.setObjectName("Muted")
         subtitle.setWordWrap(True)
         title_group.addWidget(title)
         title_group.addWidget(subtitle)
         header.addLayout(title_group, 1)
-
-        self.new_chat_button = QPushButton("＋  New chat")
-        self.new_chat_button.setObjectName("AssistantNewChatButton")
-        self.new_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.new_chat_button.setToolTip("Start a fresh conversation")
-        self.new_chat_button.clicked.connect(self.new_chat)
-        header.addWidget(self.new_chat_button)
 
         self.connection_state = QLabel("Disconnected")
         self.connection_state.setObjectName("AssistantStatus")
@@ -180,9 +175,73 @@ class AssistantPanel(QWidget):
         self.page_stack.setObjectName("AssistantPageStack")
         self.conversation_page = QWidget()
         self.conversation_page.setObjectName("AssistantConversationPage")
-        self.conversation_layout = QVBoxLayout(self.conversation_page)
+        self.conversation_layout = QHBoxLayout(self.conversation_page)
         self.conversation_layout.setContentsMargins(0, 0, 0, 0)
-        self.conversation_layout.setSpacing(12)
+        self.conversation_layout.setSpacing(0)
+
+        self.agent_sidebar = QFrame()
+        self.agent_sidebar.setObjectName("AssistantSidebar")
+        self.agent_sidebar.setFixedWidth(204)
+        sidebar_layout = QVBoxLayout(self.agent_sidebar)
+        sidebar_layout.setContentsMargins(12, 14, 12, 14)
+        sidebar_layout.setSpacing(8)
+        sidebar_label = QLabel("WORKSPACE")
+        sidebar_label.setObjectName("AssistantEyebrow")
+        sidebar_layout.addWidget(sidebar_label)
+
+        self.new_chat_button = QPushButton("＋  New chat")
+        self.new_chat_button.setObjectName("AssistantNewChatButton")
+        self.new_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.new_chat_button.setMinimumHeight(40)
+        self.new_chat_button.setToolTip("Start a fresh conversation")
+        self.new_chat_button.clicked.connect(self.new_chat)
+        sidebar_layout.addWidget(self.new_chat_button)
+
+        self.skills_button = QPushButton("◇  Agent skills")
+        self.skills_button.setObjectName("AssistantSidebarButton")
+        self.skills_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.skills_button.setMinimumHeight(38)
+        self.skills_button.setToolTip("Browse, install and manage reusable Agent Skills")
+        self.skills_button.clicked.connect(self.show_skills)
+        sidebar_layout.addWidget(self.skills_button)
+
+        tools_label = QLabel("CAPABILITIES")
+        tools_label.setObjectName("AssistantEyebrow")
+        tools_label.setContentsMargins(2, 12, 0, 0)
+        sidebar_layout.addWidget(tools_label)
+        capabilities = QLabel("Browser automation\\nWindows apps\\nCustom commands\\nLocal skills")
+        capabilities.setObjectName("AssistantSidebarCapabilities")
+        capabilities.setWordWrap(True)
+        sidebar_layout.addWidget(capabilities)
+
+        sidebar_layout.addStretch(1)
+        self.sidebar_provider_label = QLabel()
+        self.sidebar_provider_label.setObjectName("AssistantSidebarProvider")
+        self.sidebar_provider_label.setWordWrap(True)
+        sidebar_layout.addWidget(self.sidebar_provider_label)
+
+        self.voice_chat_button = QPushButton("🎙  Voice")
+        self.voice_chat_button.setObjectName("AssistantVoiceButton")
+        self.voice_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.voice_chat_button.setAccessibleName("Start voice conversation")
+        self.voice_chat_button.setToolTip(
+            "Start or stop hands-free voice input. Text chat works independently."
+        )
+        self.voice_chat_button.clicked.connect(self.start_voice_chat)
+        sidebar_layout.addWidget(self.voice_chat_button)
+        self.voice_live_status = QLabel("Voice input is off")
+        self.voice_live_status.setObjectName("AssistantVoiceStatus")
+        self.voice_live_status.setWordWrap(True)
+        self.voice_live_status.setAccessibleName("Voice chat status")
+        sidebar_layout.addWidget(self.voice_live_status)
+
+        self.conversation_layout.addWidget(self.agent_sidebar)
+        chat_workspace = QWidget()
+        chat_workspace.setObjectName("AssistantChatWorkspace")
+        self.chat_layout = QVBoxLayout(chat_workspace)
+        self.chat_layout.setContentsMargins(18, 4, 10, 6)
+        self.chat_layout.setSpacing(10)
+        self.conversation_layout.addWidget(chat_workspace, 1)
 
         self.settings_page = QWidget()
         self.settings_page.setObjectName("AssistantSettingsPage")
@@ -321,46 +380,79 @@ class AssistantPanel(QWidget):
         prompt_library_layout.addWidget(self.prompt_library_button)
         self.settings_layout.addWidget(prompt_library_card)
 
-        voice_status_row = QHBoxLayout()
-        self.voice_chat_button = QPushButton("🎙  Voice")
-        self.voice_chat_button.setObjectName("AssistantVoiceButton")
-        self.voice_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.voice_chat_button.setAccessibleName("Start voice conversation")
-        self.voice_chat_button.setToolTip(
-            "Start or stop voice chat. Microphone capture is independent of text chat."
+        self.skills_card = QFrame()
+        self.skills_card.setObjectName("AssistantSettingsCard")
+        skills_layout = QVBoxLayout(self.skills_card)
+        skills_layout.setContentsMargins(14, 12, 14, 14)
+        skills_layout.setSpacing(8)
+        skills_title = QLabel("Agent skills")
+        skills_title.setObjectName("AssistantSectionTitle")
+        skills_layout.addWidget(skills_title)
+        skills_description = QLabel(
+            "Skills add reusable workflows and specialist knowledge. The Agent loads a skill's "
+            "instructions only when a task matches its description. Downloaded scripts are stored "
+            "as resources and are never executed automatically."
         )
-        self.voice_chat_button.clicked.connect(self.start_voice_chat)
-        voice_status_row.addWidget(self.voice_chat_button)
-        self.voice_live_status = QLabel("Voice input is off")
-        self.voice_live_status.setObjectName("Muted")
-        self.voice_live_status.setWordWrap(True)
-        self.voice_live_status.setAccessibleName("Voice chat status")
-        voice_status_row.addWidget(self.voice_live_status, 1)
-        self.conversation_layout.addLayout(voice_status_row)
+        skills_description.setObjectName("Muted")
+        skills_description.setWordWrap(True)
+        skills_layout.addWidget(skills_description)
+        self.skills_catalog_combo = QComboBox()
+        for item in self.skill_manager.CATALOG:
+            self.skills_catalog_combo.addItem(item["label"], item["url"])
+        skills_layout.addWidget(self.skills_catalog_combo)
+        skills_actions = QHBoxLayout()
+        self.skills_install_button = QPushButton("Install selected skill")
+        self.skills_install_button.setObjectName("Primary")
+        self.skills_install_button.clicked.connect(self.install_selected_skill)
+        self.skills_refresh_button = QPushButton("Refresh")
+        self.skills_refresh_button.setObjectName("Subtle")
+        self.skills_refresh_button.clicked.connect(self.refresh_skills)
+        skills_actions.addWidget(self.skills_install_button)
+        skills_actions.addWidget(self.skills_refresh_button)
+        skills_layout.addLayout(skills_actions)
+        self.skills_custom_url = QLineEdit()
+        self.skills_custom_url.setPlaceholderText(
+            "Or paste a GitHub skill folder URL …/tree/main/path/to/skill"
+        )
+        skills_layout.addWidget(self.skills_custom_url)
+        self.skills_custom_install_button = QPushButton("Install from GitHub URL")
+        self.skills_custom_install_button.setObjectName("Subtle")
+        self.skills_custom_install_button.clicked.connect(self.install_custom_skill)
+        skills_layout.addWidget(self.skills_custom_install_button)
+        self.skills_list_label = QLabel()
+        self.skills_list_label.setObjectName("AssistantSkillsList")
+        self.skills_list_label.setWordWrap(True)
+        skills_layout.addWidget(self.skills_list_label)
+        self.skills_status_label = QLabel("")
+        self.skills_status_label.setObjectName("Muted")
+        self.skills_status_label.setWordWrap(True)
+        skills_layout.addWidget(self.skills_status_label)
+        self.settings_layout.addWidget(self.skills_card)
+        self.refresh_skills()
 
         self.chat_view = QTextBrowser()
         self.chat_view.setObjectName("AssistantChat")
         self.chat_view.setOpenExternalLinks(False)
         self.chat_view.setOpenLinks(False)
         self.chat_view.setReadOnly(True)
-        self.chat_view.setPlaceholderText("Connect to OpenCode or Ollama to start a conversation.")
+        self.chat_view.setPlaceholderText("Connect an AI provider to start a conversation.")
         self.chat_view.setMinimumHeight(150)
-        self.conversation_layout.addWidget(self.chat_view, 1)
+        self.chat_layout.addWidget(self.chat_view, 1)
 
         # Retain the old attribute name for integrations which inspect the panel.
         self.log = self.chat_view
 
-        self.activity_label = QLabel("Connect to OpenCode to enable the workspace assistant.")
+        self.activity_label = QLabel("Connect an AI provider to start using your desktop agent.")
         self.activity_label.setObjectName("Muted")
         self.activity_label.setWordWrap(True)
-        self.conversation_layout.addWidget(self.activity_label)
+        self.chat_layout.addWidget(self.activity_label)
 
         suggestion_header = QHBoxLayout()
         suggestion_label = QLabel("QUICK PROMPTS")
         suggestion_label.setObjectName("AssistantEyebrow")
         suggestion_header.addWidget(suggestion_label)
         suggestion_header.addStretch(1)
-        self.conversation_layout.addLayout(suggestion_header)
+        self.chat_layout.addLayout(suggestion_header)
 
         suggestions = QHBoxLayout()
         suggestions.setSpacing(6)
@@ -370,7 +462,7 @@ class AssistantPanel(QWidget):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _checked=False, text=prompt: self._insert_suggestion(text))
             suggestions.addWidget(button)
-        self.conversation_layout.addLayout(suggestions)
+        self.chat_layout.addLayout(suggestions)
 
         composer = QFrame()
         composer.setObjectName("AssistantComposer")
@@ -379,7 +471,7 @@ class AssistantPanel(QWidget):
         composer_layout.setSpacing(8)
         self.prompt = QPlainTextEdit()
         self.prompt.setObjectName("AssistantPrompt")
-        self.prompt.setPlaceholderText("Ask about the transcript, request an edit, or explore your workspace…")
+        self.prompt.setPlaceholderText("Message your agent… Ask it to search the web, open an app, manage files or run a command.")
         self.prompt.setMinimumHeight(68)
         self.prompt.setMaximumHeight(126)
         self.prompt.setTabChangesFocus(True)
@@ -411,7 +503,7 @@ class AssistantPanel(QWidget):
         composer_actions.addWidget(self.stop_button)
         composer_actions.addWidget(self.send_button)
         composer_layout.addLayout(composer_actions)
-        self.conversation_layout.addWidget(composer)
+        self.chat_layout.addWidget(composer)
 
         self.send_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self.prompt)
         self.send_shortcut.activated.connect(self.send_prompt)
@@ -577,6 +669,58 @@ class AssistantPanel(QWidget):
         self._apply_provider_ui()
         self._sync_voice_orb()
 
+    def refresh_skills(self):
+        skills = self.skill_manager.list_skills()
+        if not skills:
+            self.skills_list_label.setText("No Agent Skills are installed.")
+            return
+        self.skills_list_label.setText(
+            "Installed skills\\n"
+            + "\\n".join(
+                f"• {skill.name} — {skill.description}" for skill in skills
+            )
+        )
+
+    def show_skills(self):
+        self.show_settings()
+        QTimer.singleShot(0, lambda: self.settings_scroll.ensureWidgetVisible(self.skills_card, 12, 12))
+
+    def install_selected_skill(self):
+        url = str(self.skills_catalog_combo.currentData() or "").strip()
+        if url:
+            self._install_skill_url(url)
+
+    def install_custom_skill(self):
+        url = self.skills_custom_url.text().strip()
+        if not url:
+            self.skills_status_label.setText("Paste a public GitHub skill folder URL first.")
+            return
+        self._install_skill_url(url)
+
+    def _install_skill_url(self, url: str):
+        self.skills_install_button.setEnabled(False)
+        self.skills_custom_install_button.setEnabled(False)
+        self.skills_status_label.setText("Downloading and validating the Agent Skill…")
+        worker = FunctionWorker(lambda _emit: self.skill_manager.install_from_github(url))
+        worker.signals.result.connect(self._on_skill_installed)
+        worker.signals.error.connect(
+            lambda message: self.skills_status_label.setText(f"Skill installation failed: {message}")
+        )
+        worker.signals.finished.connect(
+            lambda: (
+                self.skills_install_button.setEnabled(True),
+                self.skills_custom_install_button.setEnabled(True),
+            )
+        )
+        self.thread_pool.start(worker)
+
+    def _on_skill_installed(self, skill):
+        self.refresh_skills()
+        self.skills_status_label.setText(
+            f"Installed {skill.name}. Its instructions are now available to the Agent."
+        )
+        self.skills_custom_url.clear()
+
     def set_agent_runtime(self, action_registry):
         """Attach the application's permission-aware action registry."""
         self._action_registry = action_registry
@@ -676,6 +820,10 @@ class AssistantPanel(QWidget):
         self.new_chat_button.setEnabled(not self._worker_active)
         self.agent_mode_check.setEnabled(
             ollama and self._action_registry is not None and not self._worker_active
+        )
+        self.sidebar_provider_label.setText(
+            ("OLLAMA · local model" if ollama else "OPENCODE · workspace agent")
+            + ("\\nConnected" if connected else "\\nNot connected")
         )
         self.disconnect_button.setEnabled(connected)
         self.connect_button.setEnabled(not connected and not self._worker_active)
