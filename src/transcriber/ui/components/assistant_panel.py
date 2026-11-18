@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from transcriber.assistant.ollama_client import OllamaClient, OllamaError
+from transcriber.assistant.ollama_client import OllamaCancellation, OllamaClient, OllamaError
 from transcriber.assistant.prompt_library import PromptLibrary
 from transcriber.opencode.acp_client import OpenCodeACPClient
 from transcriber.ui.components.prompt_library_dialog import PromptLibraryDialog
@@ -94,7 +94,8 @@ class AssistantPanel(QWidget):
         self.ollama_client: OllamaClient | None = None
         self._ollama_connected = False
         self._ollama_model = ""
-        self._ollama_messages: list[dict[str, str]] = []
+        self._ollama_messages: list[dict] = []
+        self._ollama_cancellation = None
         self._chat_provider = (
             self.settings_store.settings.chat_provider if self.settings_store else "opencode"
         )
@@ -842,6 +843,7 @@ class AssistantPanel(QWidget):
             self.toggle_voice_agent()
 
     def _on_ollama_error(self, message):
+        self._ollama_cancellation = None
         self._streaming_index = None
         self._append_message("error", str(message))
         self.ollama_help.setText(str(message))
@@ -1664,16 +1666,37 @@ class AssistantPanel(QWidget):
             self.status_message.emit("Ollama is disconnected")
             return
         try:
+            from transcriber.assistant.ollama_agent import OllamaAgent
+
             prompt_files = self.prompt_library.prompt_files_for_request(prompt)
             prompt_context = self.prompt_library.context_for_request(prompt)
         except (OSError, ValueError) as exc:
             self._append_message("error", f"Could not load the current Agent prompt instructions: {exc}")
             self.status_message.emit(f"Agent prompt library: {exc}")
             return
+
+        agent_enabled = bool(self.agent_mode_check.isChecked() and self._action_registry is not None)
+        tools = OllamaAgent.tools_for_registry(self._action_registry) if agent_enabled else []
+        tool_names = [item["function"]["name"] for item in tools]
+        if tools:
+            capability_text = (
+                "You are an agentic desktop assistant inside Transcriber. You may call only the "
+                "functions supplied in the tools list. Use a tool when the user asks you to inspect "
+                "or operate the app or desktop. Never claim an action succeeded until its tool result "
+                "confirms it. Desktop actions require user approval; if denied, do not retry or work "
+                "around the denial. There is no general shell, Python or arbitrary command execution "
+                "tool. For requests outside enabled tools, explain the limitation.\\n"
+                "Enabled tools: " + ", ".join(tool_names) + "\\n\\n"
+            )
+        else:
+            capability_text = (
+                "You are a conversational assistant inside Transcriber. No application tools are "
+                "enabled for this turn. Do not claim to inspect, control or modify the desktop.\\n\\n"
+            )
         system_prompt = (
-            "You are the local chat assistant inside Transcriber. Answer the user's questions clearly. "
-            "You are connected to no application tools in this Ollama chat mode: do not claim to inspect "
-            "or modify the live Transcriber workspace or OpenCode Desktop.\n\n"
+            "You are Transcriber's local AI assistant. Answer in the user's language. "
+            "Be practical and honest about uncertainty.\\n"
+            + capability_text
             + prompt_context
         )
         history = [dict(item) for item in self._ollama_messages]
@@ -1682,6 +1705,8 @@ class AssistantPanel(QWidget):
         else:
             history.insert(0, {"role": "system", "content": system_prompt})
         history.append({"role": "user", "content": prompt})
+        if len(history) > 41:
+            history = [history[0], *history[-40:]]
         self._ollama_messages = history
         self._worker_active = True
         if self.voice_agent is not None and self.voice_agent.mode == "processing":
@@ -1691,18 +1716,36 @@ class AssistantPanel(QWidget):
             )
         self._streaming_index = None
         self.send_button.setEnabled(False)
-        self.stop_button.setEnabled(False)
-        self.activity_label.setText(f"Ollama is working · {self._ollama_model}")
+        self.stop_button.setEnabled(True)
+        self.new_chat_button.setEnabled(False)
+        self.activity_label.setText(
+            f"Ollama Agent is working · {self._ollama_model}" if tools
+            else f"Ollama is working · {self._ollama_model}"
+        )
         self._append_message("user", prompt)
         self.prompt.clear()
-        self._append_message("system", "Loaded current prompt instructions: " + ", ".join(prompt_files))
+        self._append_message("system", "Loaded instructions: " + ", ".join(prompt_files))
+        if agent_enabled and not tools:
+            self._append_message(
+                "system",
+                "Agent mode is enabled, but no tools are currently permitted. Enable the required permissions in Settings.",
+            )
         keep_alive = self.settings_store.settings.ollama_keep_alive if self.settings_store else "30m"
+        cancellation = OllamaCancellation()
+        self._ollama_cancellation = cancellation
+        agent = OllamaAgent(
+            client,
+            lambda name, arguments: self._action_registry.execute(name, arguments),
+        )
         worker = FunctionWorker(
-            lambda emit: client.chat(
+            lambda emit: agent.run(
                 self._ollama_model,
                 history,
+                tools,
                 keep_alive=keep_alive,
+                cancellation=cancellation,
                 on_chunk=emit,
+                on_tool_status=self.signals.ollama_tool_status.emit,
             )
         )
         worker.signals.progress.connect(self.signals.ollama_chunk.emit)
@@ -1710,23 +1753,26 @@ class AssistantPanel(QWidget):
         worker.signals.error.connect(self.signals.ollama_error.emit)
         worker.signals.finished.connect(self._worker_finished)
         self.thread_pool.start(worker)
-
     def _on_ollama_chat_complete(self, result):
-        response = str(result.get("text") or "")
-        if response:
-            self._ollama_messages.append({"role": "assistant", "content": response})
+        self._ollama_messages = list(result.get("messages") or self._ollama_messages)
+        self._ollama_cancellation = None
         self._streaming_index = None
+        if result.get("cancelled"):
+            self._append_message("system", "Assistant generation was stopped by you.")
         metrics = result.get("metrics") or {}
         eval_count = metrics.get("eval_count")
+        tool_count = int(result.get("tool_count") or 0)
         detail = f" · {eval_count} tokens" if eval_count is not None else ""
-        self.activity_label.setText(f"Ollama turn complete{detail} · Ready for your next message.")
+        tool_detail = f" · {tool_count} tool action(s)" if tool_count else ""
+        self.activity_label.setText(
+            f"Ollama turn complete{detail}{tool_detail} · Ready for your next message."
+        )
         if self.voice_agent is not None and self._resume_voice_after_prompt:
             self._set_voice_activity(
                 "Ollama response received · preparing to listen again…",
                 stage="response",
                 log_message="Ollama finished responding.",
             )
-
     def send_prompt(self):
         prompt = self.prompt.toPlainText().strip()
         if not prompt:
@@ -1783,6 +1829,15 @@ class AssistantPanel(QWidget):
         self.thread_pool.start(worker)
 
     def cancel_prompt(self):
+        if self._chat_provider == "ollama":
+            cancellation = self._ollama_cancellation
+            if cancellation is None:
+                return
+            cancellation.cancel()
+            self.stop_button.setEnabled(False)
+            self.activity_label.setText("Stopping Ollama generation and Agent loop…")
+            self._append_message("system", "Stop requested · no further Agent tools will be started.")
+            return
         if not self.client or not self.client.connected:
             return
         self.stop_button.setEnabled(False)
@@ -1792,7 +1847,6 @@ class AssistantPanel(QWidget):
         self.thread_pool.start(worker)
         self.activity_label.setText("Cancellation requested…")
         self._append_message("system", "Cancellation requested.")
-
     def _on_notification(self, message):
         params = message.get("params", {}) if isinstance(message, dict) else {}
         update = params.get("update", {}) if isinstance(params, dict) else {}
@@ -1859,6 +1913,10 @@ class AssistantPanel(QWidget):
         connected = self._chat_is_connected()
         self.send_button.setEnabled(connected)
         self.stop_button.setEnabled(False)
+        self.new_chat_button.setEnabled(True)
+        self.agent_mode_check.setEnabled(
+            self._chat_provider == "ollama" and self._action_registry is not None
+        )
         self.connect_button.setEnabled(not connected)
         self.disconnect_button.setEnabled(connected)
         if connected and (
