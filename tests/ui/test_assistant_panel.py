@@ -130,7 +130,7 @@ def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
 
     panel._voice_conversation_mode = False
     panel._sync_voice_orb()
-    assert "START" in panel.voice_chat_button.text()
+    assert "Voice" in panel.voice_chat_button.text()
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
 
@@ -226,7 +226,7 @@ def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path)
     assert panel.project_card.isHidden() is True
     assert panel.connect_button.text() == "Connect Ollama"
     assert panel.voice_chat_button.objectName() == "AssistantVoiceButton"
-    assert "START" in panel.voice_chat_button.text()
+    assert "Voice" in panel.voice_chat_button.text()
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
 
