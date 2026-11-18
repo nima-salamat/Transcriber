@@ -39,6 +39,49 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "regex": {"type": "boolean", "description": "Use regular expressions"},
         }, "required": ["query"]},
     },
+    "editor.update_segment": {
+        "description": "Update text, timing, speaker or review metadata for one transcript segment.",
+        "parameters": {"type": "object", "properties": {
+            "segment_id": {"type": "string"},
+            "changes": {"type": "object", "description": "Fields to update on the segment"},
+        }, "required": ["segment_id", "changes"]},
+    },
+    "editor.split_segment": {
+        "description": "Split a segment at a time boundary or text character index.",
+        "parameters": {"type": "object", "properties": {
+            "segment_id": {"type": "string"},
+            "split_at": {"type": "number", "description": "Split point in seconds"},
+            "character_index": {"type": "integer", "description": "Optional character index"},
+        }, "required": ["segment_id", "split_at"]},
+    },
+    "editor.merge_segments": {
+        "description": "Merge two adjacent transcript segments.",
+        "parameters": {"type": "object", "properties": {
+            "first_id": {"type": "string"},
+            "second_id": {"type": "string"},
+        }, "required": ["first_id", "second_id"]},
+    },
+    "editor.delete_segment": {
+        "description": "Delete one transcript segment. This is destructive and requires explicit approval.",
+        "parameters": {"type": "object", "properties": {
+            "segment_id": {"type": "string"},
+        }, "required": ["segment_id"]},
+    },
+    "editor.set_speaker": {
+        "description": "Assign a speaker label to one or more transcript segments.",
+        "parameters": {"type": "object", "properties": {
+            "segment_ids": {"type": "array", "items": {"type": "string"}},
+            "speaker": {"type": "string"},
+        }, "required": ["segment_ids", "speaker"]},
+    },
+    "editor.replace": {
+        "description": "Replace text in matching transcript segments.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"},
+            "replacement": {"type": "string"},
+            "regex": {"type": "boolean"},
+        }, "required": ["query", "replacement"]},
+    },
     "editor.undo": {
         "description": "Undo the most recent transcript edit.",
         "parameters": {"type": "object", "properties": {}},
@@ -50,6 +93,12 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "audio.get_status": {
         "description": "Read the loaded audio path, playback state and position.",
         "parameters": {"type": "object", "properties": {}},
+    },
+    "audio.seek": {
+        "description": "Seek the current audio file to a specified time in seconds.",
+        "parameters": {"type": "object", "properties": {
+            "seconds": {"type": "number", "minimum": 0},
+        }, "required": ["seconds"]},
     },
     "audio.play": {
         "description": "Play the currently loaded audio.",
@@ -133,9 +182,15 @@ class OllamaAgent:
     @staticmethod
     def tools_for_registry(action_registry) -> list[dict[str, Any]]:
         """Expose only tools for actions whose permissions are currently enabled."""
+        permissions = {
+            getattr(item, "value", str(item))
+            for item in getattr(action_registry, "permissions", set())
+        }
         enabled = {
-            row["name"] for row in action_registry.describe(include_disabled=False)
+            row["name"]
+            for row in action_registry.describe(include_disabled=False)
             if row.get("enabled")
+            and (not row.get("destructive") or "destructive_actions" in permissions)
         }
         return [
             {"type": "function", "function": {
