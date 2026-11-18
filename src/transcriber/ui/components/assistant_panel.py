@@ -284,6 +284,29 @@ class AssistantPanel(QWidget):
         self.project_card = project_card
         self.settings_layout.addWidget(project_card)
 
+        prompt_library_card = QFrame()
+        prompt_library_card.setObjectName("AssistantSettingsCard")
+        prompt_library_layout = QVBoxLayout(prompt_library_card)
+        prompt_library_layout.setContentsMargins(14, 12, 14, 12)
+        prompt_library_layout.setSpacing(7)
+        prompt_library_title = QLabel("Agent instructions")
+        prompt_library_title.setObjectName("AssistantSectionTitle")
+        prompt_library_description = QLabel(
+            "Manage the coordinator prompt and specialist instructions used by OpenCode."
+        )
+        prompt_library_description.setObjectName("Muted")
+        prompt_library_description.setWordWrap(True)
+        self.prompt_library_button = QPushButton("Open prompt library")
+        self.prompt_library_button.setObjectName("Subtle")
+        self.prompt_library_button.setToolTip(
+            "Edit specialist instructions, paste prompts or copy the Agent coordinator prompt."
+        )
+        self.prompt_library_button.clicked.connect(self.open_prompt_library)
+        prompt_library_layout.addWidget(prompt_library_title)
+        prompt_library_layout.addWidget(prompt_library_description)
+        prompt_library_layout.addWidget(self.prompt_library_button)
+        self.settings_layout.addWidget(prompt_library_card)
+
         voice_hero = QFrame()
         voice_hero.setObjectName("VoiceHero")
         voice_hero_layout = QVBoxLayout(voice_hero)
@@ -357,17 +380,10 @@ class AssistantPanel(QWidget):
         self.conversation_layout.addWidget(self.activity_label)
 
         suggestion_header = QHBoxLayout()
-        suggestion_label = QLabel("START WITH")
+        suggestion_label = QLabel("QUICK PROMPTS")
         suggestion_label.setObjectName("AssistantEyebrow")
         suggestion_header.addWidget(suggestion_label)
         suggestion_header.addStretch(1)
-        self.prompt_library_button = QPushButton("Prompt library")
-        self.prompt_library_button.setObjectName("Subtle")
-        self.prompt_library_button.setToolTip(
-            "Edit specialist instructions, paste prompts or copy the Agent coordinator prompt."
-        )
-        self.prompt_library_button.clicked.connect(self.open_prompt_library)
-        suggestion_header.addWidget(self.prompt_library_button)
         self.conversation_layout.addLayout(suggestion_header)
 
         suggestions = QHBoxLayout()
