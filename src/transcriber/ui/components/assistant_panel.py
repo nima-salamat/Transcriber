@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
+    QStackedWidget,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -129,16 +131,16 @@ class AssistantPanel(QWidget):
                 self.project_dir = Path(saved_project).resolve()
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(14)
 
         header = QHBoxLayout()
-        header.setSpacing(8)
+        header.setSpacing(10)
         title_group = QVBoxLayout()
-        title_group.setSpacing(2)
+        title_group.setSpacing(3)
         title = QLabel("AI assistant")
         title.setObjectName("AssistantTitle")
-        subtitle = QLabel("Work with the current Transcriber workspace")
+        subtitle = QLabel("A focused space for voice and text conversations")
         subtitle.setObjectName("Muted")
         subtitle.setWordWrap(True)
         title_group.addWidget(title)
@@ -149,7 +151,64 @@ class AssistantPanel(QWidget):
         self.connection_state.setObjectName("AssistantStatus")
         self.connection_state.setProperty("state", "disconnected")
         header.addWidget(self.connection_state)
+
+        self.settings_button = QPushButton("⚙")
+        self.settings_button.setObjectName("AssistantSettingsButton")
+        self.settings_button.setFixedSize(40, 40)
+        self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_button.setToolTip("Assistant settings")
+        self.settings_button.setAccessibleName("Open assistant settings")
+        self.settings_button.setStyleSheet(
+            "QPushButton#AssistantSettingsButton { border: 1px solid palette(mid); "
+            "border-radius: 12px; padding: 0; font-size: 20px; } "
+            "QPushButton#AssistantSettingsButton:hover { background: palette(alternate-base); }"
+        )
+        self.settings_button.clicked.connect(self.show_settings)
+        header.addWidget(self.settings_button)
         root.addLayout(header)
+
+        self.page_stack = QStackedWidget(self)
+        self.page_stack.setObjectName("AssistantPageStack")
+        self.conversation_page = QWidget()
+        self.conversation_page.setObjectName("AssistantConversationPage")
+        self.conversation_layout = QVBoxLayout(self.conversation_page)
+        self.conversation_layout.setContentsMargins(0, 0, 0, 0)
+        self.conversation_layout.setSpacing(12)
+
+        self.settings_page = QWidget()
+        self.settings_page.setObjectName("AssistantSettingsPage")
+        settings_page_layout = QVBoxLayout(self.settings_page)
+        settings_page_layout.setContentsMargins(0, 0, 0, 0)
+        settings_page_layout.setSpacing(12)
+
+        settings_header = QHBoxLayout()
+        self.settings_back_button = QPushButton("←  Back to conversation")
+        self.settings_back_button.setObjectName("Subtle")
+        self.settings_back_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_back_button.clicked.connect(self.show_conversation)
+        settings_header.addWidget(self.settings_back_button)
+        settings_heading = QLabel("Assistant settings")
+        settings_heading.setObjectName("AssistantTitle")
+        settings_header.addWidget(settings_heading)
+        settings_header.addStretch(1)
+        settings_page_layout.addLayout(settings_header)
+
+        self.settings_scroll = QScrollArea()
+        self.settings_scroll.setObjectName("AssistantSettingsScroll")
+        self.settings_scroll.setWidgetResizable(True)
+        self.settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.settings_content = QWidget()
+        self.settings_content.setObjectName("AssistantSettingsContent")
+        self.settings_layout = QVBoxLayout(self.settings_content)
+        self.settings_layout.setContentsMargins(0, 2, 8, 10)
+        self.settings_layout.setSpacing(12)
+        self.settings_scroll.setWidget(self.settings_content)
+        settings_page_layout.addWidget(self.settings_scroll, 1)
+
+        self.page_stack.addWidget(self.conversation_page)
+        self.page_stack.addWidget(self.settings_page)
+        self.page_stack.setCurrentWidget(self.conversation_page)
+        root.addWidget(self.page_stack, 1)
 
         provider_row = QHBoxLayout()
         provider_row.addWidget(QLabel("Chat provider"))
@@ -159,7 +218,16 @@ class AssistantPanel(QWidget):
         self.provider_combo.setCurrentIndex(max(0, self.provider_combo.findData(self._chat_provider)))
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         provider_row.addWidget(self.provider_combo, 1)
-        root.addLayout(provider_row)
+        provider_card = QFrame()
+        provider_card.setObjectName("AssistantSettingsCard")
+        provider_card_layout = QVBoxLayout(provider_card)
+        provider_card_layout.setContentsMargins(14, 12, 14, 12)
+        provider_card_layout.setSpacing(8)
+        provider_title = QLabel("AI provider")
+        provider_title.setObjectName("AssistantSectionTitle")
+        provider_card_layout.addWidget(provider_title)
+        provider_card_layout.addLayout(provider_row)
+        self.settings_layout.addWidget(provider_card)
 
         self.ollama_controls = QFrame()
         self.ollama_controls.setObjectName("AssistantContext")
@@ -194,7 +262,7 @@ class AssistantPanel(QWidget):
         self.ollama_help.setWordWrap(True)
         ollama_layout.addWidget(self.ollama_help)
         self.ollama_controls.setVisible(self._chat_provider == "ollama")
-        root.addWidget(self.ollama_controls)
+        self.settings_layout.addWidget(self.ollama_controls)
 
         project_card = QFrame()
         project_card.setObjectName("AssistantContext")
@@ -219,7 +287,7 @@ class AssistantPanel(QWidget):
         self.project_button.clicked.connect(self.choose_project)
         project_layout.addWidget(self.project_button)
         self.project_card = project_card
-        root.addWidget(project_card)
+        self.settings_layout.addWidget(project_card)
 
         voice_hero = QFrame()
         voice_hero.setObjectName("VoiceHero")
@@ -278,7 +346,7 @@ class AssistantPanel(QWidget):
         voice_hint.setWordWrap(True)
         voice_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         voice_hero_layout.addWidget(voice_hint)
-        root.addWidget(voice_hero)
+        self.conversation_layout.addWidget(voice_hero)
 
         self.chat_view = QTextBrowser()
         self.chat_view.setObjectName("AssistantChat")
@@ -287,7 +355,7 @@ class AssistantPanel(QWidget):
         self.chat_view.setReadOnly(True)
         self.chat_view.setPlaceholderText("Connect to OpenCode or Ollama to start a conversation.")
         self.chat_view.setMinimumHeight(150)
-        root.addWidget(self.chat_view, 1)
+        self.conversation_layout.addWidget(self.chat_view, 1)
 
         # Retain the old attribute name for integrations which inspect the panel.
         self.log = self.chat_view
@@ -295,7 +363,7 @@ class AssistantPanel(QWidget):
         self.activity_label = QLabel("Connect to OpenCode to enable the workspace assistant.")
         self.activity_label.setObjectName("Muted")
         self.activity_label.setWordWrap(True)
-        root.addWidget(self.activity_label)
+        self.conversation_layout.addWidget(self.activity_label)
 
         suggestion_header = QHBoxLayout()
         suggestion_label = QLabel("START WITH")
@@ -309,7 +377,7 @@ class AssistantPanel(QWidget):
         )
         self.prompt_library_button.clicked.connect(self.open_prompt_library)
         suggestion_header.addWidget(self.prompt_library_button)
-        root.addLayout(suggestion_header)
+        self.conversation_layout.addLayout(suggestion_header)
 
         suggestions = QHBoxLayout()
         suggestions.setSpacing(6)
@@ -319,7 +387,7 @@ class AssistantPanel(QWidget):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _checked=False, text=prompt: self._insert_suggestion(text))
             suggestions.addWidget(button)
-        root.addLayout(suggestions)
+        self.conversation_layout.addLayout(suggestions)
 
         composer = QFrame()
         composer.setObjectName("AssistantComposer")
@@ -352,7 +420,7 @@ class AssistantPanel(QWidget):
         composer_actions.addWidget(self.stop_button)
         composer_actions.addWidget(self.send_button)
         composer_layout.addLayout(composer_actions)
-        root.addWidget(composer)
+        self.conversation_layout.addWidget(composer)
 
         self.send_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self.prompt)
         self.send_shortcut.activated.connect(self.send_prompt)
@@ -370,24 +438,28 @@ class AssistantPanel(QWidget):
         self.disconnect_button.setEnabled(False)
         connection_row.addWidget(self.connect_button, 1)
         connection_row.addWidget(self.disconnect_button)
-        root.addLayout(connection_row)
-
-        self.voice_toggle = QPushButton("＋  Wake word & voice settings")
-        self.voice_toggle.setObjectName("Disclosure")
-        self.voice_toggle.setCheckable(True)
-        self.voice_toggle.setToolTip(
-            "Set the activation phrase, select the Vosk wake-word model and configure voice capture."
-        )
-        self.voice_toggle.toggled.connect(self._toggle_voice_panel)
-        root.addWidget(self.voice_toggle)
+        connection_card = QFrame()
+        connection_card.setObjectName("AssistantSettingsCard")
+        connection_card_layout = QVBoxLayout(connection_card)
+        connection_card_layout.setContentsMargins(14, 12, 14, 12)
+        connection_card_layout.setSpacing(8)
+        connection_title = QLabel("Provider connection")
+        connection_title.setObjectName("AssistantSectionTitle")
+        connection_card_layout.addWidget(connection_title)
+        connection_card_layout.addLayout(connection_row)
+        self.settings_layout.addWidget(connection_card)
 
         self.voice_panel = QFrame()
-        self.voice_panel.setObjectName("AssistantVoicePanel")
+        self.voice_panel.setObjectName("AssistantSettingsCard")
         voice_layout = QVBoxLayout(self.voice_panel)
-        voice_layout.setContentsMargins(10, 9, 10, 9)
-        voice_layout.setSpacing(7)
+        voice_layout.setContentsMargins(14, 12, 14, 14)
+        voice_layout.setSpacing(9)
 
         voice_header = QHBoxLayout()
+        voice_section_title = QLabel("Voice input")
+        voice_section_title.setObjectName("AssistantSectionTitle")
+        voice_header.addWidget(voice_section_title)
+        voice_header.addStretch(1)
         self.voice_state_label = QLabel("Voice off")
         self.voice_state_label.setObjectName("Muted")
         voice_header.addWidget(self.voice_state_label)
@@ -489,15 +561,22 @@ class AssistantPanel(QWidget):
         voice_help.setWordWrap(True)
         voice_layout.addWidget(voice_help)
 
-        self.voice_panel.setVisible(False)
-        root.addWidget(self.voice_panel)
+        self.voice_panel.setVisible(True)
+        self.settings_layout.addWidget(self.voice_panel)
 
         privacy = QLabel(
-            "OpenCode ACP · Transcriber MCP tools · Wake detection and command audio are processed locally."
+            "Voice wake detection and command audio are processed locally. "
+            "Only the recognized text is sent to the selected chat provider."
         )
         privacy.setObjectName("Muted")
         privacy.setWordWrap(True)
-        root.addWidget(privacy)
+        privacy_card = QFrame()
+        privacy_card.setObjectName("AssistantSettingsCard")
+        privacy_layout = QVBoxLayout(privacy_card)
+        privacy_layout.setContentsMargins(14, 10, 14, 10)
+        privacy_layout.addWidget(privacy)
+        self.settings_layout.addWidget(privacy_card)
+        self.settings_layout.addStretch(1)
 
         self._chat_refresh_timer = QTimer(self)
         self._chat_refresh_timer.setSingleShot(True)
@@ -507,6 +586,16 @@ class AssistantPanel(QWidget):
         self._apply_provider_ui()
         self._sync_voice_orb()
 
+    def show_settings(self):
+        """Switch to the dedicated assistant settings page."""
+        self.page_stack.setCurrentWidget(self.settings_page)
+        self.settings_button.setAccessibleName("Assistant settings open")
+
+    def show_conversation(self):
+        """Return to the uncluttered conversation surface."""
+        self.page_stack.setCurrentWidget(self.conversation_page)
+        self.settings_button.setAccessibleName("Open assistant settings")
+        self.prompt.setFocus()
 
     def _chat_is_connected(self) -> bool:
         if self._chat_provider == "ollama":
