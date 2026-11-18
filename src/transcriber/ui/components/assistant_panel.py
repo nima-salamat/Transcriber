@@ -1311,7 +1311,7 @@ class AssistantPanel(QWidget):
             or self._start_voice_after_connect
             or self._voice_conversation_mode
         )
-        button.setText("■\nSTOP" if active else "🎙\nSTART")
+        button.setText("■  Stop voice" if active else "🎙  Voice")
         button.setAccessibleName(
             "Stop voice conversation" if active else "Start voice conversation"
         )
