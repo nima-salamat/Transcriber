@@ -7,7 +7,7 @@ import json
 import os
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,7 @@ _MAX_PROVIDER_MESSAGES = 300
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _json_copy(value: Any) -> Any:

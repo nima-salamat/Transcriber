@@ -35,7 +35,6 @@ class IconRegistry:
         "terminal": "terminal.svg",
         "file_search": "file-search.svg",
         "mic": "mic.svg",
-        "stop": "square.svg",
     }
 
     def __init__(self, asset_dir: Path | None = None):

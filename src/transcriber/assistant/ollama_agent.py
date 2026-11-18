@@ -224,16 +224,6 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "path": {"type": "string"},
         }, "required": ["name", "path"]},
     },
-    "agent.skills_catalog": {
-        "description": "List curated public Agent Skills available for installation from GitHub.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-    "agent.skill_install": {
-        "description": "Download and install one Agent Skill from a public GitHub folder URL after user approval.",
-        "parameters": {"type": "object", "properties": {
-            "url": {"type": "string", "description": "Public GitHub tree URL pointing to a folder containing SKILL.md"},
-        }, "required": ["url"]},
-    },
     "desktop.launch_app": {
         "description": "Launch one built-in allowlisted Windows application. User approval is required.",
         "parameters": {"type": "object", "properties": {
