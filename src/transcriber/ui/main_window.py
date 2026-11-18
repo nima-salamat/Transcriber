@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -41,6 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
+from transcriber.assistant.browser import WindowsBrowserController
 from transcriber.assistant.operations import OperationManager
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
 from transcriber.audio.decoder import validate_audio_file
@@ -1021,6 +1024,93 @@ class MainWindow(QMainWindow):
             required=("url",),
             requires_approval=True,
         ))
+        self.agent_browser = WindowsBrowserController(
+            self.paths.config / "agent-browser-profile"
+        )
+        register(ActionSpec(
+            "browser.open", "Open a website in the dedicated controlled Chrome/Edge browser.",
+            AgentPermission.BROWSER_CONTROL,
+            lambda args: self.agent_browser.open(args["url"]), required=("url",),
+        ))
+        register(ActionSpec(
+            "browser.search", "Search the web in the dedicated controlled Chrome/Edge browser.",
+            AgentPermission.BROWSER_CONTROL,
+            lambda args: self.agent_browser.search(
+                args["query"], engine=str(args.get("engine") or "google")
+            ), required=("query",),
+        ))
+        register(ActionSpec(
+            "browser.snapshot", "Read the controlled browser tab and visible interactive elements.",
+            AgentPermission.BROWSER_CONTROL,
+            lambda _args: self.agent_browser.snapshot(),
+        ))
+        register(ActionSpec(
+            "browser.click", "Click a browser element after the user approves the target.",
+            AgentPermission.BROWSER_CONTROL,
+            lambda args: self.agent_browser.click(
+                text=str(args.get("text") or ""),
+                selector=str(args.get("selector") or ""),
+                role=str(args.get("role") or ""),
+            ), requires_approval=True,
+        ))
+        register(ActionSpec(
+            "browser.fill", "Fill a browser form field after the user approves the value.",
+            AgentPermission.BROWSER_CONTROL,
+            lambda args: self.agent_browser.fill(
+                str(args.get("value") or ""),
+                selector=str(args.get("selector") or ""),
+                label=str(args.get("label") or ""),
+                placeholder=str(args.get("placeholder") or ""),
+            ), required=("value",), requires_approval=True,
+        ))
+        register(ActionSpec(
+            "browser.press", "Press a limited keyboard key in the controlled browser.",
+            AgentPermission.BROWSER_CONTROL,
+            lambda args: self.agent_browser.press(
+                str(args.get("key") or ""), selector=str(args.get("selector") or "")
+            ), required=("key",), requires_approval=True,
+        ))
+        register(ActionSpec(
+            "browser.back", "Navigate back one page in the controlled browser.",
+            AgentPermission.BROWSER_CONTROL, lambda _args: self.agent_browser.back(),
+        ))
+        register(ActionSpec(
+            "browser.screenshot", "Save a screenshot of the controlled browser page.",
+            AgentPermission.BROWSER_CONTROL,
+            lambda _args: self.agent_browser.screenshot(
+                self.paths.data / "agent-browser-screenshots"
+            ),
+        ))
+        register(ActionSpec(
+            "browser.close", "Close the controlled browser and its dedicated profile window.",
+            AgentPermission.BROWSER_CONTROL, lambda _args: self.agent_browser.close(),
+            requires_approval=True,
+        ))
+        register(ActionSpec(
+            "system.run_command",
+            "Run a custom PowerShell command as the current Windows user; every command requires approval.",
+            AgentPermission.COMMAND_EXECUTION, self._agent_run_command,
+            required=("command",), requires_approval=True,
+        ))
+        register(ActionSpec(
+            "agent.skills_list", "List locally installed portable Agent Skills.",
+            AgentPermission.READ_ONLY,
+            lambda _args: self.assistant_panel.skill_manager.summaries(),
+        ))
+        register(ActionSpec(
+            "agent.skill_load", "Load the full instructions for one installed Agent Skill.",
+            AgentPermission.READ_ONLY,
+            lambda args: self.assistant_panel.skill_manager.load_skill(args["name"]),
+            required=("name",),
+        ))
+        register(ActionSpec(
+            "agent.skill_read_resource",
+            "Read a text resource from a Skill without executing it.",
+            AgentPermission.READ_ONLY,
+            lambda args: self.assistant_panel.skill_manager.read_resource(
+                args["name"], args["path"]
+            ), required=("name", "path"),
+        ))
 
     def _handle_ipc(self, method, params, request_id=None):
         if method in {"app.get_state", "app.list_actions"}:
@@ -1274,13 +1364,111 @@ class MainWindow(QMainWindow):
             }
         raise ValueError("Choose a predefined desktop shortcut.")
 
-    def _approve_agent_action(self, spec, args):
-        answer = QMessageBox.question(
-            self, "Agent permission required",
-            f"Allow the AI Agent to run: {spec.name}?\n\n{spec.description}\n\nArguments: {args}",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+    def _agent_run_command(self, args):
+        """Execute an explicitly approved PowerShell command without elevation or shell=True."""
+        if sys.platform != "win32":
+            raise RuntimeError("Custom command execution is currently supported on Windows only.")
+        command = str(args.get("command") or "").strip()
+        if not command or len(command) > 6000 or "\\x00" in command:
+            raise ValueError("Enter a PowerShell command between 1 and 6,000 characters.")
+        hard_blocked = (
+            r"(?i)\b(format|diskpart|clear-disk|initialize-disk|remove-partition|set-partition|bcdedit|shutdown|restart-computer|stop-computer)\b",
+            r"(?i)\breg(?:\.exe)?\s+delete\b",
+            r"(?is)start-process\b.*?-verb\s+runas",
+            r"(?is)(?:invoke-webrequest|iwr)\b.*?(?:invoke-expression|\biex\b)|(?:invoke-expression|\biex\b).*?(?:invoke-webrequest|iwr)\b",
         )
-        return answer == QMessageBox.Yes
+        if any(re.search(pattern, command) for pattern in hard_blocked):
+            raise PermissionDenied(
+                "This command matches a blocked system-administration or download-and-execute pattern."
+            )
+        destructive = (
+            r"(?i)\b(remove-item|remove-file|remove-directory|del|erase|rmdir|set-content|out-file|"
+            r"move-item|copy-item|rename-item|new-item|install-module|winget\s+install|"
+            r"choco\s+install|pip\s+install|npm\s+install)\b"
+        )
+        if re.search(destructive, command) and (
+            AgentPermission.DESTRUCTIVE_ACTIONS not in self.action_registry.permissions
+        ):
+            raise PermissionDenied(
+                "This command may modify or delete data. Enable Destructive actions in Settings first."
+            )
+        powershell = shutil.which("pwsh.exe") or shutil.which("powershell.exe")
+        if not powershell:
+            raise FileNotFoundError("PowerShell (pwsh.exe or powershell.exe) was not found.")
+        cwd_value = str(args.get("cwd") or "").strip()
+        working_directory = Path(cwd_value).expanduser() if cwd_value else Path.home()
+        try:
+            working_directory = working_directory.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise FileNotFoundError(f"Working directory does not exist: {cwd_value}") from exc
+        if not working_directory.is_dir():
+            raise ValueError("The command working directory must be an existing folder.")
+        try:
+            timeout = int(args.get("timeout_seconds", 30))
+        except (TypeError, ValueError):
+            timeout = 30
+        timeout = max(1, min(timeout, 120))
+        script = (
+            "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; "
+            "$ErrorActionPreference = 'Stop'; " + command
+        )
+        try:
+            result = subprocess.run(
+                [powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+                cwd=str(working_directory),
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                check=False,
+                shell=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = (
+                exc.stdout.decode("utf-8", errors="replace")
+                if isinstance(exc.stdout, bytes) else str(exc.stdout or "")
+            )
+            stderr = (
+                exc.stderr.decode("utf-8", errors="replace")
+                if isinstance(exc.stderr, bytes) else str(exc.stderr or "")
+            )
+            return {
+                "timed_out": True,
+                "timeout_seconds": timeout,
+                "stdout": stdout[-8000:],
+                "stderr": stderr[-4000:],
+                "command": command,
+            }
+        stdout = result.stdout or ""
+        stderr = result.stderr or ""
+        return {
+            "exit_code": result.returncode,
+            "cwd": str(working_directory),
+            "command": command,
+            "stdout": stdout[:12_000],
+            "stderr": stderr[:6_000],
+            "truncated": len(stdout) > 12_000 or len(stderr) > 6_000,
+            "timed_out": False,
+        }
+
+    def _approve_agent_action(self, spec, args):
+        details = json.dumps(args, ensure_ascii=False, indent=2, default=str)
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Agent action confirmation")
+        dialog.setIcon(QMessageBox.Warning if spec.requires_approval else QMessageBox.Question)
+        dialog.setText(f"Allow the Agent to run {spec.name}?")
+        dialog.setInformativeText(
+            spec.description
+            + ("\\n\\nThis command runs as your current user, without administrator elevation."
+               if spec.name == "system.run_command" else "")
+        )
+        dialog.setDetailedText(details)
+        dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        dialog.setDefaultButton(QMessageBox.No)
+        return dialog.exec() == QMessageBox.Yes
 
     def toggle_sidebar(self):
         self._sidebar_collapsed = not getattr(self, "_sidebar_collapsed", False)
