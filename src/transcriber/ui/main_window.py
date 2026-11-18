@@ -115,7 +115,7 @@ class MainThreadDispatcher(QObject):
 class MainWindow(QMainWindow):
     NAVIGATION = [
         ("home", "home", "Home"),
-        ("assistant", "sparkles", "AI Assistant"),
+        ("assistant", "assistant", "AI Assistant"),
         ("transcription", "projects", "New transcription"),
         ("recording", "record", "Record audio"),
         ("batch", "activity", "Batch processing"),
