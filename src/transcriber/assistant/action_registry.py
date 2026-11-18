@@ -22,6 +22,7 @@ class ActionSpec:
     handler: Callable[[dict[str, Any]], Any] = field(compare=False, repr=False)
     required: tuple[str, ...] = ()
     destructive: bool = False
+    requires_approval: bool = False
 
     def public_schema(self) -> dict[str, Any]:
         return {
@@ -30,6 +31,7 @@ class ActionSpec:
             "permission": self.permission.value,
             "required": list(self.required),
             "destructive": self.destructive,
+            "requires_approval": self.requires_approval,
         }
 
 
@@ -75,14 +77,17 @@ class ActionRegistry:
         missing = [field for field in spec.required if field not in args]
         if missing:
             raise ValueError(f"Missing required arguments: {', '.join(missing)}")
-        if spec.destructive:
-            if AgentPermission.DESTRUCTIVE_ACTIONS not in self.permissions:
-                raise PermissionDenied("Destructive Agent permission is disabled")
+        if spec.destructive and AgentPermission.DESTRUCTIVE_ACTIONS not in self.permissions:
+            raise PermissionDenied("Destructive Agent permission is disabled")
+        if spec.destructive or spec.requires_approval:
             if self.approval is None:
                 raise PermissionDenied("This operation requires explicit user approval")
-            approved = self.dispatcher(lambda payload: self.approval(payload[0], payload[1]), (spec, args))
+            approved = self.dispatcher(
+                lambda payload: self.approval(payload[0], payload[1]),
+                (spec, args),
+            )
             if not approved:
-                raise PermissionDenied("This operation requires explicit user approval")
+                raise PermissionDenied("The user denied this Agent action")
         return self.dispatcher(spec.handler, args)
 
     def set_permission(self, permission: AgentPermission, enabled: bool) -> None:

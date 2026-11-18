@@ -331,6 +331,7 @@ class SettingsPage(QWidget):
             "file_export": "Export files",
             "model_management": "Download/load/unload models",
             "destructive_actions": "Allow destructive actions (still asks for confirmation)",
+            "desktop_control": "Control desktop apps, open files and URLs (asks before every action)",
         }
         enabled_permissions = set(current.agent_permissions or ["read_only", "edit_content"])
         self.agent_permission_checks = {}

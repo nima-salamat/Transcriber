@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterable
+from threading import Event, Lock
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -15,6 +16,55 @@ from urllib.request import Request, urlopen
 
 class OllamaError(RuntimeError):
     """An Ollama server, protocol, or model error."""
+
+
+class OllamaCancelled(OllamaError):
+    """A local chat generation was cancelled by the user."""
+
+
+class OllamaCancellation:
+    """Thread-safe cancellation token that also closes an active streaming response."""
+
+    def __init__(self):
+        self._event = Event()
+        self._lock = Lock()
+        self._response = None
+
+    @property
+    def cancelled(self) -> bool:
+        return self._event.is_set()
+
+    def attach(self, response) -> None:
+        with self._lock:
+            self._response = response
+            cancelled = self._event.is_set()
+        if cancelled:
+            self._close_response(response)
+
+    def detach(self, response) -> None:
+        with self._lock:
+            if self._response is response:
+                self._response = None
+
+    @staticmethod
+    def _close_response(response) -> None:
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
+    def cancel(self) -> None:
+        self._event.set()
+        with self._lock:
+            response = self._response
+        if response is not None:
+            self._close_response(response)
+
+    def raise_if_cancelled(self) -> None:
+        if self._event.is_set():
+            raise OllamaCancelled("Generation stopped by the user.")
 
 
 class OllamaClient:
@@ -149,32 +199,43 @@ class OllamaClient:
     def chat(
         self,
         model: str,
-        messages: Iterable[dict[str, str]],
+        messages: Iterable[dict],
         *,
         keep_alive: str = "30m",
         on_chunk: Callable[[str], None] | None = None,
+        tools: Iterable[dict] | None = None,
+        cancellation: OllamaCancellation | None = None,
         timeout: float = 900.0,
     ) -> dict:
+        """Stream a chat turn, including tool-call messages supported by Ollama."""
         selected = str(model or "").strip()
         if not selected:
             raise ValueError("Select an installed Ollama model first.")
-        normalized = [
-            {"role": str(item["role"]), "content": str(item.get("content") or "")}
-            for item in messages
-            if item.get("role") in {"system", "user", "assistant"}
-        ]
+
+        normalized = []
+        for item in messages:
+            role = str(item.get("role") or "")
+            if role not in {"system", "user", "assistant", "tool"}:
+                continue
+            message = {"role": role, "content": str(item.get("content") or "")}
+            if role == "tool" and item.get("tool_name"):
+                message["tool_name"] = str(item["tool_name"])
+            if role == "assistant" and item.get("tool_calls"):
+                message["tool_calls"] = item["tool_calls"]
+            normalized.append(message)
         if not normalized:
             raise ValueError("A chat message is required.")
-        payload = json.dumps(
-            {
-                "model": selected,
-                "messages": normalized,
-                "stream": True,
-                "keep_alive": keep_alive,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).encode("utf-8")
+
+        tool_list = [item for item in (tools or []) if isinstance(item, dict)]
+        payload_data = {
+            "model": selected,
+            "messages": normalized,
+            "stream": True,
+            "keep_alive": keep_alive,
+        }
+        if tool_list:
+            payload_data["tools"] = tool_list
+        payload = json.dumps(payload_data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         request = Request(
             f"{self.base_url}/api/chat",
             data=payload,
@@ -182,41 +243,74 @@ class OllamaClient:
             headers={"Accept": "application/x-ndjson", "Content-Type": "application/json"},
         )
         chunks: list[str] = []
+        tool_calls: list[dict] = []
         final: dict = {}
+        response = None
         try:
-            with self._open(request, timeout=timeout) as response:
-                for raw_line in response:
-                    line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else str(raw_line)
-                    if not line.strip():
-                        continue
-                    try:
-                        item = json.loads(line)
-                    except json.JSONDecodeError as exc:
-                        raise OllamaError("Ollama sent a malformed streaming response.") from exc
-                    if item.get("error"):
-                        raise OllamaError(str(item["error"]))
-                    message = item.get("message") or {}
-                    chunk = str(message.get("content") or "")
-                    if chunk:
-                        chunks.append(chunk)
-                        if on_chunk:
-                            on_chunk(chunk)
-                    if item.get("done"):
-                        final = item
+            if cancellation:
+                cancellation.raise_if_cancelled()
+            response = self._open(request, timeout=timeout)
+            if cancellation:
+                cancellation.attach(response)
+            for raw_line in response:
+                if cancellation:
+                    cancellation.raise_if_cancelled()
+                line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else str(raw_line)
+                if not line.strip():
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise OllamaError("Ollama sent a malformed streaming response.") from exc
+                if item.get("error"):
+                    raise OllamaError(str(item["error"]))
+                message = item.get("message") or {}
+                chunk = str(message.get("content") or "")
+                if chunk:
+                    chunks.append(chunk)
+                    if on_chunk:
+                        on_chunk(chunk)
+                for call in message.get("tool_calls") or []:
+                    if isinstance(call, dict) and call not in tool_calls:
+                        tool_calls.append(call)
+                if item.get("done"):
+                    final = item
+        except OllamaCancelled:
+            raise
         except OllamaError:
+            if cancellation and cancellation.cancelled:
+                raise OllamaCancelled("Generation stopped by the user.")
             raise
         except TimeoutError as exc:
+            if cancellation and cancellation.cancelled:
+                raise OllamaCancelled("Generation stopped by the user.") from exc
             raise OllamaError(
                 f"Ollama chat stream for '{selected}' was idle for too long "
                 f"(socket timeout {timeout:g}s)."
             ) from exc
         except (OSError, UnicodeDecodeError, ValueError) as exc:
+            if cancellation and cancellation.cancelled:
+                raise OllamaCancelled("Generation stopped by the user.") from exc
             raise OllamaError(f"Ollama chat stream failed: {exc}") from exc
-        if not final and not chunks:
+        finally:
+            if cancellation and response is not None:
+                cancellation.detach(response)
+            if response is not None:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+
+        final_message = final.get("message") or {}
+        for call in final_message.get("tool_calls") or []:
+            if isinstance(call, dict) and call not in tool_calls:
+                tool_calls.append(call)
+        if not final and not chunks and not tool_calls:
             raise OllamaError("Ollama closed the chat stream without returning a response.")
         return {
             "model": selected,
             "text": "".join(chunks),
+            "tool_calls": tool_calls,
             "done": bool(final.get("done", False)),
             "done_reason": final.get("done_reason"),
             "metrics": {

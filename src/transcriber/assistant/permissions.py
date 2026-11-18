@@ -13,6 +13,7 @@ class AgentPermission(StrEnum):
     FILE_EXPORT = "file_export"
     MODEL_MANAGEMENT = "model_management"
     DESTRUCTIVE_ACTIONS = "destructive_actions"
+    DESKTOP_CONTROL = "desktop_control"
 
 
 DEFAULT_PERMISSIONS = frozenset({AgentPermission.READ_ONLY, AgentPermission.EDIT_CONTENT})

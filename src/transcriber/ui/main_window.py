@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import wave
 from concurrent.futures import CancelledError, Future
 from pathlib import Path
 from threading import Event
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QThread, QThreadPool, QTimer, Signal
-from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QThread, QThreadPool, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QDesktopServices, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -164,6 +167,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect_pages()
         self._register_agent_actions()
+        self.assistant_panel.set_agent_runtime(self.action_registry)
         self.operation_manager = OperationManager(self.action_registry.execute)
         self._start_local_ipc()
         self._restore_geometry()
@@ -978,6 +982,38 @@ class MainWindow(QMainWindow):
                             AgentPermission.EDIT_CONTENT, lambda _args: self.transcription_page.cancel_transcription()))
         register(ActionSpec("transcription.get_quality_report", "Calculate transcript quality metrics from real segment timing and any engine-provided word confidence.",
                             AgentPermission.READ_ONLY, self._agent_quality_report))
+        register(ActionSpec(
+            "desktop.launch_app",
+            "Launch one allowlisted Windows application.",
+            AgentPermission.DESKTOP_CONTROL,
+            self._agent_launch_app,
+            required=("app",),
+            requires_approval=True,
+        ))
+        register(ActionSpec(
+            "desktop.run_preset",
+            "Open a predefined Windows location or built-in application.",
+            AgentPermission.DESKTOP_CONTROL,
+            self._agent_run_preset,
+            required=("preset",),
+            requires_approval=True,
+        ))
+        register(ActionSpec(
+            "desktop.open_path",
+            "Open an existing local file or folder in its default application.",
+            AgentPermission.DESKTOP_CONTROL,
+            self._agent_open_path,
+            required=("path",),
+            requires_approval=True,
+        ))
+        register(ActionSpec(
+            "desktop.open_url",
+            "Open an HTTP or HTTPS URL in the default browser.",
+            AgentPermission.DESKTOP_CONTROL,
+            self._agent_open_url,
+            required=("url",),
+            requires_approval=True,
+        ))
 
     def _handle_ipc(self, method, params, request_id=None):
         if method in {"app.get_state", "app.list_actions"}:
@@ -1110,10 +1146,92 @@ class MainWindow(QMainWindow):
         self.transcription_page.player.seek(int(seconds * 1000))
         return {"position_ms": self.transcription_page.player.player.position()}
 
+    def _agent_launch_app(self, args):
+        """Launch only a fixed executable name; never pass model text to a shell."""
+        if sys.platform != "win32":
+            raise RuntimeError("The built-in desktop application launcher is currently Windows-only.")
+        app = str(args.get("app") or "").casefold()
+        executables = {
+            "notepad": "notepad.exe",
+            "calculator": "calc.exe",
+            "explorer": "explorer.exe",
+            "task_manager": "taskmgr.exe",
+            "paint": "mspaint.exe",
+            "terminal": "wt.exe",
+        }
+        executable = executables.get(app)
+        if not executable:
+            raise ValueError("Choose an application from the built-in allowlist.")
+        resolved = shutil.which(executable)
+        if resolved is None:
+            windows_dir = os.environ.get("WINDIR", r"C:\\Windows")
+            candidate = Path(windows_dir) / "System32" / executable
+            if candidate.is_file():
+                resolved = str(candidate)
+        if not resolved:
+            raise FileNotFoundError(f"{executable} was not found on this Windows installation.")
+        subprocess.Popen(
+            [resolved],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
+        return {"launched": app, "executable": resolved}
+
+    def _agent_open_path(self, args):
+        raw_path = str(args.get("path") or "").strip()
+        if not raw_path:
+            raise ValueError("A local path is required.")
+        try:
+            resolved = Path(raw_path).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise FileNotFoundError(f"Local path does not exist: {raw_path}") from exc
+        if not (resolved.is_file() or resolved.is_dir()):
+            raise ValueError("Only existing files and folders can be opened.")
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(resolved))):
+            raise RuntimeError(f"Windows could not open: {resolved}")
+        return {"opened": str(resolved), "kind": "folder" if resolved.is_dir() else "file"}
+
+    def _agent_open_url(self, args):
+        parsed = QUrl(str(args.get("url") or "").strip())
+        if not parsed.isValid() or parsed.scheme().casefold() not in {"http", "https"} or not parsed.host():
+            raise ValueError("Only valid HTTP or HTTPS URLs can be opened.")
+        if not QDesktopServices.openUrl(parsed):
+            raise RuntimeError("The default browser could not open this URL.")
+        return {"opened_url": parsed.toString()}
+
+    def _agent_run_preset(self, args):
+        preset = str(args.get("preset") or "").casefold()
+        folders = {
+            "downloads_folder": Path.home() / "Downloads",
+            "documents_folder": Path.home() / "Documents",
+            "desktop_folder": Path.home() / "Desktop",
+        }
+        if preset in folders:
+            target = folders[preset]
+            if not target.is_dir():
+                target = Path.home()
+            return self._agent_open_path({"path": str(target)})
+        applications = {
+            "task_manager": "task_manager",
+            "calculator": "calculator",
+            "notepad": "notepad",
+        }
+        if preset in applications:
+            return self._agent_launch_app({"app": applications[preset]})
+        if preset == "windows_settings":
+            if sys.platform != "win32":
+                raise RuntimeError("Windows Settings is only available on Windows.")
+            os.startfile("ms-settings:")
+            return {"opened": "Windows Settings"}
+        raise ValueError("Choose a predefined desktop shortcut.")
+
     def _approve_agent_action(self, spec, args):
         answer = QMessageBox.question(
             self, "Agent permission required",
-            f"Allow OpenCode to run: {spec.name}?\n\n{spec.description}\n\nArguments: {args}",
+            f"Allow the AI Agent to run: {spec.name}?\n\n{spec.description}\n\nArguments: {args}",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         return answer == QMessageBox.Yes

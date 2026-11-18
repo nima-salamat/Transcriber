@@ -141,7 +141,7 @@ class AppSettings:
         self.opencode_session_id = str(self.opencode_session_id) if self.opencode_session_id else None
         valid_permissions = {
             "read_only", "edit_content", "modify_settings", "audio_capture",
-            "file_export", "model_management", "destructive_actions",
+            "file_export", "model_management", "destructive_actions", "desktop_control",
         }
         raw_permissions = self.agent_permissions if isinstance(self.agent_permissions, list) else ["read_only", "edit_content"]
         self.agent_permissions = list(dict.fromkeys(
