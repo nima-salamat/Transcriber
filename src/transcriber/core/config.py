@@ -142,6 +142,7 @@ class AppSettings:
         valid_permissions = {
             "read_only", "edit_content", "modify_settings", "audio_capture",
             "file_export", "model_management", "destructive_actions", "desktop_control",
+            "browser_control", "command_execution",
         }
         raw_permissions = self.agent_permissions if isinstance(self.agent_permissions, list) else ["read_only", "edit_content"]
         self.agent_permissions = list(dict.fromkeys(

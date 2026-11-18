@@ -331,7 +331,9 @@ class SettingsPage(QWidget):
             "file_export": "Export files",
             "model_management": "Download/load/unload models",
             "destructive_actions": "Allow destructive actions (still asks for confirmation)",
-            "desktop_control": "Control desktop apps, open files and URLs (asks before every action)",
+            "desktop_control": "Open local applications, files and folders (asks before every action)",
+            "browser_control": "Control the dedicated Chrome/Edge browser (website interactions ask first)",
+            "command_execution": "Run custom PowerShell commands (confirmation required for every command)",
         }
         enabled_permissions = set(current.agent_permissions or ["read_only", "edit_content"])
         self.agent_permission_checks = {}
@@ -518,7 +520,7 @@ class SettingsPage(QWidget):
             ("Model runtime limits", "Model runtime", "loaded models RAM VRAM memory budget", "runtime"),
             ("OpenCode executable and project", "OpenCode & Voice Agent", "agent executable path project directory", "agent"),
             ("Voice wake phrase and model", "OpenCode & Voice Agent", "microphone wake word vosk voice assistant", "agent"),
-            ("Agent permissions", "OpenCode & Voice Agent", "permissions access microphone file export destructive desktop control", "agent"),
+            ("Agent permissions", "OpenCode & Voice Agent", "permissions access microphone file export destructive desktop browser command", "agent"),
             ("Local-only and cloud consent", "Privacy", "privacy internet online offline audio consent", "privacy"),
             ("Model and recording folders", "Storage", "paths directories recordings models", "storage"),
             ("Backup and restore", "Storage", "backup metadata restore database", "storage"),
@@ -626,6 +628,7 @@ class SettingsPage(QWidget):
         ordered = [name for name in (
             "read_only", "edit_content", "modify_settings", "audio_capture",
             "file_export", "model_management", "destructive_actions", "desktop_control",
+            "browser_control", "command_execution",
         ) if name in current]
         self._save(agent_permissions=ordered)
         self.permission_changed.emit(permission, enabled)

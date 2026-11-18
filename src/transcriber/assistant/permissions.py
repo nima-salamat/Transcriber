@@ -14,6 +14,8 @@ class AgentPermission(StrEnum):
     MODEL_MANAGEMENT = "model_management"
     DESTRUCTIVE_ACTIONS = "destructive_actions"
     DESKTOP_CONTROL = "desktop_control"
+    BROWSER_CONTROL = "browser_control"
+    COMMAND_EXECUTION = "command_execution"
 
 
 DEFAULT_PERMISSIONS = frozenset({AgentPermission.READ_ONLY, AgentPermission.EDIT_CONTENT})

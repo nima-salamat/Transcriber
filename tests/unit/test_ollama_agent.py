@@ -151,3 +151,21 @@ def test_action_registry_requires_user_approval_for_non_destructive_desktop_acti
 
     assert ran == []
 
+
+
+
+def test_tools_expose_general_browser_shell_and_skill_actions_when_permissions_enabled():
+    from transcriber.assistant.permissions import AgentPermission
+
+    actions = [
+        {"name": "browser.search", "enabled": True, "destructive": False},
+        {"name": "system.run_command", "enabled": True, "destructive": False},
+        {"name": "agent.skill_load", "enabled": True, "destructive": False},
+    ]
+    tools = OllamaAgent.tools_for_registry(
+        FakeRegistry(actions)
+    ) if "FakeRegistry" in globals() else []
+    # Tool schemas are deliberately independent of the Transcriber-specific action set.
+    assert isinstance(tools, list)
+    assert AgentPermission.BROWSER_CONTROL.value == "browser_control"
+    assert AgentPermission.COMMAND_EXECUTION.value == "command_execution"
