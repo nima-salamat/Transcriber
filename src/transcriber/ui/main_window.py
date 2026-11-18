@@ -13,7 +13,14 @@ from pathlib import Path
 from threading import Event
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QThread, QThreadPool, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QDesktopServices, QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
+from PySide6.QtGui import (
+    QAction,
+    QDesktopServices,
+    QDragEnterEvent,
+    QDropEvent,
+    QKeySequence,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,

@@ -4,7 +4,12 @@ import json
 
 import pytest
 
-from transcriber.assistant.ollama_client import OllamaCancellation, OllamaCancelled, OllamaClient, OllamaError
+from transcriber.assistant.ollama_client import (
+    OllamaCancellation,
+    OllamaCancelled,
+    OllamaClient,
+    OllamaError,
+)
 
 
 class FakeResponse:
