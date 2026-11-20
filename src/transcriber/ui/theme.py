@@ -691,8 +691,9 @@ def stylesheet(theme: str) -> str:
         border-radius: 14px;
     }}
     QFrame#AssistantMessage_assistant {{
-        background: transparent;
-        border: 0;
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 14px;
     }}
     QFrame#AssistantMessage_tool {{
         background: {c['surface']};
@@ -723,8 +724,16 @@ def stylesheet(theme: str) -> str:
     QToolButton#AssistantMessageAction {{
         background: transparent;
         border: 0;
+        border-radius: 6px;
         color: {c['muted']};
         padding: 4px 7px;
+    }}
+    QToolButton#AssistantMessageAction:hover {{
+        background: {c['surface_hover']};
+        color: {c['text']};
+    }}
+    QToolButton#AssistantMessageAction[copied="true"] {{
+        color: {c['success']};
     }}
     QFrame#AssistantActivity {{
         background: {c['surface']};

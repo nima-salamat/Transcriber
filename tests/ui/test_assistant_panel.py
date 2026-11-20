@@ -14,6 +14,7 @@ from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import QApplication, QTextBrowser
 
 from transcriber.ui.components.assistant_panel import AssistantPanel
+from transcriber.ui.components.assistant.message_widget import MessageWidget
 
 
 def test_assistant_panel_is_a_conversation_surface(qtbot, tmp_path):
@@ -292,3 +293,19 @@ def test_voice_chat_shows_model_response_progress(qtbot, tmp_path):
 
     assert "Receiving response" in panel.voice_live_status.text()
     assert "Hello" in panel._messages[0]["text"]
+
+
+
+def test_assistant_message_copy_button_copies_rendered_text(qtbot):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+
+    widget = MessageWidget("assistant", "**Formatted answer**\n\nSecond paragraph.")
+    qtbot.addWidget(widget)
+    widget.show()
+    expected = widget.body.toPlainText()
+
+    widget.copy_button.click()
+
+    qtbot.waitUntil(lambda: QApplication.clipboard().text() == expected)
+    assert widget.copy_button.text() == "Copied"
