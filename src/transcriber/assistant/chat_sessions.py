@@ -181,16 +181,27 @@ class ChatSessionStore:
             )
             if item is None:
                 raise KeyError(f"Unknown chat session: {session_id}")
+            changed = False
             if messages is not None:
-                item["messages"] = self._normalize_messages(messages, _MAX_VISIBLE_MESSAGES)
+                normalized_messages = self._normalize_messages(messages, _MAX_VISIBLE_MESSAGES)
+                if item["messages"] != normalized_messages:
+                    item["messages"] = normalized_messages
+                    changed = True
             if provider_messages is not None:
-                item["provider_messages"] = self._normalize_messages(
+                normalized_provider_messages = self._normalize_messages(
                     provider_messages, _MAX_PROVIDER_MESSAGES
                 )
+                if item["provider_messages"] != normalized_provider_messages:
+                    item["provider_messages"] = normalized_provider_messages
+                    changed = True
             if title is not None and str(title).strip():
-                item["title"] = str(title).strip()[:120]
-            item["updated_at"] = _now()
-            self._write()
+                normalized_title = str(title).strip()[:120]
+                if item["title"] != normalized_title:
+                    item["title"] = normalized_title
+                    changed = True
+            if changed:
+                item["updated_at"] = _now()
+                self._write()
             return copy.deepcopy(item)
 
     def update_metadata(self, session_id: str, **metadata: Any) -> dict[str, Any]:
@@ -201,9 +212,15 @@ class ChatSessionStore:
             )
             if item is None:
                 raise KeyError(f"Unknown chat session: {session_id}")
-            item["metadata"].update(_json_copy(metadata))
-            item["updated_at"] = _now()
-            self._write()
+            normalized_metadata = _json_copy(metadata)
+            changed = any(
+                item["metadata"].get(key) != value
+                for key, value in normalized_metadata.items()
+            )
+            if changed:
+                item["metadata"].update(normalized_metadata)
+                item["updated_at"] = _now()
+                self._write()
             return copy.deepcopy(item)
 
     def delete_session(self, session_id: str) -> str | None:

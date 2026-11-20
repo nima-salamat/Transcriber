@@ -142,6 +142,53 @@ class AssistantSidebar(QFrame):
         self._active_session_id = str(active_id if active_id is not None else self.session_store.active_session_id or "")
         self._apply_filter()
 
+    @staticmethod
+    def _display_title(session: dict[str, Any]) -> str:
+        metadata = session.get("metadata") or {}
+        custom_title = str(metadata.get("custom_title") or "").strip()
+        if custom_title:
+            return custom_title[:120]
+        saved_title = str(session.get("title") or "").strip()
+        if saved_title and saved_title.casefold() != "new chat":
+            return saved_title[:120]
+        for message in session.get("messages") or []:
+            if isinstance(message, dict) and message.get("role") == "user":
+                prompt = " ".join(str(message.get("text") or "").split())
+                if prompt:
+                    return prompt[:44] + ("…" if len(prompt) > 44 else "")
+        return "New chat"
+
+    def update_session_title(self, session_id: str, title: str, *, messages=None):
+        """Update a chat row without changing its position or selected item."""
+        identifier = str(session_id or "")
+        if not identifier:
+            return
+        clean_title = str(title or "New chat")
+        for session in self._all_sessions:
+            if str(session.get("id") or "") == identifier:
+                session["title"] = clean_title
+                if messages is not None:
+                    session["messages"] = [dict(item) for item in messages if isinstance(item, dict)]
+                break
+        for index in range(self.session_list.count()):
+            item = self.session_list.item(index)
+            if str(item.data(self.SESSION_ROLE) or "") == identifier:
+                item.setText(clean_title)
+                break
+
+    def set_active_session(self, session_id: str):
+        """Change active highlighting without rebuilding the history list."""
+        self._active_session_id = str(session_id or "")
+        self.session_list.blockSignals(True)
+        try:
+            for index in range(self.session_list.count()):
+                item = self.session_list.item(index)
+                if str(item.data(self.SESSION_ROLE) or "") == self._active_session_id:
+                    self.session_list.setCurrentItem(item)
+                    break
+        finally:
+            self.session_list.blockSignals(False)
+
     def _apply_filter(self):
         query = self.search_input.text().strip().casefold()
         sessions = self._all_sessions
@@ -150,7 +197,7 @@ class AssistantSidebar(QFrame):
             sessions = [
                 session for session in sessions
                 if all(term in (
-                    str(session.get("title") or "").casefold() + "\n" +
+                    self._display_title(session).casefold() + "\n" +
                     "\n".join(str(m.get("text") or "") for m in (session.get("messages") or []) if isinstance(m, dict)).casefold()
                 ) for term in terms)
             ]
@@ -170,7 +217,7 @@ class AssistantSidebar(QFrame):
             heading.setFlags(Qt.ItemFlag.NoItemFlags)
             self.session_list.addItem(heading)
             for session in entries:
-                title = str(session.get("title") or "New chat")
+                title = self._display_title(session)
                 provider = "Ollama" if session.get("provider") == "ollama" else "OpenCode"
                 item = QListWidgetItem(title)
                 item.setData(self.SESSION_ROLE, str(session.get("id") or ""))

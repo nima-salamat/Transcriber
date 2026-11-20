@@ -20,7 +20,7 @@ class MessageWidget(QFrame):
         layout.setSpacing(4)
         header = QHBoxLayout()
         self.role_label = QLabel({
-            "user": "You", "assistant": "Transcriber", "tool": "Agent activity",
+            "user": "You", "assistant": "Transcriber", "tool": "Action",
             "error": "Error", "system": "Update",
         }.get(self.role, "Transcriber"))
         self.role_label.setObjectName("AssistantMessageRole")

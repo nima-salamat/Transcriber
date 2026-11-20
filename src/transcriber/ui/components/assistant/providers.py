@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QMessageBox
 
 from transcriber.assistant.ollama_client import OllamaCancellation, OllamaClient, OllamaError
@@ -14,31 +14,24 @@ from transcriber.ui.workers import FunctionWorker
 
 class AssistantProviderMixin:
     def _on_ollama_tool_result(self, result):
-        """Present the actual action outcome returned by OllamaAgent."""
+        """Show tool results inline rather than in a detached activity panel."""
         if not isinstance(result, dict):
             return
-        name = str(result.get("name") or "Agent tool")
+        name = str(result.get("name") or "Agent action")
         succeeded = bool(result.get("ok"))
-        details = str(result.get("content") or "")
-        self._activity_event_counter += 1
-        self.activity_widget.add_event(
-            f"ollama-result-{self._activity_event_counter}",
-            name,
-            "completed" if succeeded else "failed",
-            details,
-        )
+        details = " ".join(str(result.get("content") or "").split())
+        message = f"{'Completed' if succeeded else 'Failed'} · {name}"
+        if details:
+            message += "\n" + details[:900]
+        self._append_message("tool" if succeeded else "error", message)
+        self.activity_label.setText(f"{'Completed' if succeeded else 'Failed'} · {name}")
 
     def _on_ollama_tool_status(self, message: str):
         self._streaming_index = None
-        self._activity_event_counter += 1
-        value = str(message or "")
-        normalized = value.casefold()
-        state = "failed" if "fail" in normalized or "error" in normalized else (
-            "completed" if any(word in normalized for word in ("complete", "finished", "result received")) else "running"
-        )
-        self.activity_widget.add_event(f"ollama-{self._activity_event_counter}", value, state)
-        self._append_message("tool", value)
-        self.activity_label.setText(value)
+        value = str(message or "").strip()
+        if value:
+            self._append_message("tool", value)
+            self.activity_label.setText(value)
 
     def _chat_is_connected(self) -> bool:
         if self._chat_provider == "ollama":
@@ -47,41 +40,83 @@ class AssistantProviderMixin:
 
     def _apply_provider_ui(self):
         ollama = self._chat_provider == "ollama"
+        connected = self._chat_is_connected()
         self.project_card.setVisible(not ollama)
         self.ollama_controls.setVisible(ollama)
-        self.connect_button.setText("Connect")
-        connected = self._chat_is_connected()
-        self.ollama_model_combo.setEnabled(ollama and not connected)
-        self.ollama_url.setEnabled(ollama and not connected)
+        self.ollama_url.setEnabled(ollama and not self._worker_active)
         self.refresh_ollama_button.setEnabled(ollama and not self._worker_active)
-        self.composer.set_provider_ready(connected)
-        self.composer.set_busy(self._worker_active)
-        self.stop_button.setEnabled(self._worker_active)
+        self.provider_combo.setEnabled(not self._worker_active)
+        selected_model = str(self.model_combo.currentData() or "") if ollama else ""
+        provider_ready = connected and (
+            not ollama or bool(selected_model and selected_model == self._ollama_model)
+        )
+        self.composer.set_provider_ready(provider_ready)
+        self.composer.set_busy(self._worker_active, stoppable=False)
         self.new_chat_button.setEnabled(not self._worker_active)
         self.agent_mode_check.setEnabled(
             ollama and self._action_registry is not None and not self._worker_active
         )
-
         self.disconnect_button.setEnabled(connected)
         self.connect_button.setEnabled(not connected and not self._worker_active)
-        self.connect_button.setToolTip("Connect to " + ("Ollama" if ollama else "OpenCode"))
-        self.connect_button.setToolTip("Connect to " + ("Ollama" if ollama else "OpenCode"))
+
+        if ollama:
+            model_available = self.ollama_model_combo.count() > 1
+            self.ollama_model_combo.setEnabled(model_available and not self._worker_active)
+        else:
+            model_available = bool(
+                self.client and any(
+                    isinstance(item, dict)
+                    and (item.get("category") == "model" or item.get("id") == "model")
+                    for item in self.client.config_options
+                )
+            )
+            self.model_combo.setEnabled(model_available and connected and not self._worker_active)
+
         if connected:
-            self.connection_state.setText("Connected · Ollama" if ollama else "Connected · OpenCode")
+            state_text = (
+                f"Connected · {self._ollama_model}" if ollama
+                else f"Connected · {self._opencode_model or 'OpenCode'}"
+            )
+            self.connection_state.setText(state_text)
             self.connection_state.setProperty("state", "connected")
         else:
-            self.connection_state.setText("Disconnected")
-            self.connection_state.setProperty("state", "disconnected")
+            self.connection_state.setText("Connecting…" if self._worker_active else "Disconnected")
+            self.connection_state.setProperty(
+                "state", "connecting" if self._worker_active else "disconnected"
+            )
         self.connection_state.style().unpolish(self.connection_state)
         self.connection_state.style().polish(self.connection_state)
+
         if hasattr(self, "conversation_header"):
             provider_name = "Ollama" if ollama else "OpenCode"
-            model_name = self._ollama_model if ollama and self._ollama_model else ("local model" if ollama else "workspace agent")
-            state_name = "Connected" if connected else "Disconnected"
+            model_name = (
+                self._ollama_model if ollama and self._ollama_model
+                else self._opencode_model if not ollama and self._opencode_model
+                else "provider default"
+            )
+            state_name = "Connected" if connected else "Connecting" if self._worker_active else "Disconnected"
             subtitle = f"{provider_name} · {model_name} · {state_name}"
             workspace = str(self.project_dir) if not ollama else str(self.ollama_url.text())
-            self.conversation_header.set_conversation(self._session_title(), subtitle, workspace)
+            self.conversation_header.set_conversation(
+                self._session_title(), subtitle, workspace
+            )
             self.sidebar.set_provider_summary(f"{provider_name} · {model_name}")
+
+    def _auto_connect_provider(self):
+        """Connect the active provider automatically after the workspace is built."""
+        if self._worker_active:
+            return
+        self._auto_connect_pending = True
+        self.composer.set_status(
+            "Connecting to Ollama…" if self._chat_provider == "ollama"
+            else "Connecting to OpenCode…"
+        )
+        if self._chat_provider == "ollama":
+            self.refresh_ollama_models()
+        elif self.client and self.client.connected:
+            self._restore_active_opencode_session()
+        else:
+            self.connect_opencode()
 
     def _on_provider_changed(self, _index: int):
         if self.voice_agent is not None:
@@ -94,19 +129,153 @@ class AssistantProviderMixin:
             )
             self.provider_combo.blockSignals(False)
             return
+        selected_provider = str(self.provider_combo.currentData() or "opencode")
+        if selected_provider == self._chat_provider:
+            return
         self._persist_current_session()
-        self._chat_provider = str(self.provider_combo.currentData() or "opencode")
+        self._chat_provider = selected_provider
         session = self.session_store.create_session(self._chat_provider)
         self._load_session_state(session)
+        self._refresh_session_list()
         if self.settings_store:
             self.settings_store.update(chat_provider=self._chat_provider)
-        self.activity_label.setText(
-            "Choose a local model and connect."
-            if self._chat_provider == "ollama"
-            else "Connect to OpenCode to start a workspace-enabled conversation."
-        )
-        if self._chat_provider == "ollama" and self.ollama_model_combo.count() <= 1:
+        self._auto_connect_pending = True
+        self._auto_connect_provider()
+
+    def refresh_provider_models(self):
+        if self._worker_active:
+            return
+        if self._chat_provider == "ollama":
+            self._auto_connect_pending = not self._ollama_connected
             self.refresh_ollama_models()
+            return
+        client = self.client
+        if not client or not client.connected or not client.session_id:
+            self._auto_connect_provider()
+            return
+        self.composer.set_status("Refreshing OpenCode model choices…")
+        mcp_servers = self._mcp_server_config()
+        session_id = client.session_id
+
+        def refresh(_emit):
+            client.load_session(session_id, mcp_servers=mcp_servers, timeout=20)
+            return {"config_options": client.config_options, "selected": self._opencode_model}
+
+        worker = FunctionWorker(refresh)
+        worker.signals.result.connect(self.signals.opencode_models_ready.emit)
+        worker.signals.error.connect(self.signals.opencode_models_error.emit)
+        worker.signals.finished.connect(self._worker_finished)
+        self._worker_active = True
+        self.composer.set_busy(True, stoppable=False)
+        self.thread_pool.start(worker)
+
+    def _on_model_changed(self, _index: int):
+        if self._worker_active:
+            return
+        selected = str(self.model_combo.currentData() or "").strip()
+        if not selected:
+            return
+        if self._chat_provider == "ollama":
+            if selected != self._ollama_model:
+                self.connect_ollama()
+        elif selected != self._opencode_model:
+            self._set_opencode_model(selected)
+
+    def _load_opencode_model_options(self):
+        """Populate the shared model picker from the session's ACP configOptions."""
+        options = list(self.client.config_options if self.client else [])
+        model_config = next(
+            (
+                item for item in options
+                if isinstance(item, dict)
+                and (item.get("category") == "model" or item.get("id") == "model")
+            ),
+            None,
+        )
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        if not model_config:
+            self.model_combo.addItem("Provider default model", "")
+            self._opencode_model = ""
+            self.model_combo.setEnabled(False)
+            self.model_combo.blockSignals(False)
+            return
+
+        current = str(model_config.get("currentValue") or "")
+        for item in model_config.get("options") or []:
+            if isinstance(item, dict):
+                value = str(item.get("value") or item.get("id") or item.get("name") or "")
+                label = str(item.get("name") or item.get("label") or value)
+            else:
+                value = str(item or "")
+                label = value
+            if value:
+                self.model_combo.addItem(label, value)
+        index = self.model_combo.findData(current)
+        if index < 0 and self.model_combo.count():
+            index = 0
+        if index >= 0:
+            self.model_combo.setCurrentIndex(index)
+            self._opencode_model = str(self.model_combo.currentData() or current)
+        else:
+            self.model_combo.addItem("Provider default model", "")
+            self._opencode_model = current
+        self.model_combo.blockSignals(False)
+
+    def _set_opencode_model(self, selected: str):
+        client = self.client
+        if not client or not client.connected or not client.session_id:
+            self.composer.set_status("OpenCode is disconnected. Reconnecting…", error=True)
+            self._auto_connect_provider()
+            return
+        self._worker_active = True
+        self.composer.set_busy(True, stoppable=False)
+        self.composer.set_status(f"Switching OpenCode model to {selected}…")
+        old_model = self._opencode_model
+
+        def apply(_emit):
+            response = client.set_config_option("model", selected)
+            return {
+                "config_options": client.config_options,
+                "selected": selected,
+                "previous": old_model,
+                "response": response,
+            }
+
+        worker = FunctionWorker(apply)
+        worker.signals.result.connect(self.signals.opencode_models_ready.emit)
+        worker.signals.error.connect(self.signals.opencode_models_error.emit)
+        worker.signals.finished.connect(self._worker_finished)
+        self.thread_pool.start(worker)
+
+    def _on_opencode_models_ready(self, result):
+        self._load_opencode_model_options()
+        selected = str((result or {}).get("selected") or self._opencode_model)
+        if selected:
+            index = self.model_combo.findData(selected)
+            if index >= 0:
+                self.model_combo.blockSignals(True)
+                self.model_combo.setCurrentIndex(index)
+                self.model_combo.blockSignals(False)
+                self._opencode_model = selected
+        self.composer.set_status(
+            f"OpenCode model ready · {self._opencode_model}"
+            if self._opencode_model else
+            "OpenCode is connected. Its default model will be used because no model picker was advertised."
+        )
+        self._apply_provider_ui()
+
+    def _on_opencode_models_error(self, message: str):
+        self.model_combo.blockSignals(True)
+        index = self.model_combo.findData(self._opencode_model)
+        if index >= 0:
+            self.model_combo.setCurrentIndex(index)
+        self.model_combo.blockSignals(False)
+        self.composer.set_status(
+            f"Could not change or refresh the OpenCode model: {message}", error=True
+        )
+        self.status_message.emit(f"OpenCode model: {message}")
+
     def refresh_ollama_models(self):
         if self._worker_active:
             return
@@ -114,95 +283,170 @@ class AssistantProviderMixin:
             client = OllamaClient(self.ollama_url.text().strip())
         except ValueError as exc:
             self.ollama_help.setText(str(exc))
+            self.composer.set_status(str(exc), error=True)
             return
-        self.ollama_help.setText("Checking the Ollama server and listing installed models…")
+        self.ollama_help.setText("Checking the local Ollama server and installed models…")
+        self.composer.set_status("Looking for models installed in Ollama…")
         worker = FunctionWorker(lambda _emit: client.list_models())
         worker.signals.result.connect(self.signals.ollama_models_ready.emit)
         worker.signals.error.connect(self.signals.ollama_refresh_error.emit)
+        worker.signals.finished.connect(self._worker_finished)
+        self._worker_active = True
+        self.composer.set_busy(True, stoppable=False)
         self.thread_pool.start(worker)
 
     def _on_ollama_refresh_error(self, message: str):
         self.ollama_help.setText(str(message))
+        self.composer.set_status(f"Ollama is unavailable: {message}", error=True)
         self.status_message.emit(f"Ollama model discovery: {message}")
+        if not self._ollama_connected:
+            self.composer.set_provider_ready(False)
+            self.model_combo.blockSignals(True)
+            self.model_combo.clear()
+            self.model_combo.addItem("Ollama unavailable", "")
+            self.model_combo.blockSignals(False)
+        else:
+            self.composer.set_provider_ready(True)
 
     def _on_ollama_models_ready(self, models):
-        selected = (
-            self.settings_store.settings.ollama_model
-            if self.settings_store else self.ollama_model_combo.currentData()
-        )
-        self.ollama_model_combo.blockSignals(True)
-        self.ollama_model_combo.clear()
-        self.ollama_model_combo.addItem("Select an installed Ollama model…", "")
-        for item in models:
+        saved = str(getattr(self, "_session_requested_ollama_model", "") or "").strip()
+        if not saved and self.settings_store:
+            saved = str(self.settings_store.settings.ollama_model or "").strip()
+        current = str(self.model_combo.currentData() or "").strip()
+        available = []
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        self.model_combo.addItem("Choose an installed Ollama model…", "")
+        for item in models or []:
             name = str(item.get("name") or "")
-            if name:
-                size = item.get("size")
-                size_label = f" · {int(size) / (1024 ** 3):.1f} GB" if str(size).isdigit() and int(size) > 0 else ""
-                self.ollama_model_combo.addItem(f"{name}{size_label}", name)
-        index = self.ollama_model_combo.findData(selected or "")
-        self.ollama_model_combo.setCurrentIndex(max(0, index))
-        self.ollama_model_combo.blockSignals(False)
-        if models:
-            self.ollama_help.setText(f"Found {len(models)} local Ollama model(s).")
+            if not name:
+                continue
+            size = item.get("size")
+            size_label = (
+                f" · {int(size) / (1024 ** 3):.1f} GB"
+                if str(size).isdigit() and int(size) > 0 else ""
+            )
+            available.append(name)
+            self.model_combo.addItem(f"{name}{size_label}", name)
+
+        selected = saved if saved else (current if current in available else "")
+        index = self.model_combo.findData(selected) if selected else -1
+        if selected and index < 0:
+            self.model_combo.setCurrentIndex(0)
+            self.model_combo.blockSignals(False)
+            self.ollama_help.setText(
+                f"Saved model '{selected}' is not installed at this Ollama URL. "
+                "Choose an installed model below or install it with ollama pull."
+            )
+            self.composer.set_status(
+                f"Model '{selected}' is unavailable. Choose a model installed in Ollama.",
+                error=True,
+            )
+            self._auto_connect_pending = False
+            self.composer.set_provider_ready(False)
+            return
+        if index >= 0:
+            self.model_combo.setCurrentIndex(index)
+        elif available:
+            self.model_combo.setCurrentIndex(1)
+        self.model_combo.blockSignals(False)
+
+        if not available:
+            self.ollama_help.setText(
+                "Ollama is reachable, but no models are installed. Run ollama pull <model>."
+            )
+            self.composer.set_status(
+                "No Ollama models are installed. Install one and refresh the list.",
+                error=True,
+            )
+            self._auto_connect_pending = False
+            self.composer.set_provider_ready(False)
+            return
+
+        self.ollama_help.setText(f"Found {len(available)} installed Ollama model(s).")
+        selected_name = str(self.model_combo.currentData() or "")
+        if self._auto_connect_pending and selected_name:
+            self.composer.set_status(f"Found {len(available)} model(s). Loading {selected_name}…")
+            self._auto_connect_pending = False
+            QTimer.singleShot(0, self.connect_ollama)
         else:
-            self.ollama_help.setText("No models are installed. Run ollama pull <model> and refresh.")
+            self.composer.set_status(
+                f"{len(available)} local model(s) available. Choose one to load it."
+            )
 
     def connect_provider(self):
-        if self._chat_provider == "ollama":
-            self.connect_ollama()
-        else:
-            self.connect_opencode()
+        self._auto_connect_provider()
 
     def connect_ollama(self):
-        if self._worker_active or self._ollama_connected:
+        if self._worker_active:
+            return
+        requested_model = str(self.model_combo.currentData() or "").strip()
+        if not requested_model:
+            self.composer.set_status(
+                "Choose an installed Ollama model before sending a message.",
+                error=True,
+            )
+            return
+        if self._ollama_connected and requested_model == self._ollama_model:
+            self.composer.set_provider_ready(True)
+            self.composer.set_status(f"Ready · {requested_model}")
+            self.session_store.update_metadata(
+                self._active_session_id, ollama_model=requested_model
+            )
+            self._session_requested_ollama_model = requested_model
             return
         try:
-            client = OllamaClient(self.ollama_url.text().strip())
+            current_url = self.ollama_url.text().strip()
+            if (
+                self.ollama_client is not None
+                and self._ollama_connected
+                and self.ollama_client.base_url == current_url.rstrip("/")
+            ):
+                client = self.ollama_client
+            else:
+                client = OllamaClient(current_url)
         except ValueError as exc:
             self._on_ollama_error(str(exc))
             return
+
         self.ollama_client = client
-        requested_model = str(self.ollama_model_combo.currentData() or "").strip()
-        if not requested_model and self.settings_store:
-            requested_model = self.settings_store.settings.ollama_model
         if self.settings_store:
-            changes = {"ollama_base_url": client.base_url}
-            if requested_model:
-                changes["ollama_model"] = requested_model
-            self.settings_store.update(**changes)
+            self.settings_store.update(ollama_base_url=client.base_url)
         self._worker_active = True
-        self.connect_button.setEnabled(False)
-        self.connection_state.setText("Connecting to Ollama…")
+        self.new_chat_button.setEnabled(False)
+        self.connection_state.setText("Loading model…")
         self.connection_state.setProperty("state", "connecting")
-        self.activity_label.setText(
-            "Checking Ollama, then loading the selected model into RAM/VRAM. "
-            "A first load can take several minutes; Transcriber remains responsive…"
-        )
+        self.composer.set_status(f"Connecting to Ollama and loading {requested_model}…")
+        self.composer.set_busy(True, stoppable=False)
 
         def connect(_emit):
             try:
                 models = client.list_models()
             except OllamaError as exc:
                 raise OllamaError(
-                    f"Could not list local Ollama models at {client.base_url}/api/tags: {exc}"
+                    f"Could not reach the Ollama API at {client.base_url}/api/tags: {exc}"
                 ) from exc
             names = [str(item.get("name") or "") for item in models if item.get("name")]
             if not names:
                 raise RuntimeError(
                     "Ollama is reachable, but no models are installed. Run ollama pull <model> first."
                 )
-            selected = requested_model if requested_model in names else names[0]
+            if requested_model not in names:
+                raise RuntimeError(
+                    f"Model '{requested_model}' is not installed at {client.base_url}. "
+                    "Choose an available model or run ollama pull <model>."
+                )
             keep_alive = (
-                self.settings_store.settings.ollama_keep_alive if self.settings_store else "30m"
+                self.settings_store.settings.ollama_keep_alive
+                if self.settings_store else "30m"
             )
             try:
-                client.load_model(selected, keep_alive=keep_alive)
+                client.load_model(requested_model, keep_alive=keep_alive)
             except OllamaError as exc:
                 raise OllamaError(
-                    f"Ollama found '{selected}', but could not finish loading it. "
-                    f"Check available RAM/VRAM and Ollama's server log. {exc}"
+                    f"Could not load '{requested_model}'. Check available RAM/VRAM and Ollama's server log. {exc}"
                 ) from exc
-            return {"models": models, "model": selected}
+            return {"models": models, "model": requested_model}
 
         worker = FunctionWorker(connect)
         worker.signals.result.connect(self.signals.ollama_connected.emit)
@@ -211,32 +455,38 @@ class AssistantProviderMixin:
         self.thread_pool.start(worker)
 
     def _on_ollama_connected(self, result):
-        models = result.get("models", [])
         selected = str(result.get("model") or "")
-        self._on_ollama_models_ready(models)
-        index = self.ollama_model_combo.findData(selected)
-        if index >= 0:
-            self.ollama_model_combo.setCurrentIndex(index)
-        changed_model = selected != self._ollama_model
-        self._ollama_model = selected
         self._ollama_connected = True
-        if changed_model:
-            self._ollama_messages = []
-            self._messages.clear()
-            self._streaming_index = None
+        self._ollama_model = selected
+        index = self.model_combo.findData(selected)
+        if index >= 0:
+            self.model_combo.blockSignals(True)
+            self.model_combo.setCurrentIndex(index)
+            self.model_combo.blockSignals(False)
         if self.settings_store:
             self.settings_store.update(
                 ollama_model=selected, ollama_base_url=self.ollama_url.text().strip()
             )
+        self.session_store.update_metadata(
+            self._active_session_id, ollama_model=selected
+        )
+        self._session_requested_ollama_model = selected
         self.ollama_help.setText(
-            f"{selected} is loaded in Ollama. Chat messages are sent to your local model."
+            f"{selected} is loaded. New messages will be sent to this local model."
         )
         self.connection_state.setText(f"Connected · {selected}")
         self.connection_state.setProperty("state", "connected")
         self.connection_state.style().unpolish(self.connection_state)
         self.connection_state.style().polish(self.connection_state)
-        self.activity_label.setText("Ollama ready · Start a local conversation.")
-        self._append_message("system", f"Local Ollama model loaded · {selected}")
+        # Rebuild provider context from this chat's visible turns so context
+        # from a previously selected conversation never leaks into this one.
+        self._ollama_messages = [
+            {"role": item.get("role"), "content": str(item.get("text") or "")}
+            for item in self._messages
+            if item.get("role") in {"user", "assistant"}
+            and str(item.get("text") or "").strip()
+        ]
+        self.composer.set_status(f"Ready · {selected}")
         self._apply_provider_ui()
         if self._start_voice_after_connect:
             self._start_voice_after_connect = False
@@ -246,15 +496,27 @@ class AssistantProviderMixin:
     def _on_ollama_error(self, message):
         self._ollama_cancellation = None
         self._streaming_index = None
-        self._append_message("error", str(message))
         self.ollama_help.setText(str(message))
-        self.activity_label.setText(f"Ollama connection/model startup failed: {message}")
+        self.composer.set_status(
+            f"Could not load the selected Ollama model: {message}", error=True
+        )
         self.status_message.emit(f"Ollama: {message}")
-        if not self._ollama_connected:
+        if self._ollama_connected and self._ollama_model:
+            index = self.model_combo.findData(self._ollama_model)
+            if index >= 0:
+                self.model_combo.blockSignals(True)
+                self.model_combo.setCurrentIndex(index)
+                self.model_combo.blockSignals(False)
+            self.connection_state.setText(f"Connected · {self._ollama_model}")
+            self.connection_state.setProperty("state", "connected")
+        else:
             self.connection_state.setText("Ollama unavailable")
             self.connection_state.setProperty("state", "error")
-            self.connection_state.style().unpolish(self.connection_state)
-            self.connection_state.style().polish(self.connection_state)
+            self._append_message("error", str(message))
+            self.composer.set_provider_ready(False)
+        self.connection_state.style().unpolish(self.connection_state)
+        self.connection_state.style().polish(self.connection_state)
+        self._apply_provider_ui()
         if self._start_voice_after_connect:
             self._start_voice_after_connect = False
             self._voice_conversation_mode = False
@@ -273,7 +535,7 @@ class AssistantProviderMixin:
             self.connection_state.setProperty("state", "disconnected")
             self.connection_state.style().unpolish(self.connection_state)
             self.connection_state.style().polish(self.connection_state)
-            self.activity_label.setText("Disconnected from Ollama. The server and its loaded model are left running.")
+            self.activity_label.setText("Disconnected from Ollama. Its loaded model remains running.")
             self._append_message("system", "Ollama chat disconnected; the local service/model was not stopped.")
             self._apply_provider_ui()
             return
@@ -283,12 +545,14 @@ class AssistantProviderMixin:
         if self._worker_active or (self.client and self.client.connected):
             return
         self._worker_active = True
+        self.composer.set_busy(True, stoppable=False)
+        self.new_chat_button.setEnabled(False)
         self.connect_button.setEnabled(False)
         self.connection_state.setText("Connecting…")
         self.connection_state.setProperty("state", "connecting")
         self.connection_state.style().unpolish(self.connection_state)
         self.connection_state.style().polish(self.connection_state)
-        self.activity_label.setText("Starting the OpenCode ACP process and restoring the saved session…")
+        self.composer.set_status("Starting OpenCode and restoring this conversation…")
 
         client = OpenCodeACPClient(
             executable=(self.settings_store.settings.opencode_path if self.settings_store else None),
@@ -321,7 +585,9 @@ class AssistantProviderMixin:
         return client.new_session(mcp_servers=mcp_servers, timeout=20)
     def _on_connected(self, result):
         session_id = result.get("session_id")
+        self._auto_connect_pending = False
         self._active_opencode_session_id = str(session_id or "")
+        self._load_opencode_model_options()
         if self._active_opencode_session_id:
             self.session_store.update_metadata(self._active_session_id, opencode_session_id=self._active_opencode_session_id)
         try:
@@ -345,8 +611,10 @@ class AssistantProviderMixin:
         self.connection_state.style().polish(self.connection_state)
         self.connect_button.setEnabled(False)
         self.disconnect_button.setEnabled(True)
-        self.send_button.setEnabled(True)
-        self.activity_label.setText("Connected · Transcriber workspace tools are attached to this ACP session.")
+        self.composer.set_status(
+            f"Connected · OpenCode · {self._opencode_model}" if self._opencode_model
+            else "Connected · OpenCode. Its default model will be used."
+        )
         self._append_message("system", f"OpenCode connected · session {str(session_id)[:12]}")
         if self._start_voice_after_connect:
             self._start_voice_after_connect = False
@@ -524,6 +792,7 @@ class AssistantProviderMixin:
             f"Ollama turn complete{detail}{tool_detail} · Ready for your next message."
         )
         self._persist_current_session()
+        self._refresh_session_list()
         if self.voice_agent is not None and self._resume_voice_after_prompt:
             self._set_voice_activity(
                 "Ollama response received · preparing to listen again…",
@@ -612,6 +881,11 @@ class AssistantProviderMixin:
             return
 
         kind = update.get("sessionUpdate", "")
+        if kind == "config_option_update":
+            if self.client and isinstance(update.get("configOptions"), list):
+                self.client.set_config_options(update.get("configOptions"))
+                self._load_opencode_model_options()
+            return
         if kind == "agent_message_chunk":
             content = update.get("content", {})
             if isinstance(content, dict):
@@ -621,7 +895,6 @@ class AssistantProviderMixin:
         elif kind == "tool_call":
             title = str(update.get("title") or update.get("toolCallId") or "Workspace tool")
             event_id = str(update.get("toolCallId") or title)
-            self.activity_widget.add_event(event_id, title, "running")
             self._append_message("tool", f"Running · {title}")
             self.activity_label.setText(f"Running tool · {title}")
         elif kind == "tool_call_update":
@@ -637,7 +910,6 @@ class AssistantProviderMixin:
             )
             title = str(update.get("title") or update.get("toolCallId") or "Workspace tool")
             event_id = str(update.get("toolCallId") or title)
-            self.activity_widget.add_event(event_id, title, status)
             self._append_message("tool", f"{title} · {raw_status}")
             self.activity_label.setText(f"Tool {raw_status} · {title}")
         elif kind == "current_mode_update":
@@ -650,6 +922,8 @@ class AssistantProviderMixin:
         self._streaming_index = None
         reason = result.get("stopReason", "completed") if isinstance(result, dict) else "completed"
         self.activity_label.setText(f"Turn {reason} · Ready for your next message.")
+        self._persist_current_session()
+        self._refresh_session_list()
         if self.voice_agent is not None and self._resume_voice_after_prompt:
             self._set_voice_activity(
                 "OpenCode response received · preparing to listen again…",
@@ -664,9 +938,10 @@ class AssistantProviderMixin:
         self.connection_state.setProperty("state", "error")
         self.connection_state.style().unpolish(self.connection_state)
         self.connection_state.style().polish(self.connection_state)
-        self.activity_label.setText("Something went wrong. Check that OpenCode is installed and available.")
+        self.composer.set_status(f"OpenCode connection or request failed: {message}", error=True)
         self.status_message.emit(f"OpenCode: {message}")
         if self.client and not self.client.connected:
+            self._auto_connect_pending = False
             self.disconnect_button.setEnabled(False)
             self.connect_button.setEnabled(True)
         if self._start_voice_after_connect:
@@ -681,12 +956,12 @@ class AssistantProviderMixin:
 
     def _worker_finished(self):
         self._worker_active = False
-        self._refresh_session_list()
         connected = self._chat_is_connected()
         self.composer.set_provider_ready(connected)
         self.composer.set_busy(False)
         self.stop_button.setEnabled(False)
         self.new_chat_button.setEnabled(True)
+        self._apply_provider_ui()
         self.agent_mode_check.setEnabled(
             self._chat_provider == "ollama" and self._action_registry is not None
         )

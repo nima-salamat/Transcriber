@@ -98,6 +98,7 @@ class OpenCodeACPClient:
         self.process: subprocess.Popen | None = None
         self.session_id: str | None = None
         self.agent_capabilities: dict[str, Any] = {}
+        self.config_options: list[dict[str, Any]] = []
         self._next_id = 0
         self._pending: dict[int, queue.Queue] = {}
         self._pending_lock = threading.RLock()
@@ -162,6 +163,12 @@ class OpenCodeACPClient:
         self.agent_capabilities = initialized.get("agentCapabilities", {})
         return self.agent_capabilities
 
+    def set_config_options(self, options: Any) -> None:
+        """Store the latest ACP session config options defensively."""
+        if not isinstance(options, list):
+            return
+        self.config_options = [dict(item) for item in options if isinstance(item, dict)]
+
     def new_session(self, *, mcp_servers: list[dict[str, Any]] | None = None,
                     timeout: float = 20.0) -> str:
         self._require_connected()
@@ -170,6 +177,7 @@ class OpenCodeACPClient:
             "mcpServers": mcp_servers or [],
         }, timeout=timeout)
         self.session_id = str(response["sessionId"])
+        self.set_config_options(response.get("configOptions"))
         return self.session_id
 
     def load_session(self, session_id: str, *, mcp_servers: list[dict[str, Any]] | None = None,
@@ -181,6 +189,20 @@ class OpenCodeACPClient:
             "mcpServers": mcp_servers or [],
         }, timeout=timeout)
         self.session_id = session_id
+        self.set_config_options(response.get("configOptions"))
+        return response
+
+    def set_config_option(self, config_id: str, value: str) -> dict[str, Any]:
+        """Apply an ACP option (such as model) to the active conversation."""
+        self._require_connected()
+        if not self.session_id:
+            raise ACPError("OpenCode has no active session for changing its model.")
+        response = self.request("session/set_config_option", {
+            "sessionId": self.session_id,
+            "configId": str(config_id),
+            "value": str(value),
+        })
+        self.set_config_options(response.get("configOptions"))
         return response
 
     def prompt(self, text: str, *, timeout: float | None = None) -> dict[str, Any]:

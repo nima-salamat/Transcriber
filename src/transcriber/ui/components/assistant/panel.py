@@ -40,7 +40,6 @@ from transcriber.ui.components.assistant.sessions import AssistantSessionMixin
 from transcriber.ui.components.assistant.providers import AssistantProviderMixin
 from transcriber.ui.components.assistant.voice import AssistantVoiceMixin
 from transcriber.ui.components.assistant.conversation import AssistantConversationMixin
-from transcriber.ui.components.assistant.activity_widget import AgentActivityWidget
 from transcriber.ui.components.assistant.composer import MessageComposer
 from transcriber.ui.components.assistant.conversation_view import ConversationView
 from transcriber.ui.components.assistant.header import ConversationHeader
@@ -72,6 +71,8 @@ class _AssistantSignals(QObject):
     session_loaded = Signal(str)
     session_load_error = Signal(str)
     ollama_tool_result = Signal(object)
+    opencode_models_ready = Signal(object)
+    opencode_models_error = Signal(str)
 
 
 class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, AssistantVoiceMixin, AssistantConversationMixin):
@@ -105,6 +106,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.ollama_client: OllamaClient | None = None
         self._ollama_connected = False
         self._ollama_model = ""
+        self._opencode_model = ""
+        self._session_requested_ollama_model = ""
+        self._auto_connect_pending = False
         self._action_registry = None
         self._ollama_cancellation = None
         self.ui_icons = IconRegistry()
@@ -122,6 +126,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._ollama_messages: list[dict] = list(active_session["provider_messages"])
         self._active_opencode_session_id = str(
             (active_session.get("metadata") or {}).get("opencode_session_id") or ""
+        )
+        self._session_requested_ollama_model = str(
+            (active_session.get("metadata") or {}).get("ollama_model") or ""
         )
         self._start_voice_after_connect = False
         self._voice_conversation_mode = False
@@ -153,6 +160,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.signals.session_loaded.connect(self._on_session_loaded)
         self.signals.session_load_error.connect(self._on_session_load_error)
         self.signals.ollama_tool_result.connect(self._on_ollama_tool_result)
+        self.signals.opencode_models_ready.connect(self._on_opencode_models_ready)
+        self.signals.opencode_models_error.connect(self._on_opencode_models_error)
 
         self.client: OpenCodeACPClient | None = None
         self._worker_active = False
@@ -185,41 +194,25 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         title_group.addWidget(subtitle)
         header.addLayout(title_group, 1)
 
-        self.provider_combo = QComboBox()
-        self.provider_combo.setObjectName("AssistantProviderSelect")
-        self.provider_combo.addItem("OpenCode", "opencode")
-        self.provider_combo.addItem("Ollama", "ollama")
-        self.provider_combo.setMinimumWidth(112)
-        self.provider_combo.setCurrentIndex(
-            max(0, self.provider_combo.findData(self._chat_provider))
-        )
-        self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
-        header.addWidget(self.provider_combo)
-
-        self.connection_state = QLabel("Disconnected")
+        # Kept as hidden compatibility controls for provider lifecycle methods.
+        self.connection_state = QLabel("Disconnected", self)
         self.connection_state.setObjectName("AssistantStatus")
         self.connection_state.setProperty("state", "disconnected")
-        header.addWidget(self.connection_state)
-
-        self.connect_button = QPushButton("Connect")
+        self.connection_state.hide()
+        self.connect_button = QPushButton("Connect", self)
         self.connect_button.setObjectName("AssistantConnectButton")
         self.connect_button.setIcon(self.ui_icons.icon("connect", size=16))
-        self.connect_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.connect_button.setToolTip("Connect the selected AI provider")
         self.connect_button.clicked.connect(self.connect_provider)
-        header.addWidget(self.connect_button)
-
-        self.disconnect_button = QPushButton()
+        self.connect_button.hide()
+        self.disconnect_button = QPushButton("Disconnect", self)
         self.disconnect_button.setObjectName("AssistantDisconnectButton")
         self.disconnect_button.setIcon(self.ui_icons.icon("stop", size=15))
-        self.disconnect_button.setFixedSize(34, 34)
-        self.disconnect_button.setToolTip("Disconnect the current provider")
         self.disconnect_button.clicked.connect(self.disconnect_provider)
-        self.disconnect_button.setEnabled(False)
-        header.addWidget(self.disconnect_button)
+        self.disconnect_button.hide()
 
-        self.settings_button = QPushButton("⚙")
+        self.settings_button = QPushButton(self)
         self.settings_button.setObjectName("AssistantSettingsButton")
+        self.settings_button.setIcon(self.ui_icons.icon("settings", color="#9aa8b8", size=18))
         self.settings_button.setFixedSize(40, 40)
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_button.setToolTip("Assistant settings")
@@ -310,17 +303,6 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.ollama_url.editingFinished.connect(self._provider_base_url_changed)
         ollama_url_row.addWidget(self.ollama_url, 1)
         ollama_layout.addLayout(ollama_url_row)
-        ollama_model_row = QHBoxLayout()
-        ollama_model_row.addWidget(QLabel("Model"))
-        self.ollama_model_combo = QComboBox()
-        self.ollama_model_combo.setMinimumWidth(130)
-        self.ollama_model_combo.setToolTip("Choose a model already installed in your local Ollama service.")
-        ollama_model_row.addWidget(self.ollama_model_combo, 1)
-        self.refresh_ollama_button = QPushButton("Refresh")
-        self.refresh_ollama_button.setObjectName("Subtle")
-        self.refresh_ollama_button.clicked.connect(self.refresh_ollama_models)
-        ollama_model_row.addWidget(self.refresh_ollama_button)
-        ollama_layout.addLayout(ollama_model_row)
         self.ollama_help = QLabel(
             "Connects to the local Ollama API. Install models with ollama pull <model> first."
         )
@@ -439,15 +421,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.chat_view.hide()
         self.log = self.chat_view
 
-        self.activity_widget = AgentActivityWidget(self.ui_icons, self)
-        self.chat_layout.addWidget(self.activity_widget)
-        self._activity_event_counter = 0
-
-        self.activity_label = QLabel("Connect an AI provider to start using your desktop agent.")
-        self.activity_label.setObjectName("Muted")
-        self.activity_label.setWordWrap(True)
-        self.chat_layout.addWidget(self.activity_label)
-
+        # Tool and action updates are rendered inline in the conversation.
         suggestion_header = QHBoxLayout()
         suggestion_label = QLabel("QUICK PROMPTS")
         suggestion_label.setObjectName("AssistantEyebrow")
@@ -469,13 +443,23 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.chat_layout.addWidget(self.suggestions_container)
         self.suggestions_container.hide()  # prompts now live in the centered empty state
 
-        self.composer = MessageComposer(self.ui_icons, self)
+        self.composer = MessageComposer(
+            self.ui_icons, self, provider=self._chat_provider
+        )
         self.prompt = self.composer.prompt
+        self.provider_combo = self.composer.provider_combo
+        self.model_combo = self.composer.model_combo
+        self.ollama_model_combo = self.model_combo
+        self.refresh_ollama_button = self.composer.refresh_models_button
+        self.activity_label = self.composer.status_label
         self.voice_chat_button = self.composer.voice_chat_button
         self.voice_live_status = self.composer.voice_live_status
         self.agent_mode_check = self.composer.agent_mode_check
         self.stop_button = self.composer.stop_button
         self.send_button = self.composer.send_button
+        self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
+        self.model_combo.currentIndexChanged.connect(self._on_model_changed)
+        self.composer.refresh_models_requested.connect(self.refresh_provider_models)
         self.composer.send_requested.connect(self.send_prompt)
         self.composer.stop_requested.connect(self.cancel_prompt)
         self.composer.voice_requested.connect(self.start_voice_chat)
@@ -621,6 +605,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._refresh_session_list()
         self._refresh_chat()
         self._sync_voice_orb()
+        QTimer.singleShot(0, self._auto_connect_provider)
 
     def refresh_skills(self):
         skills = self.skill_manager.list_skills()
