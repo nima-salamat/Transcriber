@@ -16,6 +16,7 @@ class ConversationView(QFrame):
         self.setObjectName("AssistantConversationView")
         self.icons = icons
         self._widgets: list[MessageWidget] = []
+        self._rows: list[QWidget] = []
         self._signatures: list[tuple[str, str]] = []
         self._messages: list[dict] = []
         outer = QVBoxLayout(self)
@@ -25,8 +26,15 @@ class ConversationView(QFrame):
         self.scroll_area.setObjectName("AssistantConversationScroll")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.scroll_area.setMinimumWidth(0)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.content = QWidget()
         self.content.setObjectName("AssistantConversationContent")
+        self.content.setMinimumWidth(0)
+        self.content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.content_layout = QVBoxLayout(self.content)
         self.content_layout.setContentsMargins(18, 22, 18, 26)
         self.content_layout.setSpacing(13)
@@ -39,14 +47,20 @@ class ConversationView(QFrame):
         title = QLabel("How can I help you today?")
         title.setObjectName("AssistantEmptyTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setWordWrap(True)
+        title.setMinimumWidth(0)
         empty_layout.addWidget(title)
+        self._empty_title = title
+        self._empty_layout = empty_layout
         description = QLabel(
             "Ask questions, work with audio, review transcripts, research the web, "
             "or automate your desktop with permission-aware tools."
         )
         description.setObjectName("AssistantEmptyDescription")
         description.setWordWrap(True)
+        description.setMinimumWidth(0)
         description.setMaximumWidth(620)
+        description.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         description.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(description)
         self.prompt_grid = QGridLayout()
@@ -85,9 +99,13 @@ class ConversationView(QFrame):
         """Use an even grid and collapse to one column when the chat is narrow."""
         while self.prompt_grid.count():
             self.prompt_grid.takeAt(0)
+        narrow = self.width() < 560
         columns = 2 if self.width() >= 680 else 1
         for index, button in enumerate(self._suggestion_buttons):
             row, column = divmod(index, columns)
+            button.setProperty("compact", narrow)
+            button.style().unpolish(button)
+            button.style().polish(button)
             self.prompt_grid.addWidget(button, row, column)
         self.prompt_grid.setColumnStretch(0, 1)
         self.prompt_grid.setColumnStretch(1, 1 if columns == 2 else 0)
@@ -152,15 +170,35 @@ class ConversationView(QFrame):
             self.jump_button.show()
 
     def _append_widget(self, role: str, text: str):
-        widget = MessageWidget(role, text, self.icons, self.content)
-        alignment = Qt.AlignmentFlag.AlignRight if role == "user" else Qt.AlignmentFlag.AlignLeft
-        self.content_layout.insertWidget(max(0, self.content_layout.count() - 1), widget, 0, alignment)
+        # Each message gets a full-width row. The card is aligned within that row,
+        # but always receives a bounded width so its markdown can wrap on narrow screens.
+        row = QWidget(self.content)
+        row.setObjectName("AssistantMessageRow")
+        row.setMinimumWidth(0)
+        row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(0)
+
+        widget = MessageWidget(role, text, self.icons, row)
+        widget.setMinimumWidth(0)
+        widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        if role == "user":
+            row_layout.addStretch(1)
+            row_layout.addWidget(widget, 0)
+        else:
+            row_layout.addWidget(widget, 0)
+            row_layout.addStretch(1)
+
+        self.content_layout.insertWidget(max(0, self.content_layout.count() - 1), row)
         self._widgets.append(widget)
+        self._rows.append(row)
 
     def _clear_message_widgets(self):
-        for widget in self._widgets:
-            widget.setParent(None)
-            widget.deleteLater()
+        for row in self._rows:
+            row.setParent(None)
+            row.deleteLater()
+        self._rows.clear()
 
     def scroll_to_latest(self):
         QTimer.singleShot(0, self._scroll_to_latest_now)
@@ -172,6 +210,21 @@ class ConversationView(QFrame):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        narrow = event.size().width() < 560
+        if narrow:
+            self.content_layout.setContentsMargins(8, 12, 8, 16)
+            self._empty_layout.setContentsMargins(8, 18, 8, 18)
+            self._empty_layout.setSpacing(9)
+            self.prompt_grid.setHorizontalSpacing(7)
+            self.prompt_grid.setVerticalSpacing(8)
+        else:
+            self.content_layout.setContentsMargins(18, 22, 18, 26)
+            self._empty_layout.setContentsMargins(18, 34, 18, 34)
+            self._empty_layout.setSpacing(12)
+            self.prompt_grid.setHorizontalSpacing(12)
+            self.prompt_grid.setVerticalSpacing(10)
         self._layout_prompt_suggestions()
+        for widget in self._widgets:
+            widget.body.refresh_document_size()
         if self._is_near_bottom():
             self.scroll_to_latest()

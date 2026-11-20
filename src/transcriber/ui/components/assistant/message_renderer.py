@@ -4,8 +4,8 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QImage, QTextDocument
-from PySide6.QtWidgets import QFrame, QSizePolicy, QTextBrowser
+from PySide6.QtGui import QDesktopServices, QImage, QTextDocument, QTextOption
+from PySide6.QtWidgets import QFrame, QSizePolicy, QTextBrowser, QTextEdit
 
 
 def _safe_markdown(source: str) -> str:
@@ -37,7 +37,12 @@ class SafeMarkdownBrowser(QTextBrowser):
         self.setSearchPaths([])
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        text_option = self.document().defaultTextOption()
+        text_option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        self.document().setDefaultTextOption(text_option)
+        self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.anchorClicked.connect(self._open_clicked_link)
 
@@ -58,7 +63,7 @@ class SafeMarkdownBrowser(QTextBrowser):
         self.refresh_document_size()
 
     def refresh_document_size(self):
-        width = max(220, self.viewport().width())
+        width = max(1, self.viewport().width())
         self.document().setTextWidth(width)
         height = int(self.document().documentLayout().documentSize().height()) + 18
         height = max(34, min(1800, height))

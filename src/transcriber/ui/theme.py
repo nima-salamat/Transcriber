@@ -91,7 +91,7 @@ def stylesheet(theme: str) -> str:
         border-radius: 11px;
         color: {c['text']};
         padding: 8px 11px;
-        min-width: 138px;
+        min-width: 0;
         min-height: 24px;
         font-weight: 650;
         text-align: left;
@@ -288,6 +288,13 @@ def stylesheet(theme: str) -> str:
     QPushButton#AssistantVoiceButton[active="true"] {{
         color: {c['success']};
         border-color: {c['success']};
+    }}
+    QPushButton#AssistantVoiceButton[iconOnly="true"] {{
+        padding: 0;
+        min-width: 42px;
+        max-width: 42px;
+        min-height: 42px;
+        max-height: 42px;
     }}
     QListWidget#AssistantSettingsNav {{
         background: {c['surface']};
@@ -606,6 +613,23 @@ def stylesheet(theme: str) -> str:
     QPushButton#AssistantSidebarAction:hover {{
         background: {c['surface_hover']};
     }}
+    QPushButton#AssistantSidebarAction[collapsed="true"] {{
+        text-align: center;
+        padding: 0;
+        min-width: 38px;
+        max-width: 38px;
+        min-height: 38px;
+        max-height: 38px;
+        border-radius: 10px;
+    }}
+    QWidget#AssistantSidebarFooterSpacer {{
+        background: transparent;
+        border: 0;
+    }}
+    QWidget#AssistantMessageRow {{
+        background: transparent;
+        border: 0;
+    }}
     QFrame#AssistantConversationHeader {{
         background: {c['window']};
         border-bottom: 1px solid {c['border']};
@@ -655,6 +679,11 @@ def stylesheet(theme: str) -> str:
     QPushButton#AssistantPromptSuggestion:hover {{
         background: {c['surface_hover']};
         border-color: {c['accent']};
+    }}
+    QPushButton#AssistantPromptSuggestion[compact="true"] {{
+        padding: 9px 10px;
+        min-height: 42px;
+        font-size: 11px;
     }}
     QFrame#AssistantMessage_user {{
         background: {c['surface_2']};

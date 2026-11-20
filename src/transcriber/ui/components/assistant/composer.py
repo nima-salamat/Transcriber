@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QFontMetrics, QKeyEvent
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
     QSizePolicy, QToolButton, QVBoxLayout, QWidget,
@@ -68,8 +68,9 @@ class ModelPicker(QFrame):
         self.button = QToolButton(self)
         self.button.setObjectName("AssistantModelPickerButton")
         self.button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.button.setIcon(icons.icon("models", size=17))
-        self.button.setText("Choose model")
+        self.button.setIcon(icons.icon("chevron_up", size=14))
+        self.button.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self.button.setText("OpenCode")
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.button.setToolTip("Choose the AI provider and model, then connect")
         self.button.setMinimumHeight(42)
@@ -182,10 +183,15 @@ class ModelPicker(QFrame):
         self._provider = provider
         model = str(self.model_combo.currentText() or "").strip()
         if not model or self.model_combo.currentData() in (None, ""):
-            model = "Choose model"
-        prefix = "Ollama" if provider == "ollama" else "OpenCode"
-        self.button.setText(model if model != "Choose model" else f"{prefix} · Choose model")
-        self.button.setToolTip(f"{prefix} · {model}. Open to change the model or connect.")
+            model = "Ollama" if provider == "ollama" else "OpenCode"
+        # Keep the model name as the only label; the up-chevron communicates
+        # that the selector expands. The tooltip retains the full unabridged name.
+        self.button.setToolTip(f"{provider.title()} · {model}. Open model selector.")
+        self.button.setText(QFontMetrics(self.button.font()).elidedText(
+            model,
+            Qt.TextElideMode.ElideMiddle,
+            max(72, self.button.width() - 48),
+        ))
 
     def set_connection_state(
         self,
@@ -301,6 +307,7 @@ class MessageComposer(QFrame):
         self.setMinimumWidth(0)
 
         root = QVBoxLayout(self)
+        self._root_layout = root
         root.setContentsMargins(12, 9, 12, 9)
         root.setSpacing(5)
 
@@ -402,6 +409,45 @@ class MessageComposer(QFrame):
         self.model_picker.status_label.setVisible(
             not self._compact_mode or self.width() >= 620
         )
+        very_narrow = self._compact_mode and self.width() < 440
+        if self._compact_mode:
+            self._root_layout.setContentsMargins(
+                7 if very_narrow else 10, 6 if very_narrow else 7,
+                7 if very_narrow else 10, 6 if very_narrow else 7,
+            )
+            self.bottom_row_layout.setSpacing(5 if very_narrow else 8)
+            self.model_picker.layout().setSpacing(4 if very_narrow else 7)
+            self.model_picker.button.setMinimumWidth(64 if very_narrow else 128)
+            self.model_picker.button.setMaximumWidth(92 if very_narrow else 230)
+            self.model_picker.retry_button.setFixedSize(
+                28 if very_narrow else 34, 28 if very_narrow else 34
+            )
+            self.model_picker.spinner.setFixedSize(
+                14 if very_narrow else 17, 14 if very_narrow else 17
+            )
+        else:
+            self._root_layout.setContentsMargins(12, 9, 12, 9)
+            self.bottom_row_layout.setSpacing(8)
+            self.model_picker.layout().setSpacing(7)
+            self.model_picker.button.setMinimumWidth(128)
+            self.model_picker.button.setMaximumWidth(230)
+            self.model_picker.retry_button.setFixedSize(34, 34)
+            self.model_picker.spinner.setFixedSize(17, 17)
+        if very_narrow:
+            self.voice_chat_button.setText("")
+            self.voice_chat_button.setFixedSize(42, 42)
+            self.voice_chat_button.setProperty("iconOnly", True)
+            self.voice_chat_button.setToolTip("Start voice")
+            self.voice_chat_button.setAccessibleName("Start voice conversation")
+        else:
+            self.voice_chat_button.setText("Start voice")
+            self.voice_chat_button.setMinimumSize(0, 42)
+            self.voice_chat_button.setMaximumSize(16777215, 42)
+            self.voice_chat_button.setProperty("iconOnly", False)
+            self.voice_chat_button.setToolTip("Start or stop local voice conversation")
+        self.voice_chat_button.style().unpolish(self.voice_chat_button)
+        self.voice_chat_button.style().polish(self.voice_chat_button)
+        self.model_picker._sync_button_text()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

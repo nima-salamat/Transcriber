@@ -16,6 +16,7 @@ class IconRegistry:
         "waveform": "audio-waveform.svg",
         "back": "chevron-left.svg",
         "forward": "chevron-right.svg",
+        "chevron_up": "chevron-up.svg",
         "activity": "list-checks.svg",
         "models": "layers.svg",
         "controls": "sliders-horizontal.svg",

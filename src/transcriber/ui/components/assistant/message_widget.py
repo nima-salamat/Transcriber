@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton, QVBoxLayout
 
 from .message_renderer import SafeMarkdownBrowser
 
@@ -13,7 +13,9 @@ class MessageWidget(QFrame):
         self.role = str(role or "assistant")
         self.icons = icons
         self.setObjectName(f"AssistantMessage_{self.role}")
+        self.setMinimumWidth(0)
         self.setMaximumWidth(960)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.setProperty("role", self.role)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
@@ -35,6 +37,8 @@ class MessageWidget(QFrame):
         layout.addLayout(header)
         self.body = SafeMarkdownBrowser(self)
         self.body.setObjectName("AssistantMessageBody")
+        self.body.setMinimumWidth(0)
+        self.body.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.body)
         self.update_text(text)
 

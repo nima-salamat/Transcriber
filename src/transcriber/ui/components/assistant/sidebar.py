@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 
 class AssistantSidebar(QFrame):
@@ -87,8 +87,19 @@ class AssistantSidebar(QFrame):
         self.empty_state.hide()
         layout.addWidget(self.empty_state)
 
+        # When the history is hidden in collapsed mode, this spacer takes its
+        # place so the Skills and Settings actions stay anchored to the bottom.
+        self.footer_spacer = QWidget(self)
+        self.footer_spacer.setObjectName("AssistantSidebarFooterSpacer")
+        self.footer_spacer.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
+        )
+        self.footer_spacer.hide()
+        layout.addWidget(self.footer_spacer, 1)
+
         footer = QFrame()
         footer.setObjectName("AssistantSidebarFooter")
+        self.footer = footer
         footer_layout = QVBoxLayout(footer)
         footer_layout.setContentsMargins(0, 8, 0, 0)
         footer_layout.setSpacing(5)
@@ -281,11 +292,18 @@ class AssistantSidebar(QFrame):
             self.search_status.hide()
             self.session_list.hide()
             self.empty_state.hide()
+            self.footer_spacer.show()
             self.provider_label.hide()
-            self.skills_button.setText("")
-            self.skills_button.setToolTip("Agent Skills")
-            self.settings_button.setText("")
-            self.settings_button.setToolTip("Assistant settings")
+            for button, tooltip in (
+                (self.skills_button, "Agent Skills"),
+                (self.settings_button, "Assistant settings"),
+            ):
+                button.setText("")
+                button.setToolTip(tooltip)
+                button.setFixedSize(38, 38)
+                button.setProperty("collapsed", True)
+                button.style().unpolish(button)
+                button.style().polish(button)
         else:
             self.setFixedWidth(264)
             self.brand_label.show()
@@ -294,11 +312,20 @@ class AssistantSidebar(QFrame):
             self.new_chat_button.setText("New chat")
             self.new_chat_button.setToolTip("Create a new conversation")
             self.search_input.show()
+            self.footer_spacer.hide()
             self.session_list.setVisible(self.session_list.count() > 0)
             self.empty_state.setVisible(self.session_list.count() == 0)
             self.provider_label.show()
-            self.skills_button.setText("Agent Skills")
-            self.settings_button.setText("Assistant settings")
+            for button, label in (
+                (self.skills_button, "Agent Skills"),
+                (self.settings_button, "Assistant settings"),
+            ):
+                button.setText(label)
+                button.setMinimumSize(0, 36)
+                button.setMaximumSize(16777215, 16777215)
+                button.setProperty("collapsed", False)
+                button.style().unpolish(button)
+                button.style().polish(button)
             self._apply_filter()
 
     def set_provider_summary(self, text: str):

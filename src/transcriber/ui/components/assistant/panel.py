@@ -297,6 +297,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
                 self.project_dir = Path(saved_project).resolve()
 
         root = QVBoxLayout(self)
+        self.root_layout = root
         root.setContentsMargins(16, 14, 16, 14)
         root.setSpacing(14)
 
@@ -363,9 +364,11 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.chat_workspace = QWidget()
         chat_workspace = self.chat_workspace
         chat_workspace.setObjectName("AssistantChatWorkspace")
+        chat_workspace.setMinimumWidth(0)
         self.chat_layout = QVBoxLayout(chat_workspace)
         self.chat_layout.setContentsMargins(18, 4, 10, 6)
         self.chat_layout.setSpacing(10)
+        chat_workspace.installEventFilter(self)
         self.conversation_header = ConversationHeader(self)
         self.session_title_label = self.conversation_header.title_label
         self.session_subtitle_label = self.conversation_header.subtitle_label
@@ -784,6 +787,26 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._refresh_chat()
         self._sync_voice_orb()
         QTimer.singleShot(0, self._auto_connect_provider)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        narrow = event.size().width() < 760
+        margins = (8, 8, 8, 8) if narrow else (16, 14, 16, 14)
+        if self.root_layout.getContentsMargins() != margins:
+            self.root_layout.setContentsMargins(*margins)
+
+    def eventFilter(self, watched, event):
+        if (
+            watched is getattr(self, "chat_workspace", None)
+            and event.type() == QEvent.Type.Resize
+            and hasattr(self, "chat_layout")
+        ):
+            narrow = event.size().width() < 560
+            margins = (7, 3, 7, 5) if narrow else (18, 4, 10, 6)
+            if self.chat_layout.getContentsMargins() != margins:
+                self.chat_layout.setContentsMargins(*margins)
+                self.chat_layout.setSpacing(7 if narrow else 10)
+        return super().eventFilter(watched, event)
 
     def _create_settings_section(self, title: str):
         """Create one scrollable settings page and its matching sidebar entry."""
