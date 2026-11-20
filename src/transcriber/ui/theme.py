@@ -80,6 +80,83 @@ def stylesheet(theme: str) -> str:
         background: {c['surface_hover']};
         border-color: {c['accent']};
     }}
+    QFrame#AssistantComposer {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 18px;
+    }}
+    QToolButton#AssistantModelPickerButton {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+        color: {c['text']};
+        padding: 8px 11px;
+        min-width: 138px;
+        min-height: 24px;
+        font-weight: 650;
+        text-align: left;
+    }}
+    QToolButton#AssistantModelPickerButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QFrame#AssistantModelPickerPopup {{
+        background: {c['surface']};
+        border: 0;
+    }}
+    QLabel#AssistantModelPickerCaption {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 750;
+        letter-spacing: 1px;
+    }}
+    QLabel#AssistantModelPickerMenuStatus {{
+        color: {c['muted']};
+        font-size: 11px;
+        padding-top: 3px;
+    }}
+    QLabel#AssistantModelConnectionStatus {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 650;
+        padding-left: 2px;
+    }}
+    QLabel#AssistantModelConnectionStatus[state="connected"] {{
+        color: {c['success']};
+    }}
+    QLabel#AssistantModelConnectionStatus[state="connecting"] {{
+        color: {c['warning']};
+    }}
+    QLabel#AssistantModelConnectionStatus[state="error"] {{
+        color: {c['danger']};
+    }}
+    QProgressBar#AssistantConnectionSpinner {{
+        border: 0;
+        background: transparent;
+        min-width: 16px;
+        max-width: 16px;
+        min-height: 16px;
+        max-height: 16px;
+    }}
+    QProgressBar#AssistantConnectionSpinner::chunk {{
+        background: {c['accent']};
+        border-radius: 7px;
+    }}
+    QPushButton#AssistantModelConnectButton {{
+        background: {c['accent']};
+        color: white;
+        border: 0;
+        border-radius: 9px;
+        padding: 7px 14px;
+        font-weight: 700;
+    }}
+    QPushButton#AssistantModelConnectButton:hover {{
+        background: {c['accent_hover']};
+    }}
+    QPushButton#AssistantModelConnectButton:disabled {{
+        background: {c['surface_2']};
+        color: {c['muted']};
+    }}
     QComboBox#AssistantProviderSelect, QComboBox#AssistantModelSelect {{
         min-height: 36px;
         padding: 5px 10px;
@@ -126,12 +203,18 @@ def stylesheet(theme: str) -> str:
         background: {c['accent']};
         color: white;
         border: 0;
-        border-radius: 11px;
-        min-height: 38px;
-        padding: 0 16px;
-        font-weight: 700;
+        border-radius: 21px;
+        min-width: 42px;
+        max-width: 42px;
+        min-height: 42px;
+        max-height: 42px;
+        padding: 0;
     }}
     QPushButton#AssistantSendButton:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#AssistantSendButton:disabled {{
+        background: {c['surface_2']};
+        color: {c['muted']};
+    }}
     QPushButton#AssistantSendButton:disabled {{
         background: {c['surface_2']};
         color: {c['muted']};
@@ -148,6 +231,35 @@ def stylesheet(theme: str) -> str:
     QPushButton#AssistantVoiceButton[active="true"] {{
         color: {c['success']};
         border-color: {c['success']};
+    }}
+    QListWidget#AssistantSettingsNav {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+        padding: 7px;
+        outline: none;
+    }}
+    QListWidget#AssistantSettingsNav::item {{
+        color: {c['muted']};
+        background: transparent;
+        border-radius: 8px;
+        padding: 11px 12px;
+        margin: 2px 0;
+        font-size: 12px;
+        font-weight: 600;
+    }}
+    QListWidget#AssistantSettingsNav::item:hover {{
+        color: {c['text']};
+        background: {c['surface_hover']};
+    }}
+    QListWidget#AssistantSettingsNav::item:selected {{
+        color: {c['text']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+    }}
+    QStackedWidget#AssistantSettingsSectionStack {{
+        background: transparent;
+        border: 0;
     }}
     QCheckBox#AssistantAgentMode {{
         color: {c['muted']};
@@ -469,12 +581,19 @@ def stylesheet(theme: str) -> str:
         color: {c['muted']};
         font-size: 13px;
     }}
+    QFrame#AssistantEmptyState {{
+        background: transparent;
+        border: 0;
+    }}
     QPushButton#AssistantPromptSuggestion {{
         background: {c['surface']};
         border: 1px solid {c['border']};
-        border-radius: 11px;
-        padding: 9px 12px;
+        border-radius: 12px;
+        padding: 13px 15px;
+        min-width: 0;
         text-align: left;
+        font-size: 12px;
+        font-weight: 650;
     }}
     QPushButton#AssistantPromptSuggestion:hover {{
         background: {c['surface_hover']};
