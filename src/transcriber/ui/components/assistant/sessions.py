@@ -148,8 +148,6 @@ class AssistantSessionMixin:
         self._active_opencode_session_id = str(metadata.get("opencode_session_id") or "")
         self._session_requested_ollama_model = str(metadata.get("ollama_model") or "")
         self._streaming_index = None
-        if hasattr(self, "agent_thinking"):
-            self.agent_thinking.reset()
         self._apply_provider_ui()
         self.sidebar.set_active_session(self._active_session_id)
         self._refresh_chat(scroll_to_bottom=True)

@@ -34,6 +34,11 @@ class OllamaCancellation:
     def cancelled(self) -> bool:
         return self._event.is_set()
 
+    @property
+    def event(self):
+        """Expose the cancellation event to permission-aware action dispatchers."""
+        return self._event
+
     def attach(self, response) -> None:
         with self._lock:
             self._response = response
@@ -126,6 +131,7 @@ class OllamaClient:
         payload: dict | None = None,
         *,
         timeout: float | None = None,
+        cancellation: OllamaCancellation | None = None,
     ):
         body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = Request(
@@ -135,17 +141,38 @@ class OllamaClient:
             headers={"Accept": "application/json", "Content-Type": "application/json"},
         )
         request_timeout = self.timeout if timeout is None else max(1.0, float(timeout))
+        response = None
         try:
-            with self._open(request, timeout=request_timeout) as response:
-                raw = response.read()
+            if cancellation:
+                cancellation.raise_if_cancelled()
+            response = self._open(request, timeout=request_timeout)
+            if cancellation:
+                cancellation.attach(response)
+            raw = response.read()
+        except OllamaCancelled:
+            raise
         except OllamaError:
+            if cancellation and cancellation.cancelled:
+                raise OllamaCancelled("Ollama model loading was cancelled.")
             raise
         except TimeoutError as exc:
+            if cancellation and cancellation.cancelled:
+                raise OllamaCancelled("Ollama model loading was cancelled.") from exc
             raise OllamaError(
                 f"Ollama timed out while reading {endpoint} after {request_timeout:g}s."
             ) from exc
         except (OSError, ValueError) as exc:
+            if cancellation and cancellation.cancelled:
+                raise OllamaCancelled("Ollama model loading was cancelled.") from exc
             raise OllamaError(f"Ollama request to {endpoint} failed: {exc}") from exc
+        finally:
+            if cancellation and response is not None:
+                cancellation.detach(response)
+            if response is not None:
+                try:
+                    response.close()
+                except Exception:
+                    pass
         try:
             data = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -154,8 +181,10 @@ class OllamaClient:
             raise OllamaError(str(data["error"]))
         return data
 
-    def list_models(self) -> list[dict[str, str]]:
-        data = self._json_request("GET", "/api/tags")
+    def list_models(
+        self, *, cancellation: OllamaCancellation | None = None
+    ) -> list[dict[str, str]]:
+        data = self._json_request("GET", "/api/tags", cancellation=cancellation)
         raw_models = data.get("models", []) if isinstance(data, dict) else []
         models = []
         for item in raw_models:
@@ -176,12 +205,16 @@ class OllamaClient:
                 })
         return sorted(models, key=lambda item: item["name"].casefold())
 
-    def show_model(self, model: str) -> dict:
+    def show_model(
+        self, model: str, *, cancellation: OllamaCancellation | None = None
+    ) -> dict:
         """Read /api/show metadata, including the model's supported thinking controls."""
         selected = str(model or "").strip()
         if not selected:
             raise ValueError("Select an installed Ollama model first.")
-        result = self._json_request("POST", "/api/show", {"model": selected})
+        result = self._json_request(
+            "POST", "/api/show", {"model": selected}, cancellation=cancellation
+        )
         return result if isinstance(result, dict) else {}
 
     @staticmethod
@@ -207,6 +240,7 @@ class OllamaClient:
         *,
         keep_alive: str = "30m",
         timeout: float | None = None,
+        cancellation: OllamaCancellation | None = None,
     ) -> dict:
         selected = str(model or "").strip()
         if not selected:
@@ -219,6 +253,7 @@ class OllamaClient:
             "/api/chat",
             {"model": selected, "messages": [], "stream": False, "keep_alive": keep_alive},
             timeout=self.model_load_timeout if timeout is None else timeout,
+            cancellation=cancellation,
         )
 
     def chat(

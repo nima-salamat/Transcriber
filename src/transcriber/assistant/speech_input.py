@@ -111,6 +111,7 @@ class VoskVoiceAgent:
         self._metrics_lock = threading.Lock()
         self._audio_queue: queue.Queue[bytes] | None = None
         self._stop_event = threading.Event()
+        self._shutdown_requested = threading.Event()
         self._ptt_requested = threading.Event()
         self._resume_requested = threading.Event()
         self._worker: threading.Thread | None = None
@@ -129,6 +130,15 @@ class VoskVoiceAgent:
         with self._lock:
             return self._mode
 
+    @property
+    def shutdown_requested(self) -> bool:
+        return self._shutdown_requested.is_set()
+
+    @property
+    def shutdown_complete(self) -> bool:
+        worker = self._worker
+        return worker is None or not worker.is_alive()
+
     def _new_wake_recognizer(self):
         from vosk import KaldiRecognizer
 
@@ -139,6 +149,8 @@ class VoskVoiceAgent:
         return recognizer
 
     def start(self):
+        if self._shutdown_requested.is_set():
+            raise RuntimeError("Voice agent has already been shut down.")
         if not self.wake_phrase:
             raise ValueError("Wake phrase cannot be empty")
         try:
@@ -155,7 +167,12 @@ class VoskVoiceAgent:
                 raise RuntimeError(
                     "The previous voice recognition worker is still shutting down."
                 )
+            if self._shutdown_requested.is_set():
+                raise RuntimeError("Voice agent startup was cancelled.")
             self._model = Model(self.model_path)
+            if self._shutdown_requested.is_set():
+                self._model = None
+                raise RuntimeError("Voice agent startup was cancelled.")
             self._wake_recognizer = self._new_wake_recognizer()
             self._command_recognizer = None
             self._audio_queue = queue.Queue(maxsize=self.queue_chunks)
@@ -181,7 +198,13 @@ class VoskVoiceAgent:
             self._stream = stream
             self._worker.start()
         try:
+            if self._shutdown_requested.is_set():
+                self.stop()
+                return
             stream.start()
+            if self._shutdown_requested.is_set():
+                self.stop()
+                return
         except Exception:
             self.stop()
             raise
@@ -532,4 +555,6 @@ class VoskVoiceAgent:
         self._notify("Voice agent stopped")
 
     def close(self):
+        """Permanently prevent pending or future starts, then release the microphone."""
+        self._shutdown_requested.set()
         self.stop()

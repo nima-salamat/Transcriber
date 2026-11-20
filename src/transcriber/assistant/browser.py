@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import time
+import threading
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import quote, urlparse
@@ -27,6 +28,9 @@ class WindowsBrowserController:
         self.profile_directory = Path(profile_directory).expanduser()
         self._port: int | None = None
         self._process: subprocess.Popen | None = None
+        self._closing = False
+        self._closing_event = threading.Event()
+        self._lock = threading.RLock()
 
     @staticmethod
     def _find_browser() -> str | None:
@@ -66,6 +70,14 @@ class WindowsBrowserController:
             return False
 
     def _ensure_browser(self) -> int:
+        # Serialize startup and shutdown so a browser cannot appear after the
+        # application has begun closing.
+        with self._lock:
+            return self._ensure_browser_locked()
+
+    def _ensure_browser_locked(self) -> int:
+        if self._closing or self._closing_event.is_set():
+            raise BrowserAutomationError("Browser automation is shutting down.")
         if self._port and self._debug_endpoint_ready(self._port):
             if self._process is None or self._process.poll() is None:
                 return self._port
@@ -107,18 +119,24 @@ class WindowsBrowserController:
                 stderr=subprocess.DEVNULL,
                 close_fds=True,
                 creationflags=creationflags,
+                start_new_session=(sys.platform != "win32"),
             )
         except OSError as exc:
             raise BrowserAutomationError(f"Could not start the browser: {exc}") from exc
         deadline = time.monotonic() + 20.0
         while time.monotonic() < deadline:
+            if self._closing_event.is_set():
+                process, self._process = self._process, None
+                self._terminate_owned_process(process)
+                raise BrowserAutomationError("Browser startup was cancelled during shutdown.")
             if self._process.poll() is not None:
                 raise BrowserAutomationError("The browser exited before its automation endpoint became ready.")
             if self._debug_endpoint_ready(port):
                 self._port = port
                 return port
             time.sleep(0.2)
-        self._process.terminate()
+        process, self._process = self._process, None
+        self._terminate_owned_process(process)
         raise BrowserAutomationError("The browser did not start its local automation endpoint in time.")
 
     def _with_page(self, callback):
@@ -285,16 +303,59 @@ class WindowsBrowserController:
             return {"path": str(target), "url": page.url, "title": page.title()}
         return self._with_page(capture)
 
-    def close(self) -> dict:
-        process = self._process
-        self._process = None
-        self._port = None
-        if process is None or process.poll() is not None:
-            return {"closed": True, "already_closed": True}
-        process.terminate()
+    @staticmethod
+    def _terminate_owned_process(process: subprocess.Popen | None) -> None:
+        """Stop the browser process tree owned by this controller, not user browsers."""
+        if process is None:
+            return
+        if os.name == "nt" and process.poll() is None:
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    timeout=8,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        else:
+            try:
+                import signal
+                os.killpg(process.pid, signal.SIGTERM)
+            except (OSError, ProcessLookupError):
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                try:
+                    import signal
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (OSError, ProcessLookupError):
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
         try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
             process.wait(timeout=3)
-        return {"closed": True}
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                process.kill()
+                process.wait(timeout=2)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+
+    def close(self) -> dict:
+        self._closing_event.set()
+        with self._lock:
+            self._closing = True
+            process, self._process = self._process, None
+            self._port = None
+        already_closed = process is None or process.poll() is not None
+        self._terminate_owned_process(process)
+        return {"closed": True, "already_closed": already_closed}

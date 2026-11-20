@@ -16,7 +16,7 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -63,6 +63,7 @@ class _Operation:
     error: str | None = None
     future: Future | None = None
     timer: threading.Timer | None = None
+    cancel_event: threading.Event = dataclass_field(default_factory=threading.Event)
 
 
 class OperationManager:
@@ -75,10 +76,14 @@ class OperationManager:
         max_workers: int = 4,
         max_outstanding: int = 128,
         history_limit: int = 512,
+        cancellable_action_handler: Callable[[str, dict[str, Any], threading.Event], Any] | None = None,
     ) -> None:
         if not callable(action_handler):
             raise TypeError("action_handler must be callable")
+        if cancellable_action_handler is not None and not callable(cancellable_action_handler):
+            raise TypeError("cancellable_action_handler must be callable")
         self._handler = action_handler
+        self._cancellable_handler = cancellable_action_handler
         self._max_outstanding = max(1, min(int(max_outstanding), 1024))
         self._history_limit = max(16, min(int(history_limit), 4096))
         self._executor = ThreadPoolExecutor(
@@ -246,6 +251,9 @@ class OperationManager:
             item.state = OperationState.RUNNING
             item.updated_at = self._timestamp()
             action, arguments = item.action, dict(item.arguments)
+            cancel_event = item.cancel_event
+        if self._cancellable_handler is not None:
+            return self._cancellable_handler(action, arguments, cancel_event)
         return self._handler(action, arguments)
 
     def _finish(self, operation_id: str, future: Future) -> None:
@@ -302,6 +310,7 @@ class OperationManager:
                 return
             item.deadline_expired = True
             item.cancellation_requested = True
+            item.cancel_event.set()
             if item.future is not None and item.future.cancel():
                 item.state = OperationState.TIMED_OUT
                 item.error = "Deadline elapsed before execution"
@@ -324,6 +333,7 @@ class OperationManager:
             if item.state in _TERMINAL_STATES:
                 return self._snapshot(item)
             item.cancellation_requested = True
+            item.cancel_event.set()
             if item.future is not None and item.future.cancel():
                 item.state = OperationState.CANCELLED
                 item.error = None
@@ -361,6 +371,15 @@ class OperationManager:
             if self._idempotency.get(item.idempotency_key) == item.operation_id:
                 self._idempotency.pop(item.idempotency_key, None)
 
+    @property
+    def is_idle(self) -> bool:
+        """True only when every accepted operation future has actually finished."""
+        with self._lock:
+            return all(
+                item.future is None or item.future.done()
+                for item in self._operations.values()
+            )
+
     def shutdown(self, *, wait: bool = False) -> None:
         with self._lock:
             if self._closed:
@@ -372,6 +391,7 @@ class OperationManager:
                     item.timer = None
                 if item.state not in _TERMINAL_STATES:
                     item.cancellation_requested = True
+                    item.cancel_event.set()
                     if item.future is not None and item.future.cancel():
                         item.state = OperationState.CANCELLED
                     else:

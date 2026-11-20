@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QEasingCurve, QObject, QPropertyAnimation, Qt, QTimer, Signal
@@ -277,6 +278,11 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._agent_turn_active = False
         self._stop_requested = False
         self._pending_session_switch = None
+        self._shutting_down = False
+        self._model_load_cancellation = None
+        self._shutdown_threads: list[threading.Thread] = []
+        self._closing_voice_agents: list[object] = []
+        self._closing_opencode_clients: list[object] = []
         self._connection_busy = False
         self._streaming_index: int | None = None
         self._session_file = self.paths.config / "opencode-session.json"
@@ -961,12 +967,57 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         }]
 
     def shutdown(self):
+        """Cancel active providers and queue owned-resource cleanup before pool drain."""
+        if getattr(self, "_shutting_down", False):
+            return
+        self._shutting_down = True
+        self._stop_requested = True
+        self._start_voice_after_connect = False
+        self._voice_conversation_mode = False
+        self._pending_session_switch = None
+        self._pending_opencode_browser_fallback = None
+        self._pending_opencode_recovery = ""
         self._session_persist_timer.stop()
+        self._chat_refresh_timer.stop()
         self._persist_current_session()
+
+        if self._model_load_cancellation is not None:
+            self._model_load_cancellation.cancel()
+        refresh_cancellation = getattr(self, "_ollama_refresh_cancellation", None)
+        if refresh_cancellation is not None:
+            refresh_cancellation.cancel()
+        if self._ollama_cancellation is not None:
+            self._ollama_cancellation.cancel()
+
+        cleanup_targets = []
         if self.voice_agent:
             agent, self.voice_agent = self.voice_agent, None
-            worker = FunctionWorker(lambda _emit: agent.stop())
-            self.thread_pool.start(worker)
-        if self.client:
-            self.client.close()
-            self.client = None
+            self._closing_voice_agents.append(agent)
+            cleanup_targets.append(("Transcriber-voice-shutdown", agent.close))
+
+        client, self.client = self.client, None
+        if client:
+            self._closing_opencode_clients.append(client)
+            cleanup_targets.append(("Transcriber-opencode-shutdown", client.close))
+
+        # Never queue cleanup behind Agent calls in the same QThreadPool.
+        # A blocked ACP prompt or microphone start must not prevent its own close.
+        for name, target in cleanup_targets:
+            worker = threading.Thread(target=target, name=name, daemon=True)
+            self._shutdown_threads.append(worker)
+            worker.start()
+
+    @property
+    def shutdown_complete(self) -> bool:
+        threads_stopped = all(
+            not worker.is_alive() for worker in self._shutdown_threads
+        )
+        voice_stopped = all(
+            bool(getattr(agent, "shutdown_complete", True))
+            for agent in self._closing_voice_agents
+        )
+        opencode_stopped = all(
+            bool(getattr(client, "shutdown_complete", True))
+            for client in self._closing_opencode_clients
+        )
+        return threads_stopped and voice_stopped and opencode_stopped

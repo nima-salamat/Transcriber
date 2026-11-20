@@ -7,11 +7,18 @@ arbitrary attribute paths, shell commands, Python expressions or Qt widgets.
 from __future__ import annotations
 
 import threading
+from concurrent.futures import CancelledError
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from transcriber.assistant.permissions import DEFAULT_PERMISSIONS, AgentPermission, PermissionDenied
+
+
+def _direct_dispatch(handler, arguments, cancel_event=None):
+    if cancel_event is not None and cancel_event.is_set():
+        raise CancelledError("Action cancelled before dispatch.")
+    return handler(arguments)
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +31,9 @@ class ActionSpec:
     destructive: bool = False
     requires_approval: bool = False
     background: bool = False
+    cancellation_handler: Callable[[dict[str, Any], threading.Event], Any] | None = field(
+        default=None, compare=False, repr=False
+    )
 
     def public_schema(self) -> dict[str, Any]:
         return {
@@ -47,7 +57,7 @@ class ActionRegistry:
         approval_dispatcher: Callable[[Callable, dict[str, Any]], Any] | None = None,
     ):
         self.permissions = set(DEFAULT_PERMISSIONS if permissions is None else permissions)
-        self.dispatcher = dispatcher or (lambda handler, arguments: handler(arguments))
+        self.dispatcher = dispatcher or _direct_dispatch
         self.approval_dispatcher = approval_dispatcher or self.dispatcher
         self.approval = approval
         self._actions: dict[str, ActionSpec] = {}
@@ -70,8 +80,27 @@ class ActionRegistry:
                 result.append(row)
         return result
 
-    def execute(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
+    def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+        *,
+        cancellation=None,
+    ) -> Any:
         args = dict(arguments or {})
+        cancel_event = (
+            getattr(cancellation, "event", None)
+            if cancellation is not None else None
+        )
+        if cancel_event is None and callable(getattr(cancellation, "is_set", None)):
+            cancel_event = cancellation
+
+        def ensure_active():
+            cancelled = bool(getattr(cancellation, "cancelled", False))
+            if cancelled or (cancel_event is not None and cancel_event.is_set()):
+                raise CancelledError("Agent action was cancelled before completion.")
+
+        ensure_active()
         with self._lock:
             spec = self._actions.get(name)
         if spec is None:
@@ -86,17 +115,30 @@ class ActionRegistry:
         if spec.destructive or spec.requires_approval:
             if self.approval is None:
                 raise PermissionDenied("This operation requires explicit user approval")
-            approved = self.approval_dispatcher(
-                lambda payload: self.approval(payload[0], payload[1]),
-                (spec, args),
-            )
+            approval_callback = lambda payload: self.approval(payload[0], payload[1])
+            if cancel_event is None:
+                approved = self.approval_dispatcher(approval_callback, (spec, args))
+            else:
+                approved = self.approval_dispatcher(
+                    approval_callback, (spec, args), cancel_event
+                )
+            ensure_active()
             if not approved:
                 raise PermissionDenied("The user denied this Agent action")
         # I/O-bound tools run on the caller's worker thread. Qt/domain handlers
         # still use the GUI dispatcher so they never touch widgets off-thread.
+        ensure_active()
         if spec.background:
-            return spec.handler(args)
-        return self.dispatcher(spec.handler, args)
+            if cancel_event is not None and spec.cancellation_handler is not None:
+                result = spec.cancellation_handler(args, cancel_event)
+            else:
+                result = spec.handler(args)
+        elif cancel_event is not None:
+            result = self.dispatcher(spec.handler, args, cancel_event)
+        else:
+            result = self.dispatcher(spec.handler, args)
+        ensure_active()
+        return result
 
     def set_permission(self, permission: AgentPermission, enabled: bool) -> None:
         if permission == AgentPermission.READ_ONLY and not enabled:

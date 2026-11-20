@@ -802,6 +802,37 @@ def stylesheet(theme: str) -> str:
         font-size: 11px;
         selection-background-color: {c['accent']};
     }}
+    QFrame#AssistantInlineThinking {{
+        background: transparent;
+        border: 0;
+        border-radius: 7px;
+    }}
+    QToolButton#AssistantInlineThinkingToggle {{
+        color: {c['muted']};
+        background: transparent;
+        border: 0;
+        border-radius: 6px;
+        padding: 2px 4px;
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QToolButton#AssistantInlineThinkingToggle:hover {{
+        color: {c['text']};
+        background: {c['surface_hover']};
+    }}
+    QLabel#AssistantInlineThinkingStatus {{
+        color: {c['muted']};
+        font-size: 10px;
+    }}
+    QPlainTextEdit#AssistantInlineThinkingBody {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 7px;
+        padding: 6px 8px;
+        font-size: 11px;
+        selection-background-color: {c['accent']};
+    }}
     QLabel#AssistantActivityDetail {{
         color: {c['muted']};
         font-size: 11px;

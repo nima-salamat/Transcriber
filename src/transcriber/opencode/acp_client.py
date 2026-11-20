@@ -107,16 +107,29 @@ class OpenCodeACPClient:
         self._stderr_reader: threading.Thread | None = None
         self._stderr_tail: list[str] = []
         self._closed = threading.Event()
+        self._close_requested = threading.Event()
 
     @property
     def connected(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
     @property
+    def shutdown_complete(self) -> bool:
+        if self.process is not None and self.process.poll() is None:
+            return False
+        current = threading.current_thread()
+        return all(
+            reader is None or reader is current or not reader.is_alive()
+            for reader in (self._reader, self._stderr_reader)
+        )
+
+    @property
     def stderr_tail(self) -> str:
         return "".join(self._stderr_tail[-40:])
 
     def start(self, *, timeout: float = 20.0) -> dict[str, Any]:
+        if self._close_requested.is_set():
+            raise ACPError("OpenCode ACP startup was cancelled because the application is closing.")
         if self.connected:
             return self.agent_capabilities
         if not self.cwd.is_absolute() or not self.cwd.is_dir():
@@ -124,13 +137,21 @@ class OpenCodeACPClient:
         resolved = resolve_opencode_executable(self.executable)
         command, launch_options = build_opencode_invocation(resolved, ["acp"])
         try:
-            self.process = subprocess.Popen(
+            process = subprocess.Popen(
                 command, cwd=self.cwd, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                 encoding="utf-8", errors="replace", bufsize=1,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                start_new_session=(os.name != "nt"),
                 **launch_options,
             )
+            self.process = process
+            if self._close_requested.is_set():
+                self.process = None
+                self._terminate_process_tree(process)
+                raise ACPError(
+                    "OpenCode ACP startup was cancelled because the application is closing."
+                )
         except OSError as exc:
             hint = ""
             if os.name == "nt" and getattr(exc, "winerror", None) == 193:
@@ -296,22 +317,70 @@ class OpenCodeACPClient:
             detail = self.stderr_tail.strip()
             raise ACPError("OpenCode ACP is not connected" + (f": {detail}" if detail else ""))
 
-    def close(self, *, terminate_timeout: float = 4.0) -> None:
-        process, self.process = self.process, None
-        if process is None:
-            return
-        self._closed.set()
-        try:
-            if process.stdin:
-                process.stdin.close()
-            process.wait(timeout=terminate_timeout)
-        except (OSError, subprocess.TimeoutExpired):
-            process.terminate()
+    @staticmethod
+    def _terminate_process_tree(process: subprocess.Popen) -> None:
+        """Terminate this ACP process and any MCP children it spawned."""
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    timeout=8,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        else:
+            try:
+                import signal
+                os.killpg(process.pid, signal.SIGTERM)
+            except (OSError, ProcessLookupError):
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
             try:
                 process.wait(timeout=2)
             except subprocess.TimeoutExpired:
+                try:
+                    import signal
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (OSError, ProcessLookupError):
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+        try:
+            process.wait(timeout=3)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
                 process.kill()
                 process.wait(timeout=2)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+
+    def close(self, *, terminate_timeout: float = 2.0) -> None:
+        self._close_requested.set()
+        process, self.process = self.process, None
+        self._closed.set()
+        if process is None:
+            return
+        try:
+            with self._write_lock:
+                if process.stdin:
+                    process.stdin.close()
+            process.wait(timeout=max(0.2, float(terminate_timeout)))
+        except (OSError, subprocess.TimeoutExpired):
+            self._terminate_process_tree(process)
+        # The protocol reader releases every pending request with an ACPError
+        # when stdout closes. Join readers so the client leaves no threads behind.
+        current = threading.current_thread()
+        for reader in (self._reader, self._stderr_reader):
+            if reader is not None and reader is not current and reader.is_alive():
+                reader.join(timeout=1.5)
         self.session_id = None
 
     def __enter__(self):

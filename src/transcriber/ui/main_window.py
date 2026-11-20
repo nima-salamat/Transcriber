@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import wave
 from concurrent.futures import CancelledError, Future
 from pathlib import Path
@@ -174,6 +176,14 @@ class MainWindow(QMainWindow):
             dispatcher=self.dispatcher, approval=self._approve_agent_action,
         )
         self._waveform_generation = 0
+        self._shutdown_started = False
+        self._shutdown_complete = False
+        self._active_agent_approval: QMessageBox | None = None
+        self._shutdown_browser_thread: threading.Thread | None = None
+        self._shutdown_started_at = 0.0
+        self._shutdown_timer = QTimer(self)
+        self._shutdown_timer.setInterval(100)
+        self._shutdown_timer.timeout.connect(self._poll_shutdown)
         self.thread_pool.setMaxThreadCount(max(2, min(8, settings_store.settings.download_concurrency + 2)))
         self.setWindowTitle("Transcriber")
         self.setMinimumSize(760, 500)
@@ -182,7 +192,14 @@ class MainWindow(QMainWindow):
         self._connect_pages()
         self._register_agent_actions()
         self.assistant_panel.set_agent_runtime(self.action_registry)
-        self.operation_manager = OperationManager(self.action_registry.execute)
+        self.operation_manager = OperationManager(
+            self.action_registry.execute,
+            cancellable_action_handler=lambda name, arguments, cancel_event: (
+                self.action_registry.execute(
+                    name, arguments, cancellation=cancel_event
+                )
+            ),
+        )
         self._start_local_ipc()
         self._restore_geometry()
         self.apply_theme(settings_store.settings.theme)
@@ -1131,6 +1148,7 @@ class MainWindow(QMainWindow):
             required=("command",),
             requires_approval=True,
             background=True,
+            cancellation_handler=self._run_agent_command_cancellable,
         ))
         register(ActionSpec(
             "agent.skills_search",
@@ -1428,7 +1446,129 @@ class MainWindow(QMainWindow):
             }
         raise ValueError("Choose a predefined desktop shortcut.")
 
-    def _agent_run_command(self, args):
+    @staticmethod
+    def _terminate_agent_command_tree(process: subprocess.Popen) -> None:
+        """Terminate a PowerShell command and its children during cancellation."""
+        if process.poll() is not None:
+            return
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=8,
+                    check=False,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        else:
+            try:
+                import signal
+                os.killpg(process.pid, signal.SIGTERM)
+            except (OSError, ProcessLookupError):
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                try:
+                    import signal
+                    os.killpg(process.pid, signal.SIGKILL)
+                except (OSError, ProcessLookupError):
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+        try:
+            process.wait(timeout=3)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                process.kill()
+                process.wait(timeout=2)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+
+    def _run_agent_command_cancellable(
+        self,
+        command_line: list[str],
+        *,
+        cwd: str,
+        command: str,
+        timeout: int,
+        cancel_event: threading.Event,
+    ):
+        if cancel_event.is_set():
+            raise CancelledError("Agent command was cancelled before it started.")
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if os.name == "nt":
+            flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        process = subprocess.Popen(
+            command_line,
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=False,
+            creationflags=flags,
+            start_new_session=(os.name != "nt"),
+        )
+        deadline = time.monotonic() + timeout
+        try:
+            while True:
+                if cancel_event.is_set():
+                    self._terminate_agent_command_tree(process)
+                    try:
+                        process.communicate(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    raise CancelledError("Agent command was cancelled during application shutdown.")
+                try:
+                    stdout, stderr = process.communicate(timeout=0.1)
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() < deadline:
+                        continue
+                    self._terminate_agent_command_tree(process)
+                    try:
+                        stdout, stderr = process.communicate(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        stdout, stderr = "", ""
+                    return {
+                        "timed_out": True,
+                        "timeout_seconds": timeout,
+                        "stdout": (stdout or "")[-8000:],
+                        "stderr": (stderr or "")[-4000:],
+                        "command": command,
+                    }
+        except BaseException:
+            if process.poll() is None:
+                self._terminate_agent_command_tree(process)
+                try:
+                    process.communicate(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
+            raise
+        stdout = stdout or ""
+        stderr = stderr or ""
+        return {
+            "exit_code": process.returncode,
+            "cwd": cwd,
+            "command": command,
+            "stdout": stdout[:12_000],
+            "stderr": stderr[:6_000],
+            "truncated": len(stdout) > 12_000 or len(stderr) > 6_000,
+            "timed_out": False,
+        }
+
+    def _agent_run_command(self, args, *, cancel_event=None):
         """Execute an explicitly approved PowerShell command without elevation or shell=True."""
         if sys.platform != "win32":
             raise RuntimeError("Custom command execution is currently supported on Windows only.")
@@ -1476,9 +1616,20 @@ class MainWindow(QMainWindow):
             "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; "
             "$ErrorActionPreference = 'Stop'; " + command
         )
+        command_line = [
+            powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script
+        ]
+        if cancel_event is not None:
+            return self._run_agent_command_cancellable(
+                command_line,
+                cwd=str(working_directory),
+                command=command,
+                timeout=timeout,
+                cancel_event=cancel_event,
+            )
         try:
             result = subprocess.run(
-                [powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+                command_line,
                 cwd=str(working_directory),
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
@@ -1519,6 +1670,8 @@ class MainWindow(QMainWindow):
         }
 
     def _approve_agent_action(self, spec, args):
+        if self._shutdown_started:
+            return False
         details = json.dumps(args, ensure_ascii=False, indent=2, default=str)
         dialog = QMessageBox(self)
         dialog.setWindowTitle("Agent action confirmation")
@@ -1532,7 +1685,12 @@ class MainWindow(QMainWindow):
         dialog.setDetailedText(details)
         dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         dialog.setDefaultButton(QMessageBox.No)
-        return dialog.exec() == QMessageBox.Yes
+        self._active_agent_approval = dialog
+        try:
+            return dialog.exec() == QMessageBox.Yes
+        finally:
+            if self._active_agent_approval is dialog:
+                self._active_agent_approval = None
 
     def _apply_sidebar_collapsed_state(self, collapsed: bool, *, persist: bool = True):
         self._sidebar_collapsed = bool(collapsed)
@@ -1869,6 +2027,12 @@ class MainWindow(QMainWindow):
         event.acceptProposedAction()
 
     def closeEvent(self, event):
+        if self._shutdown_complete:
+            super().closeEvent(event)
+            return
+        if self._shutdown_started:
+            event.ignore()
+            return
         if self.recording_page.recorder._state in {"recording", "paused"}:
             answer = QMessageBox.question(
                 self, "Recording in progress", "Save the active recording before closing?",
@@ -1881,9 +2045,19 @@ class MainWindow(QMainWindow):
                 self.recording_page.stop_recording()
             else:
                 self.recording_page.cancel_recording()
-        self.audio_cleanup_page.shutdown()
-        self.audio_page.shutdown()
-        self.batch_page.shutdown()
+        event.ignore()
+        self._begin_shutdown()
+
+    def _begin_shutdown(self):
+        """Start an asynchronous, observable shutdown without blocking the Qt event loop."""
+        if self._shutdown_started:
+            return
+        self._shutdown_started = True
+        self._shutdown_started_at = time.monotonic()
+        if self._active_agent_approval is not None:
+            self._active_agent_approval.reject()
+        self.statusBar().showMessage("Stopping agents, audio devices and background tasks…")
+
         self.settings_store.update(
             geometry=bytes(self.saveGeometry().toBase64()).decode("ascii"),
             window_state=(
@@ -1895,27 +2069,73 @@ class MainWindow(QMainWindow):
             inspector_visible=not self.assistant_dock.isHidden(),
             timeline_visible=not self.timeline_dock.isHidden(),
         )
-        # Signal all cancellable tasks before draining the bounded pool.
+
+        # Stop producers first: no new page, Agent or download work may be queued
+        # while the accepted worker tasks drain.
+        for page in (self.audio_cleanup_page, self.audio_page, self.batch_page):
+            try:
+                page.shutdown()
+            except Exception:
+                pass
         self.transcription_page.shutdown()
         self.assistant_panel.shutdown()
         if self.ipc_server:
             self.ipc_server.close()
-        # Stop accepting Agent work and cancel operations that have not started.
-        # A handler already running is allowed to finish; it is never force-killed.
+            self.ipc_server = None
         self.operation_manager.shutdown(wait=False)
         for cancel_event in self.model_page._downloads.values():
             cancel_event.set()
         self.model_manager.cancel_all_downloads()
-        # Do not clear queued workers here: cancellable workers have been signalled,
-        # and queued cleanup tasks (notably microphone release) must be allowed to run.
-        if not self.thread_pool.waitForDone(15000):
-            QMessageBox.warning(
-                self, "Background task still running",
-                "A background task has not stopped yet. The application will stay open; cancel or wait for the task, then close again.",
-            )
-            event.ignore()
+
+        # Browser automation owns a dedicated Chrome/Edge process tree. Closing it
+        # interrupts outstanding Playwright waits so its Agent operation can finish.
+        self._shutdown_browser_thread = threading.Thread(
+            target=self.agent_browser.close,
+            name="Transcriber-browser-shutdown",
+            daemon=True,
+        )
+        self._shutdown_browser_thread.start()
+        self._shutdown_timer.start()
+
+    def _poll_shutdown(self):
+        """Poll without freezing Qt, so queued GUI cancellations can still run."""
+        browser_thread = self._shutdown_browser_thread
+        browser_stopped = browser_thread is None or not browser_thread.is_alive()
+        assistant_stopped = self.assistant_panel.shutdown_complete
+        operations_stopped = self.operation_manager.is_idle
+        workers_stopped = self.thread_pool.waitForDone(0)
+
+        if not (
+            browser_stopped and assistant_stopped
+            and operations_stopped and workers_stopped
+        ):
+            elapsed = time.monotonic() - self._shutdown_started_at
+            if elapsed < 5:
+                self.statusBar().showMessage(
+                    "Stopping agents and releasing resources…"
+                )
+            elif elapsed < 20:
+                self.statusBar().showMessage(
+                    "Waiting for a running action to acknowledge cancellation…"
+                )
+            else:
+                self.statusBar().showMessage(
+                    "A task is still finishing safely. The window will close when it has stopped."
+                )
             return
-        self.transcription_page.flush_autosave()
-        self.model_manager.unload_active()
-        self.recording_page.shutdown()
-        super().closeEvent(event)
+
+        self._shutdown_timer.stop()
+        try:
+            self.transcription_page.flush_autosave()
+        except Exception:
+            pass
+        try:
+            self.model_manager.unload_active()
+        except Exception:
+            pass
+        try:
+            self.recording_page.shutdown()
+        except Exception:
+            pass
+        self._shutdown_complete = True
+        self.close()

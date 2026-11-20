@@ -12,6 +12,8 @@ from transcriber.ui.workers import FunctionWorker
 
 class AssistantVoiceMixin:
     def start_voice_chat(self):
+        if getattr(self, "_shutting_down", False):
+            return
         # The orb can cancel the pending voice start while the provider connects.
         if self._start_voice_after_connect and self.voice_agent is None:
             self._start_voice_after_connect = False
@@ -191,6 +193,8 @@ class AssistantVoiceMixin:
         self.refresh_wake_models(resolved)
 
     def toggle_voice_agent(self):
+        if getattr(self, "_shutting_down", False):
+            return
         if self.voice_agent is not None:
             agent, self.voice_agent = self.voice_agent, None
             worker = FunctionWorker(lambda _emit: agent.stop())
@@ -264,20 +268,33 @@ class AssistantVoiceMixin:
 
         def start_agent(_emit):
             try:
+                if getattr(self, "_shutting_down", False) or agent.shutdown_requested:
+                    agent.close()
+                    return False
                 if callable(self.voice_model_loader):
                     self.voice_model_loader()
+                if getattr(self, "_shutting_down", False) or agent.shutdown_requested:
+                    agent.close()
+                    return False
                 return agent.start()
             except Exception:
-                agent.stop()
+                if getattr(self, "_shutting_down", False):
+                    agent.close()
+                else:
+                    agent.stop()
                 raise
 
         worker = FunctionWorker(start_agent)
         worker.signals.error.connect(self._on_voice_error)
         worker.signals.result.connect(lambda _value: self._voice_started())
-        worker.signals.finished.connect(lambda: self.wake_button.setEnabled(True))
+        worker.signals.finished.connect(
+            lambda: self.wake_button.setEnabled(not getattr(self, "_shutting_down", False))
+        )
         self.thread_pool.start(worker)
 
     def _voice_started(self):
+        if getattr(self, "_shutting_down", False) or self.voice_agent is None:
+            return
         self.wake_button.setText("Stop local wake")
         self._sync_voice_orb()
         self.voice_chat_button.setEnabled(True)
@@ -316,27 +333,28 @@ class AssistantVoiceMixin:
         self, message: str, *, stage: str | None = None, log_message: str | None = None
     ):
         """Update the always-visible voice status and optionally add a chat timeline event."""
+        if getattr(self, "_shutting_down", False):
+            return
         display = str(message or "Voice chat is active")
         self.voice_live_status.setText(display)
         self.voice_state_label.setText(display)
-        if hasattr(self, "agent_thinking"):
-            stage_labels = {
-                "connecting": "Connecting",
-                "waiting": "Listening",
-                "wake-detected": "Listening",
-                "listening": "Listening",
-                "transcribing": "Transcribing",
-                "receiving": "Generating",
-                "response": "Thinking",
-                "resuming": "Listening",
-                "stopped": "Stopped",
-                "cancelled": "Stopped",
-                "error": "Error",
-                "asr-error": "Error",
-            }
-            self.agent_thinking.set_status(
-                stage_labels.get(str(stage or ""), display)
-            )
+        stage_labels = {
+            "connecting": "Connecting",
+            "waiting": "Listening",
+            "wake-detected": "Listening",
+            "listening": "Listening",
+            "transcribing": "Transcribing",
+            "receiving": "Generating",
+            "response": "Thinking",
+            "resuming": "Listening",
+            "stopped": "Stopped",
+            "cancelled": "Stopped",
+            "error": "Error",
+            "asr-error": "Error",
+        }
+        self._set_inline_agent_status(
+            stage_labels.get(str(stage or ""), display) if stage else display
+        )
         self._sync_voice_orb()
         if stage is not None and stage != self._last_voice_stage:
             self._last_voice_stage = stage

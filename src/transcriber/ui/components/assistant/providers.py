@@ -7,7 +7,9 @@ import os
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QMessageBox
 
-from transcriber.assistant.ollama_client import OllamaCancellation, OllamaClient, OllamaError
+from transcriber.assistant.ollama_client import (
+    OllamaCancellation, OllamaCancelled, OllamaClient, OllamaError,
+)
 from transcriber.assistant.prompt_library import AGENT_EXECUTION_CONTRACT
 from transcriber.opencode.acp_client import OpenCodeACPClient
 from transcriber.ui.workers import FunctionWorker
@@ -78,17 +80,17 @@ class AssistantProviderMixin:
             message += "\n" + details[:900]
         self._append_message("tool" if succeeded else "error", message)
         self.activity_label.setText(f"{'Completed' if succeeded else 'Failed'} · {name}")
-        self.agent_thinking.set_status(
+        self._set_inline_agent_status(
             f"{'Completed' if succeeded else 'Error'} · {name}"
         )
 
     def _on_ollama_tool_status(self, message: str):
-        self._streaming_index = None
         value = str(message or "").strip()
         if value:
+            self._set_inline_agent_status(value)
+            self._finish_assistant_stream("Working")
             self._append_message("tool", value)
             self.activity_label.setText(value)
-            self.agent_thinking.set_status(value)
 
     def _chat_is_connected(self) -> bool:
         if self._chat_provider == "ollama":
@@ -344,6 +346,8 @@ class AssistantProviderMixin:
         self.thread_pool.start(worker)
 
     def _on_opencode_models_ready(self, result):
+        if getattr(self, "_shutting_down", False):
+            return
         self._connection_busy = False
         self._load_opencode_model_options()
         selected = str((result or {}).get("selected") or self._opencode_model)
@@ -362,6 +366,8 @@ class AssistantProviderMixin:
         self._apply_provider_ui()
 
     def _on_opencode_models_error(self, message: str):
+        if getattr(self, "_shutting_down", False):
+            return
         self._connection_busy = False
         self.model_combo.blockSignals(True)
         index = self.model_combo.findData(self._opencode_model)
@@ -379,7 +385,7 @@ class AssistantProviderMixin:
         self.status_message.emit(f"OpenCode model: {message}")
 
     def refresh_ollama_models(self):
-        if self._worker_active:
+        if getattr(self, "_shutting_down", False) or self._worker_active:
             return
         try:
             client = OllamaClient(self.ollama_url.text().strip())
@@ -394,7 +400,11 @@ class AssistantProviderMixin:
         )
         self.ollama_help.setText("Checking the local Ollama server and installed models…")
         self.composer.set_status("Looking for models installed in Ollama…")
-        worker = FunctionWorker(lambda _emit: client.list_models())
+        cancellation = OllamaCancellation()
+        self._ollama_refresh_cancellation = cancellation
+        worker = FunctionWorker(
+            lambda _emit: client.list_models(cancellation=cancellation)
+        )
         worker.signals.result.connect(self.signals.ollama_models_ready.emit)
         worker.signals.error.connect(self.signals.ollama_refresh_error.emit)
         worker.signals.finished.connect(self._worker_finished)
@@ -403,6 +413,9 @@ class AssistantProviderMixin:
         self.thread_pool.start(worker)
 
     def _on_ollama_refresh_error(self, message: str):
+        self._ollama_refresh_cancellation = None
+        if getattr(self, "_shutting_down", False):
+            return
         self._connection_busy = False
         self._ollama_connected = False
         self._ollama_model = ""
@@ -422,6 +435,9 @@ class AssistantProviderMixin:
         self.status_message.emit(f"Ollama model discovery: {message}")
 
     def _on_ollama_models_ready(self, models):
+        self._ollama_refresh_cancellation = None
+        if getattr(self, "_shutting_down", False):
+            return
         self._connection_busy = False
         saved = str(getattr(self, "_session_requested_ollama_model", "") or "").strip()
         if not saved and self.settings_store:
@@ -531,7 +547,7 @@ class AssistantProviderMixin:
         self.connect_opencode()
 
     def connect_ollama(self):
-        if self._worker_active:
+        if getattr(self, "_shutting_down", False) or self._worker_active:
             return
         requested_model = str(self.model_combo.currentData() or "").strip()
         if not requested_model:
@@ -572,16 +588,20 @@ class AssistantProviderMixin:
             connecting=True, provider="ollama",
         )
         self.new_chat_button.setEnabled(False)
-        self.agent_thinking.reset()
+        if self._model_load_cancellation is not None:
+            self._model_load_cancellation.cancel()
+        load_cancellation = OllamaCancellation()
+        self._model_load_cancellation = load_cancellation
         self.connection_state.setText("Loading…")
         self.connection_state.setProperty("state", "connecting")
-        self.agent_thinking.set_status(f"Loading · {requested_model}")
         self.composer.set_status(f"Loading · {requested_model}")
         self.composer.set_busy(True, stoppable=False)
 
         def connect(_emit):
             try:
-                models = client.list_models()
+                models = client.list_models(cancellation=load_cancellation)
+            except OllamaCancelled:
+                raise
             except OllamaError as exc:
                 raise OllamaError(
                     f"Could not reach the Ollama API at {client.base_url}/api/tags: {exc}"
@@ -597,8 +617,13 @@ class AssistantProviderMixin:
                     "Choose an available model or run ollama pull <model>."
                 )
             try:
-                model_info = client.show_model(requested_model)
+                load_cancellation.raise_if_cancelled()
+                model_info = client.show_model(
+                    requested_model, cancellation=load_cancellation
+                )
                 think_value = OllamaClient.thinking_option(model_info)
+            except OllamaCancelled:
+                raise
             except OllamaError:
                 # Older Ollama servers may not expose /api/show thinking metadata.
                 # Chat remains usable; the model's default behavior is preserved.
@@ -608,7 +633,13 @@ class AssistantProviderMixin:
                 if self.settings_store else "30m"
             )
             try:
-                client.load_model(requested_model, keep_alive=keep_alive)
+                client.load_model(
+                    requested_model,
+                    keep_alive=keep_alive,
+                    cancellation=load_cancellation,
+                )
+            except OllamaCancelled:
+                raise
             except OllamaError as exc:
                 raise OllamaError(
                     f"Could not load '{requested_model}'. Check available RAM/VRAM and Ollama's server log. {exc}"
@@ -626,11 +657,15 @@ class AssistantProviderMixin:
         self.thread_pool.start(worker)
 
     def _on_ollama_connected(self, result):
+        if getattr(self, "_shutting_down", False):
+            self._model_load_cancellation = None
+            return
         self._connection_busy = False
         selected = str(result.get("model") or "")
         self._ollama_connected = True
         self._ollama_model = selected
         self._ollama_think_value = result.get("think")
+        self._model_load_cancellation = None
         index = self.model_combo.findData(selected)
         if index >= 0:
             self.model_combo.blockSignals(True)
@@ -647,9 +682,7 @@ class AssistantProviderMixin:
         self.ollama_help.setText(
             f"{selected} is loaded. New messages will be sent to this local model."
         )
-        self.agent_thinking.reset()
-        self.agent_thinking.set_status(f"Loaded · {selected}")
-        self.connection_state.setText(f"Connected · {selected}")
+        self.connection_state.setText(f"Loaded · {selected}")
         self.connection_state.setProperty("state", "connected")
         self.connection_state.style().unpolish(self.connection_state)
         self.connection_state.style().polish(self.connection_state)
@@ -672,8 +705,14 @@ class AssistantProviderMixin:
             self.toggle_voice_agent()
 
     def _on_ollama_error(self, message):
-        self.agent_thinking.finish_turn("Error")
+        if getattr(self, "_shutting_down", False):
+            self._model_load_cancellation = None
+            self._ollama_cancellation = None
+            return
+        if getattr(self, "_agent_turn_active", False):
+            self._finish_assistant_stream("Error")
         self._connection_busy = False
+        self._model_load_cancellation = None
         self._ollama_cancellation = None
         self._streaming_index = None
         self.ollama_help.setText(
@@ -729,6 +768,8 @@ class AssistantProviderMixin:
         self.disconnect_opencode()
 
     def connect_opencode(self):
+        if getattr(self, "_shutting_down", False):
+            return
         if self._worker_active or (self.client and self.client.connected):
             return
         self._worker_active = True
@@ -775,6 +816,8 @@ class AssistantProviderMixin:
                 pass
         return client.new_session(mcp_servers=mcp_servers, timeout=20)
     def _on_connected(self, result):
+        if getattr(self, "_shutting_down", False):
+            return
         self._connection_busy = False
         session_id = result.get("session_id")
         self._auto_connect_pending = False
@@ -798,8 +841,7 @@ class AssistantProviderMixin:
             self._append_message("system", f"Session persistence warning: {exc}")
 
         self.connection_state.setText("Loaded")
-        self.agent_thinking.reset()
-        self.agent_thinking.set_status("Loaded")
+        self._set_inline_agent_status("Loaded")
         self.connection_state.setProperty("state", "connected")
         self.connection_state.style().unpolish(self.connection_state)
         self.connection_state.style().polish(self.connection_state)
@@ -948,7 +990,6 @@ class AssistantProviderMixin:
         self._worker_active = True
         self._agent_turn_active = True
         self._stop_requested = False
-        self.agent_thinking.begin_turn("Thinking")
         self.composer.set_busy(True, stoppable=True)
         self.new_chat_button.setEnabled(True)
         if self.voice_agent is not None and self.voice_agent.mode == "processing":
@@ -969,6 +1010,7 @@ class AssistantProviderMixin:
         self.prompt.clear()
         if is_transcriber_task and prompt_files:
             self._append_message("system", "Loaded Transcriber instructions: " + ", ".join(prompt_files))
+        self._begin_assistant_stream("Thinking")
         if agent_enabled and not tools:
             self._append_message(
                 "system",
@@ -980,7 +1022,9 @@ class AssistantProviderMixin:
         self._ollama_cancellation = cancellation
         agent = OllamaAgent(
             client,
-            lambda name, arguments: self._action_registry.execute(name, arguments),
+            lambda name, arguments: self._action_registry.execute(
+                name, arguments, cancellation=cancellation
+            ),
         )
         worker = FunctionWorker(
             lambda emit: agent.run(
@@ -1006,20 +1050,23 @@ class AssistantProviderMixin:
 
     def _on_ollama_chat_complete(self, result):
         self._ollama_messages = list(result.get("messages") or self._ollama_messages)
+        if getattr(self, "_shutting_down", False):
+            self._finish_assistant_stream("Stopped")
+            self._persist_current_session()
+            return
         self._schedule_session_persist()
         self._ollama_cancellation = None
-        self._streaming_index = None
         if result.get("cancelled"):
+            self._finish_assistant_stream("Stopped")
             self._append_message("system", "Assistant generation was stopped by you.")
-            self.agent_thinking.finish_turn("Stopped")
         elif (
             result.get("permission_denied")
             or result.get("action_not_executed")
             or result.get("incomplete")
         ):
-            self.agent_thinking.finish_turn("Error")
+            self._finish_assistant_stream("Error")
         else:
-            self.agent_thinking.finish_turn("Done")
+            self._finish_assistant_stream("Done")
         metrics = result.get("metrics") or {}
         eval_count = metrics.get("eval_count")
         tool_count = int(result.get("tool_count") or 0)
@@ -1037,6 +1084,8 @@ class AssistantProviderMixin:
                 log_message="Ollama finished responding.",
             )
     def send_prompt(self):
+        if getattr(self, "_shutting_down", False):
+            return
         prompt = self.prompt.toPlainText().strip()
         if not prompt:
             return
@@ -1100,7 +1149,6 @@ class AssistantProviderMixin:
         self._worker_active = True
         self._agent_turn_active = True
         self._stop_requested = False
-        self.agent_thinking.begin_turn("Thinking")
         self.composer.set_busy(True, stoppable=True)
         self.new_chat_button.setEnabled(True)
         if self.voice_agent is not None and self.voice_agent.mode == "processing":
@@ -1129,6 +1177,7 @@ class AssistantProviderMixin:
             "system",
             "Loaded current prompt instructions: " + ", ".join(prompt_files),
         )
+        self._begin_assistant_stream("Thinking")
         worker = FunctionWorker(
             lambda _emit: client.prompt(outbound_prompt, timeout=None)
         )
@@ -1147,7 +1196,7 @@ class AssistantProviderMixin:
         # cancellation handshake.
         self.composer.set_busy(True, stoppable=True)
         self.stop_button.setEnabled(False)
-        self.agent_thinking.set_status("Stopping")
+        self._set_inline_agent_status("Stopping")
         if self._chat_provider == "ollama":
             cancellation = self._ollama_cancellation
             if cancellation is None:
@@ -1170,12 +1219,14 @@ class AssistantProviderMixin:
     def _on_cancel_error(self, message: str):
         self._stop_requested = False
         self.composer.set_busy(self._worker_active, stoppable=self._agent_turn_active)
-        self.agent_thinking.set_status("Still working")
+        self._set_inline_agent_status("Still working")
         self.composer.set_status(f"Could not stop the current response: {message}", error=True)
     def _on_notification(self, message):
+        if getattr(self, "_shutting_down", False):
+            return
         params = message.get("params", {}) if isinstance(message, dict) else {}
         update = params.get("update", {}) if isinstance(params, dict) else {}
-        if not isinstance(update, dict):
+        if not isinstance(update, dict) or getattr(self, "_shutting_down", False):
             return
 
         kind = update.get("sessionUpdate", "")
@@ -1222,7 +1273,7 @@ class AssistantProviderMixin:
                     # they were progress. The first visible assistant text for an
                     # action turn must follow a real execution-tool call.
                     return
-                self.agent_thinking.set_status("Generating")
+                self._set_inline_agent_status("Generating")
                 self._append_stream_chunk(text)
         elif kind in {"agent_thought_chunk", "agent_thought"}:
             if getattr(self, "_stop_requested", False):
@@ -1241,10 +1292,12 @@ class AssistantProviderMixin:
             else:
                 thought = str(content or "")
             if thought:
-                self.agent_thinking.append_thinking(thought)
+                self._append_thinking_chunk(thought)
             else:
-                self.agent_thinking.set_status("Thinking")
+                self._set_inline_agent_status("Thinking")
         elif kind == "tool_call":
+            self._set_inline_agent_status("Working")
+            self._finish_assistant_stream("Working")
             title = str(update.get("title") or update.get("toolCallId") or "Workspace tool")
             event_id = str(update.get("toolCallId") or title)
             self._opencode_turn_tool_calls = getattr(self, "_opencode_turn_tool_calls", 0) + 1
@@ -1256,8 +1309,9 @@ class AssistantProviderMixin:
                 self._opencode_turn_action_called = True
             self._append_message("tool", f"Running · {title}")
             self.activity_label.setText(f"Running · {title}")
-            self.agent_thinking.set_status(f"Working · {title}")
         elif kind == "tool_call_update":
+            self._set_inline_agent_status("Working")
+            self._finish_assistant_stream("Working")
             raw_status = str(update.get("status") or "running")
             normalized = raw_status.casefold()
             status = (
@@ -1312,27 +1366,29 @@ class AssistantProviderMixin:
                 "awaiting_approval": "Approval needed",
             }.get(normalized, "Working")
             self.activity_label.setText(f"{friendly} · {title}")
-            self.agent_thinking.set_status(f"{friendly} · {title}")
+            self._set_inline_agent_status(f"{friendly} · {title}")
         elif kind == "current_mode_update":
             mode = str(update.get("currentMode") or "default")
             self.activity_label.setText(f"Working · {mode}")
-            self.agent_thinking.set_status(f"Working · {mode}")
+            self._set_inline_agent_status(f"Working · {mode}")
         elif kind == "available_commands_update":
-            self.agent_thinking.set_status("Loaded · Agent tools")
+            self._set_inline_agent_status("Loaded · Agent tools")
         elif kind in {"session_info_update", "state_update"}:
-            self.agent_thinking.set_status("Working")
+            self._set_inline_agent_status("Working")
         elif kind == "plan_update":
-            self.agent_thinking.set_status("Planning")
+            self._set_inline_agent_status("Planning")
         elif kind in {"terminal_update", "terminal_output_chunk", "tool_call_content_chunk"}:
-            self.agent_thinking.set_status("Working")
+            self._set_inline_agent_status("Working")
 
     def _on_prompt_complete(self, result):
-        self._streaming_index = None
+        if getattr(self, "_shutting_down", False):
+            self._finish_assistant_stream("Stopped")
+            return
         reason = result.get("stopReason", "completed") if isinstance(result, dict) else "completed"
         self.activity_label.setText(f"Turn {reason} · Ready for your next message.")
         if getattr(self, "_stop_requested", False):
             self._opencode_turn_requires_tool = False
-            self.agent_thinking.finish_turn("Stopped")
+            self._finish_assistant_stream("Stopped")
             self._persist_current_session()
             self._refresh_session_list()
             return
@@ -1351,13 +1407,14 @@ class AssistantProviderMixin:
         )
         if tool_failed:
             self._opencode_turn_requires_tool = False
-            self.agent_thinking.finish_turn("Error")
+            self._finish_assistant_stream("Error")
             self._append_message(
                 "error",
                 "The previous action failed or was denied. OpenCode will not retry it "
                 "or bypass the permission decision.",
             )
         elif needs_more_execution:
+            self._finish_assistant_stream("Working")
             fallback = (
                 getattr(self, "_opencode_browser_fallback", None)
                 if not action_called else None
@@ -1384,7 +1441,7 @@ class AssistantProviderMixin:
                 )
             else:
                 self._opencode_turn_requires_tool = False
-                self.agent_thinking.finish_turn("Error")
+                self._finish_assistant_stream("Error")
                 self._append_message(
                     "error",
                     "The requested action is incomplete: OpenCode described another step "
@@ -1392,7 +1449,7 @@ class AssistantProviderMixin:
                 )
         else:
             self._opencode_turn_requires_tool = False
-            self.agent_thinking.finish_turn("Done")
+            self._finish_assistant_stream("Done")
         self._persist_current_session()
         self._refresh_session_list()
         if (
@@ -1407,8 +1464,12 @@ class AssistantProviderMixin:
             )
 
     def _on_error(self, message):
+        if getattr(self, "_shutting_down", False):
+            self._finish_assistant_stream("Stopped")
+            self._persist_current_session()
+            return
         if getattr(self, "_agent_turn_active", False):
-            self.agent_thinking.finish_turn("Error")
+            self._finish_assistant_stream("Error")
         self._connection_busy = False
         self._streaming_index = None
         self.connection_state.setText("Connection error")
@@ -1438,6 +1499,15 @@ class AssistantProviderMixin:
     def _agent_turn_worker_finished(self):
         """Finish one model phase, preserve turn chains, then apply queued chat switches."""
         self._worker_active = False
+        if getattr(self, "_shutting_down", False):
+            self._agent_turn_active = False
+            self._stop_requested = True
+            self._pending_opencode_browser_fallback = None
+            self._pending_opencode_recovery = ""
+            if hasattr(self, "_session_persist_timer"):
+                self._session_persist_timer.stop()
+            self._persist_current_session(refresh_sidebar=False)
+            return
 
         pending_switch = getattr(self, "_pending_session_switch", None)
         if pending_switch:
@@ -1452,7 +1522,6 @@ class AssistantProviderMixin:
             self._agent_turn_active = False
             self._stop_requested = False
             self._ollama_cancellation = None
-            self.agent_thinking.reset()
             if pending_switch.get("new_chat"):
                 self.new_chat()
             else:
@@ -1477,6 +1546,8 @@ class AssistantProviderMixin:
 
     def _worker_finished(self):
         self._worker_active = False
+        if getattr(self, "_shutting_down", False):
+            return
         connected = self._chat_is_connected()
         self.composer.set_provider_ready(connected)
         self.composer.set_busy(False)
@@ -1495,6 +1566,8 @@ class AssistantProviderMixin:
             self._resume_voice_agent()
 
     def _start_opencode_browser_fallback(self, action: dict):
+        if getattr(self, "_shutting_down", False):
+            return
         client = self.client
         registry = self._action_registry
         if client is None or not client.connected or registry is None:
@@ -1550,6 +1623,8 @@ class AssistantProviderMixin:
         self._on_prompt_complete(payload.get("response") or {})
 
     def _start_opencode_action_recovery(self, recovery_prompt: str):
+        if getattr(self, "_shutting_down", False):
+            return
         client = self.client
         if client is None or not client.connected:
             self._opencode_turn_requires_tool = False

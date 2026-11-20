@@ -308,3 +308,15 @@ def test_chat_preserves_assistant_thinking_in_follow_up_history(monkeypatch):
     OllamaClient().chat("qwen3:8b", history, think="medium")
 
     assert captured["body"]["messages"][0]["thinking"] == "I will inspect the action."
+
+
+def test_cold_model_load_respects_shutdown_cancellation(monkeypatch):
+    def forbidden_urlopen(*_args, **_kwargs):
+        raise AssertionError("a cancelled model load must not contact Ollama")
+
+    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", forbidden_urlopen)
+    cancellation = OllamaCancellation()
+    cancellation.cancel()
+
+    with pytest.raises(OllamaCancelled):
+        OllamaClient().load_model("qwen3:8b", cancellation=cancellation)
