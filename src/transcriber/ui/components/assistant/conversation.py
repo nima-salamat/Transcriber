@@ -17,11 +17,13 @@ class AssistantConversationMixin:
         if not self._chat_refresh_timer.isActive():
             self._chat_refresh_timer.start()
 
-    def _refresh_chat(self):
-        """Update messages incrementally and keep a reader's scroll anchor intact."""
+    def _refresh_chat(self, *, scroll_to_bottom: bool = False):
+        """Update messages; explicit session loads always open at the newest message."""
         if not hasattr(self, "conversation_view"):
             return
-        self.conversation_view.set_messages(self._messages)
+        self.conversation_view.set_messages(
+            self._messages, force_scroll_to_bottom=scroll_to_bottom
+        )
         self.chat_view.setPlainText(self.conversation_view.toPlainText())
         self.suggestions_container.setVisible(False)
         title = self._session_title()

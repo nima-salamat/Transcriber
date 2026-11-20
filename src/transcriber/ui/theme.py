@@ -596,6 +596,22 @@ def stylesheet(theme: str) -> str:
         color: {c['text']};
         border: 1px solid {c['border']};
     }}
+    QWidget#AssistantSessionRow {{
+        background: transparent;
+        border: 0;
+    }}
+    QLabel#AssistantSessionTitle {{
+        color: {c['text']};
+        background: transparent;
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QLabel#AssistantSessionPreview {{
+        color: {c['muted']};
+        background: transparent;
+        font-size: 10px;
+        font-weight: 400;
+    }}
     QLabel#AssistantSidebarEmpty {{
         color: {c['muted']};
         padding: 18px;

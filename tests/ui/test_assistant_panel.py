@@ -309,3 +309,64 @@ def test_assistant_message_copy_button_copies_rendered_text(qtbot):
 
     qtbot.waitUntil(lambda: QApplication.clipboard().text() == expected)
     assert widget.copy_button.text() == "Copied"
+
+
+
+def test_history_sidebar_shows_a_bounded_latest_user_preview(qtbot, tmp_path):
+    from transcriber.assistant.chat_sessions import ChatSessionStore
+    from transcriber.ui.components.assistant.sidebar import AssistantSidebar
+    from transcriber.ui.design.icon_registry import IconRegistry
+
+    store = ChatSessionStore(tmp_path / "sessions.json")
+    session = store.create_session("ollama", title="Transcript review")
+    latest_prompt = "Latest question about this transcript: " + ("more detail " * 20)
+    store.save_state(
+        session["id"],
+        title="Transcript review",
+        messages=[
+            {"role": "user", "text": "Initial question that established the conversation"},
+            {"role": "assistant", "text": "Initial answer"},
+            {"role": "user", "text": latest_prompt},
+        ],
+    )
+    sidebar = AssistantSidebar(store, IconRegistry())
+    qtbot.addWidget(sidebar)
+    sidebar.resize(264, 520)
+    sidebar.show()
+
+    item = next(
+        sidebar.session_list.item(index)
+        for index in range(sidebar.session_list.count())
+        if sidebar.session_list.item(index).data(sidebar.SESSION_ROLE) == session["id"]
+    )
+    row = sidebar.session_list.itemWidget(item)
+    assert row is not None
+    assert row._full_preview.startswith("Latest question about this transcript")
+    assert len(row._full_preview) <= 113
+    qtbot.wait(40)
+    assert row.preview_label.text()
+
+
+def test_loading_a_session_forces_conversation_to_latest_message(qtbot):
+    from transcriber.ui.components.assistant.conversation_view import ConversationView
+
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    view = ConversationView()
+    qtbot.addWidget(view)
+    view.resize(680, 460)
+    view.show()
+    messages = [
+        {"role": "user" if index % 2 == 0 else "assistant",
+         "text": f"Message {index}: " + ("long conversation text " * 12)}
+        for index in range(36)
+    ]
+
+    view.set_messages(messages)
+    qtbot.waitUntil(lambda: view.scroll_area.verticalScrollBar().maximum() > 0)
+    bar = view.scroll_area.verticalScrollBar()
+    bar.setValue(0)
+    assert bar.value() == 0
+
+    view.set_messages(messages, force_scroll_to_bottom=True)
+    qtbot.waitUntil(lambda: bar.value() == bar.maximum() and bar.maximum() > 0)

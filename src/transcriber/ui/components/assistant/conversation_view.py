@@ -117,7 +117,7 @@ class ConversationView(QFrame):
         bar = self.scroll_area.verticalScrollBar()
         return bar.maximum() - bar.value() <= 72
 
-    def set_messages(self, messages: list[dict]):
+    def set_messages(self, messages: list[dict], *, force_scroll_to_bottom: bool = False):
         values = list(messages or [])[-400:]
         incoming = [
             (str(item.get("role") or "assistant"), str(item.get("text") or ""))
@@ -163,7 +163,10 @@ class ConversationView(QFrame):
                     self._signatures.append((role, text))
         self._messages = [dict(item) for item in values]
         self.empty_state.setVisible(not bool(incoming))
-        if was_near_bottom:
+        if force_scroll_to_bottom:
+            self.jump_button.hide()
+            self.scroll_to_latest()
+        elif was_near_bottom:
             self.jump_button.hide()
             self.scroll_to_latest()
         elif incoming:

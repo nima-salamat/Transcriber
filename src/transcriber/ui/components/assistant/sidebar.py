@@ -4,8 +4,65 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal, QSize
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+
+
+class _SessionHistoryRow(QWidget):
+    """Compact two-line session label that elides text to the available pixel width."""
+
+    def __init__(self, title: str, preview: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("AssistantSessionRow")
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._full_title = ""
+        self._full_preview = ""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(2, 3, 2, 3)
+        layout.setSpacing(2)
+        self.title_label = QLabel()
+        self.title_label.setObjectName("AssistantSessionTitle")
+        self.title_label.setMinimumWidth(0)
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.preview_label = QLabel()
+        self.preview_label.setObjectName("AssistantSessionPreview")
+        self.preview_label.setMinimumWidth(0)
+        self.preview_label.setMinimumHeight(14)
+        self.preview_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.title_label)
+        layout.addWidget(self.preview_label)
+        self.set_content(title, preview)
+
+    @staticmethod
+    def _character_limit(value: str, limit: int) -> str:
+        text = " ".join(str(value or "").split())
+        return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+    def set_content(self, title: str, preview: str):
+        self._full_title = self._character_limit(title, 64)
+        self._full_preview = self._character_limit(preview, 112)
+        self.setToolTip("\n".join(part for part in (title, preview) if part))
+        self._refresh_elision()
+
+    def _refresh_elision(self):
+        title_width = max(0, self.title_label.contentsRect().width())
+        preview_width = max(0, self.preview_label.contentsRect().width())
+        self.title_label.setText(
+            QFontMetrics(self.title_label.font()).elidedText(
+                self._full_title, Qt.TextElideMode.ElideRight, title_width
+            )
+        )
+        self.preview_label.setText(
+            QFontMetrics(self.preview_label.font()).elidedText(
+                self._full_preview, Qt.TextElideMode.ElideRight, preview_width
+            ) if self._full_preview else " "
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._refresh_elision()
 
 
 class AssistantSidebar(QFrame):
@@ -169,22 +226,65 @@ class AssistantSidebar(QFrame):
                     return prompt[:44] + ("…" if len(prompt) > 44 else "")
         return "New chat"
 
-    def update_session_title(self, session_id: str, title: str, *, messages=None):
-        """Update a chat row without changing its position or selected item."""
+    @classmethod
+    def _display_preview(cls, session: dict[str, Any]) -> str:
+        preview = ""
+        for message in reversed(session.get("messages") or []):
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            preview = " ".join(str(message.get("text") or "").split())
+            if preview:
+                break
+        if not preview:
+            return ""
+        title = cls._display_title(session)
+        metadata = session.get("metadata") or {}
+        # The default title is generated from the first user prompt; avoid duplicating it.
+        if not str(metadata.get("custom_title") or "").strip():
+            comparable_title = title[:-1] if title.endswith("…") else title
+            if preview == comparable_title or (
+                title.endswith("…") and preview.startswith(comparable_title)
+            ):
+                return ""
+        return preview[:112] + ("…" if len(preview) > 112 else "")
+
+    def update_session_title(
+        self, session_id: str, title: str, *, messages=None, updated_at: str | None = None
+    ):
+        """Refresh the current row and move it when its message activity becomes newest."""
         identifier = str(session_id or "")
         if not identifier:
             return
         clean_title = str(title or "New chat")
+        old_order = [str(item.get("id") or "") for item in self._all_sessions]
+        target = None
         for session in self._all_sessions:
             if str(session.get("id") or "") == identifier:
+                target = session
                 session["title"] = clean_title
                 if messages is not None:
-                    session["messages"] = [dict(item) for item in messages if isinstance(item, dict)]
+                    session["messages"] = [
+                        dict(item) for item in messages if isinstance(item, dict)
+                    ]
+                if updated_at:
+                    session["updated_at"] = str(updated_at)
                 break
+        if target is None:
+            return
+
+        self._all_sessions.sort(key=self._updated_at, reverse=True)
+        new_order = [str(item.get("id") or "") for item in self._all_sessions]
+        if old_order != new_order:
+            self._apply_filter()
+            return
+
         for index in range(self.session_list.count()):
             item = self.session_list.item(index)
             if str(item.data(self.SESSION_ROLE) or "") == identifier:
                 item.setText(clean_title)
+                row = self.session_list.itemWidget(item)
+                if isinstance(row, _SessionHistoryRow):
+                    row.set_content(clean_title, self._display_preview(target))
                 break
 
     def set_active_session(self, session_id: str):
@@ -230,10 +330,18 @@ class AssistantSidebar(QFrame):
             for session in entries:
                 title = self._display_title(session)
                 provider = "Ollama" if session.get("provider") == "ollama" else "OpenCode"
+                preview = self._display_preview(session)
                 item = QListWidgetItem(title)
+                item.setSizeHint(QSize(0, 66))
                 item.setData(self.SESSION_ROLE, str(session.get("id") or ""))
-                item.setToolTip(f"{title}\n{provider} · {self._updated_at(session).strftime('%Y-%m-%d %H:%M')}")
+                item.setToolTip(
+                    f"{title}" + (f"\n{preview}" if preview else "") +
+                    f"\n{provider} · {self._updated_at(session).strftime('%Y-%m-%d %H:%M')}"
+                )
                 self.session_list.addItem(item)
+                self.session_list.setItemWidget(
+                    item, _SessionHistoryRow(title, preview, self.session_list)
+                )
                 if session.get("id") == self._active_session_id:
                     selected = item
         self.session_list.blockSignals(False)

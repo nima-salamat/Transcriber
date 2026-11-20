@@ -18,7 +18,18 @@ _MAX_PROVIDER_MESSAGES = 300
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    # Microseconds keep rapid consecutive messages in different sessions ordered.
+    return datetime.now(UTC).isoformat(timespec="microseconds")
+
+
+def _timestamp_key(value: Any) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except (TypeError, ValueError):
+        return datetime.min.replace(tzinfo=UTC)
 
 
 def _json_copy(value: Any) -> Any:
@@ -111,7 +122,11 @@ class ChatSessionStore:
             values = self._document["sessions"]
             if provider:
                 values = [item for item in values if item["provider"] == provider]
-            return copy.deepcopy(sorted(values, key=lambda item: item["updated_at"], reverse=True))
+            return copy.deepcopy(sorted(
+                values,
+                key=lambda item: _timestamp_key(item.get("updated_at")),
+                reverse=True,
+            ))
 
     def get_session(self, session_id: str | None) -> dict[str, Any] | None:
         if not session_id:
@@ -182,11 +197,13 @@ class ChatSessionStore:
             if item is None:
                 raise KeyError(f"Unknown chat session: {session_id}")
             changed = False
+            activity_changed = False
             if messages is not None:
                 normalized_messages = self._normalize_messages(messages, _MAX_VISIBLE_MESSAGES)
                 if item["messages"] != normalized_messages:
                     item["messages"] = normalized_messages
                     changed = True
+                    activity_changed = True
             if provider_messages is not None:
                 normalized_provider_messages = self._normalize_messages(
                     provider_messages, _MAX_PROVIDER_MESSAGES
@@ -194,13 +211,16 @@ class ChatSessionStore:
                 if item["provider_messages"] != normalized_provider_messages:
                     item["provider_messages"] = normalized_provider_messages
                     changed = True
+                    activity_changed = True
             if title is not None and str(title).strip():
                 normalized_title = str(title).strip()[:120]
                 if item["title"] != normalized_title:
                     item["title"] = normalized_title
                     changed = True
-            if changed:
+            # History order represents message activity, not renames or metadata edits.
+            if activity_changed:
                 item["updated_at"] = _now()
+            if changed:
                 self._write()
             return copy.deepcopy(item)
 
@@ -219,7 +239,6 @@ class ChatSessionStore:
             )
             if changed:
                 item["metadata"].update(normalized_metadata)
-                item["updated_at"] = _now()
                 self._write()
             return copy.deepcopy(item)
 
@@ -232,7 +251,7 @@ class ChatSessionStore:
             if active == session_id:
                 remaining = sorted(
                     self._document["sessions"],
-                    key=lambda item: item["updated_at"],
+                    key=lambda item: _timestamp_key(item.get("updated_at")),
                     reverse=True,
                 )
                 active = remaining[0]["id"] if remaining else ""

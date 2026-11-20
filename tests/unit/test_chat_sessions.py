@@ -32,6 +32,25 @@ def test_create_and_restore_multiple_provider_sessions(tmp_path):
     assert restored.get_session(second["id"])["provider"] == "opencode"
 
 
+def test_session_history_orders_by_latest_message_activity(tmp_path):
+    store = ChatSessionStore(tmp_path / "sessions.json")
+    older = store.create_session("ollama", title="Older")
+    newer = store.create_session("opencode", title="Newer")
+
+    store.save_state(
+        newer["id"], messages=[{"role": "user", "text": "newer message"}]
+    )
+    store.save_state(
+        older["id"], messages=[{"role": "user", "text": "most recent message"}]
+    )
+
+    sessions = store.list_sessions()
+    assert [item["id"] for item in sessions[:2]] == [older["id"], newer["id"]]
+    previous_activity = store.get_session(older["id"])["updated_at"]
+    store.update_metadata(older["id"], custom_title="Renamed only")
+    assert store.get_session(older["id"])["updated_at"] == previous_activity
+
+
 def test_switch_and_delete_sessions_updates_active_id(tmp_path):
     store = ChatSessionStore(tmp_path / "sessions.json")
     first = store.create_session("ollama")

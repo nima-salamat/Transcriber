@@ -28,7 +28,7 @@ class AssistantSessionMixin:
         if not session_id:
             return
         try:
-            self.session_store.save_state(
+            saved_session = self.session_store.save_state(
                 session_id,
                 messages=self._messages,
                 provider_messages=self._ollama_messages,
@@ -40,7 +40,10 @@ class AssistantSessionMixin:
             return
         if hasattr(self, "sidebar"):
             self.sidebar.update_session_title(
-                session_id, self._session_title(), messages=self._messages
+                session_id,
+                self._session_title(),
+                messages=self._messages,
+                updated_at=saved_session.get("updated_at"),
             )
         if refresh_sidebar and hasattr(self, "session_list"):
             self._refresh_session_list()
@@ -147,7 +150,7 @@ class AssistantSessionMixin:
         self._streaming_index = None
         self._apply_provider_ui()
         self.sidebar.set_active_session(self._active_session_id)
-        self._refresh_chat()
+        self._refresh_chat(scroll_to_bottom=True)
         self._update_conversation_header()
 
     def _on_session_item_clicked(self, item):
