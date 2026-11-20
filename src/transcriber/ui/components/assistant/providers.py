@@ -1175,15 +1175,28 @@ class AssistantProviderMixin:
                 "app_execute_action", "app.execute_action", "browser.search",
                 "browser.open", "system.run_command", "powershell", "terminal", "bash",
             ))
+            is_operation_status_tool = (
+                "app_get_operation_status" in payload_text
+                or "app.get_operation" in payload_text
+            )
             if is_execution_tool:
                 self._opencode_turn_action_called = True
-                if normalized in {"failed", "error", "cancelled", "canceled"} or any(
-                    marker in payload_text for marker in (
-                        "permission denied", "user denied", "approval denied",
-                        "the action was denied",
-                    )
-                ):
-                    self._opencode_turn_tool_failed = True
+            if (
+                (is_execution_tool and normalized in {"failed", "error", "cancelled", "canceled"})
+                or (
+                    is_operation_status_tool
+                    and any(state in payload_text for state in (
+                        '"state":"failed"', '"state": "failed"',
+                        '"state":"cancelled"', '"state": "cancelled"',
+                        '"state":"timed_out"', '"state": "timed_out"',
+                    ))
+                )
+                or any(marker in payload_text for marker in (
+                    "permission denied", "user denied", "approval denied",
+                    "the action was denied",
+                ))
+            ):
+                self._opencode_turn_tool_failed = True
             self._append_message("tool", f"{title} · {raw_status}")
             self.activity_label.setText(f"Tool {raw_status} · {title}")
         elif kind == "current_mode_update":
