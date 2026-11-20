@@ -168,9 +168,26 @@ class ModelPicker(QFrame):
         if self.popup.isVisible():
             self.popup.hide()
             return
+
+        # The composer sits at the bottom of the chat, so the selector must
+        # expand upward. Clamp its horizontal position to the active screen
+        # to keep the complete popup visible near either screen edge.
         self.popup.adjustSize()
-        origin = self.button.mapToGlobal(QPoint(0, self.button.height() + 6))
-        self.popup.move(origin)
+        popup_size = self.popup.size()
+        anchor_top = self.button.mapToGlobal(QPoint(0, 0))
+        screen = self.button.screen()
+        available = screen.availableGeometry() if screen else None
+
+        x = anchor_top.x()
+        y = anchor_top.y() - popup_size.height() - 8
+        if available is not None:
+            max_x = available.right() - popup_size.width() + 1
+            x = min(max(x, available.left()), max(available.left(), max_x))
+            # Keep the popup above the button even on shorter screens; never
+            # let it fall below the composer where it can be clipped.
+            y = max(available.top() + 4, y)
+
+        self.popup.move(QPoint(x, y))
         self.popup.show()
         self.popup.raise_()
 
