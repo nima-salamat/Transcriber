@@ -10,7 +10,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QThreadPool, Qt
 from PySide6.QtWidgets import QApplication, QTextBrowser
 
 from transcriber.ui.components.assistant_panel import AssistantPanel
@@ -60,18 +60,18 @@ def test_assistant_panel_is_a_conversation_surface(qtbot, tmp_path):
     assert "Read transcript" in visible_text
 
 
-def test_quick_prompt_is_inserted_for_review_before_sending(qtbot, tmp_path):
+def test_assistant_surface_has_no_quick_prompts_or_redundant_global_header(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
     panel = AssistantPanel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
-    prompt = panel.QUICK_PROMPTS["Review transcript"]
-    panel._insert_suggestion(prompt)
-
-    assert panel.prompt.toPlainText() == prompt
-    assert not panel._worker_active
+    assert panel.root_layout.count() == 1
+    assert panel.settings_button is panel.sidebar.settings_button
+    assert not hasattr(panel, "QUICK_PROMPTS")
+    assert not hasattr(panel, "suggestions_container")
+    assert not hasattr(panel.conversation_view, "prompt_grid")
 
 
 
@@ -201,6 +201,7 @@ def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
 
     assert panel.page_stack.currentWidget() is panel.conversation_page
     assert panel.settings_button.toolTip() == "Assistant settings"
+    assert panel.settings_button is panel.sidebar.settings_button
     assert not panel.conversation_page.isAncestorOf(panel.provider_combo)
     assert not panel.conversation_page.isAncestorOf(panel.prompt_library_button)
 
@@ -311,6 +312,28 @@ def test_assistant_message_copy_button_copies_rendered_text(qtbot):
     assert widget.copy_button.text() == "Copied"
 
 
+def test_helper_messages_are_collapsed_until_the_user_expands_them(qtbot):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    for role in ("tool", "system"):
+        widget = MessageWidget(role, "Internal helper information")
+        qtbot.addWidget(widget)
+        widget.show()
+
+        assert widget.body.isHidden()
+        assert widget.detail_toggle.arrowType() == Qt.ArrowType.RightArrow
+        assert widget.copy_button.isHidden()
+
+        widget.detail_toggle.click()
+        assert not widget.body.isHidden()
+        assert widget.detail_toggle.arrowType() == Qt.ArrowType.DownArrow
+        assert widget.copy_button.isVisible()
+
+        widget.detail_toggle.click()
+        assert widget.body.isHidden()
+        assert widget.detail_toggle.arrowType() == Qt.ArrowType.RightArrow
+
+
 
 def test_history_sidebar_shows_a_bounded_latest_user_preview(qtbot, tmp_path):
     from transcriber.assistant.chat_sessions import ChatSessionStore
@@ -382,3 +405,14 @@ def test_loading_a_session_forces_conversation_to_latest_message(qtbot):
 
     view.set_messages(messages, force_scroll_to_bottom=True)
     qtbot.waitUntil(lambda: bar.value() == bar.maximum() and bar.maximum() > 0)
+
+
+def test_agent_execution_contract_explains_continue_and_async_completion():
+    from transcriber.assistant.prompt_library import AGENT_EXECUTION_CONTRACT
+
+    assert "CONTINUE" in AGENT_EXECUTION_CONTRACT
+    assert "DONE" in AGENT_EXECUTION_CONTRACT
+    assert "app_execute_action" in AGENT_EXECUTION_CONTRACT
+    assert "app_get_operation_status" in AGENT_EXECUTION_CONTRACT
+    assert "queued" in AGENT_EXECUTION_CONTRACT
+    assert "completed" in AGENT_EXECUTION_CONTRACT

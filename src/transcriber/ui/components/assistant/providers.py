@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QMessageBox
 
 from transcriber.assistant.ollama_client import OllamaCancellation, OllamaClient, OllamaError
+from transcriber.assistant.prompt_library import AGENT_EXECUTION_CONTRACT
 from transcriber.opencode.acp_client import OpenCodeACPClient
 from transcriber.ui.workers import FunctionWorker
 
@@ -817,6 +818,8 @@ class AssistantProviderMixin:
             "Use tools to perform actions rather than merely describing how the user could do them. "
             "Show useful results, URLs, file paths, command output and clear action summaries. "
             "Be honest about failures and uncertainty.\n"
+            + AGENT_EXECUTION_CONTRACT
+            + "\n"
             + capability_text
             + (
                 "\nThe following additional prompt pack applies because the user's task is "
@@ -955,7 +958,9 @@ class AssistantProviderMixin:
         self.prompt.clear()
         client = self.client
         outbound_prompt = (
-            prompt_context
+            AGENT_EXECUTION_CONTRACT
+            + "\n\n"
+            + prompt_context
             + "\n\n--- USER REQUEST ---\n"
             + prompt
         )

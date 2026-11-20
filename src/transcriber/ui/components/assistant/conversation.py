@@ -1,18 +1,7 @@
 """Message insertion, incremental refresh and conversation rendering coordination."""
 from __future__ import annotations
 
-from PySide6.QtGui import QTextCursor
-
-
 class AssistantConversationMixin:
-    def _insert_suggestion(self, prompt: str):
-        current = self.prompt.toPlainText().strip()
-        self.prompt.setPlainText(f"{current}\n\n{prompt}" if current else prompt)
-        self.prompt.setFocus()
-        cursor = self.prompt.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        self.prompt.setTextCursor(cursor)
-
     def _schedule_chat_refresh(self):
         if not self._chat_refresh_timer.isActive():
             self._chat_refresh_timer.start()
@@ -25,7 +14,6 @@ class AssistantConversationMixin:
             self._messages, force_scroll_to_bottom=scroll_to_bottom
         )
         self.chat_view.setPlainText(self.conversation_view.toPlainText())
-        self.suggestions_container.setVisible(False)
         title = self._session_title()
         active = self.session_store.get_session(self._active_session_id) or {}
         provider = active.get("provider") or self._chat_provider

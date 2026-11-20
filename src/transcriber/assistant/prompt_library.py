@@ -7,6 +7,24 @@ import re
 import tempfile
 from pathlib import Path
 
+
+AGENT_EXECUTION_CONTRACT = """## Required agent execution protocol
+
+Treat every request as a task with an explicit control decision after each result:
+- CONTINUE: the task still needs work. Make a real tool/function call using a tool actually present in this runtime, with its exact schema and arguments.
+- DONE: the requested outcome is verified, or progress is genuinely blocked by missing information, unavailable tools or denied permission. Only then send the final user-facing answer.
+- Do not invent a textual continue=true/false argument. A real tool call is the continue signal; a normal assistant response without a tool call is the completion signal.
+- Do not stop after saying what you plan to do. If the user asked for an action and an appropriate permitted tool exists, invoke it, wait for its result, inspect the result and continue until the task is complete.
+- After every tool result, decide whether another operation is necessary. Feed the actual result into the next step; never fabricate success, paths, files, command output or application state.
+- For commands, use only a command/terminal tool actually exposed by this runtime. For Ollama, system.run_command is available only when it appears in the supplied tools list. For OpenCode, use its actual native terminal/shell tool only when exposed. Never imitate execution by merely printing a command. Respect approval prompts, current-user privileges and the configured working directory.
+- For Transcriber MCP actions, discover exact names and schemas with app_list_available_actions when needed. Submit an action with app_execute_action(action_name, arguments, idempotency_key, deadline_seconds). Use a unique 8–128 character idempotency key for each distinct action and preserve the returned operation_id.
+- An accepted or queued action is NOT completed. When an operation_id is returned, call app_get_operation_status(operation_id) and continue checking while state is queued, running or cancelling. Treat only completed, failed, cancelled or timed_out as terminal. Inspect the final result/error; do not blindly resubmit a running or timed-out action.
+- For multi-step work, complete and verify one logical step before selecting the next. If a result shows failure, investigate before retrying. Never retry a denied action or bypass a permission boundary.
+- Keep progress updates brief. Do not expose private chain-of-thought. Send one clear final answer distinguishing completed work, failures, partial progress and anything requiring the user.
+
+"""
+
+
 DEFAULT_PROMPTS: dict[str, str] = {
     "00-AGENT.md": """# Transcriber agent — coordinator instructions
 
@@ -49,6 +67,15 @@ rather than relying on cached copies.
   inspect the actual state before retrying.
 - Keep replies direct. Summarize what changed, what stayed unchanged and any
   remaining uncertainty.
+
+## Tool-call control loop
+
+A request is not complete merely because you described a plan. When a tool can perform
+the requested action, call it and wait for its real result. Continue with another tool
+call when that result shows more work is required; provide the final answer only when
+the task is verified complete or genuinely blocked. For asynchronous Transcriber MCP
+actions, retain the returned operation ID and poll the operation status until it reaches
+a terminal state. Never claim success from an accepted or queued operation.
 
 ## Choosing a workflow
 
@@ -161,16 +188,26 @@ formats. It is not the primary place to rewrite the transcript.
 """,
     "50-workspace-actions.md": """# Transcriber workspace actions and permissions
 
-- Discover available MCP actions and their schemas before invoking an action.
+- Discover available MCP actions and their exact schemas before invoking an action.
 - Read current app state before acting on the wrong page, media or transcript.
-- Treat read-only actions as non-mutating. Use edit actions only for the user's
-  requested content change.
-- The application enforces permission scopes and explicit approval for
-  destructive actions. Never attempt to bypass these protections.
-- Do not run shell commands, arbitrary Python, filesystem deletion or
-  unregistered operations through invented MCP tools.
-- For a multi-step task, explain the intended changes, perform one logical step
-  at a time, verify each result and stop on unexpected state.
+- Use semantic Transcriber actions for GUI/domain changes; do not replace them with
+  shell commands, arbitrary Python or invented MCP tool names.
+- The application enforces permission scopes and explicit approval for destructive
+  actions. Never bypass a permission prompt or retry after denial.
+- For independent system/project tasks, a provider-native terminal may be used only
+  when that command tool is actually exposed and its permissions allow the operation.
+  Ollama's system.run_command must be present in the supplied tool list; OpenCode
+  must use an actually available native terminal/shell tool. Never claim execution
+  when no command tool is available.
+- app_execute_action submits asynchronous Transcriber work. Preserve its operation_id;
+  submission with state queued/running is not completion.
+- Poll app_get_operation_status(operation_id) while state is queued, running or
+  cancelling. Continue only after completed, failed, cancelled or timed_out, and
+  inspect the returned result/error before deciding the next step.
+- Give each distinct action its own idempotency key. Reuse the same key only when
+  safely retrying the exact same logical request.
+- For multi-step tasks, perform one logical step at a time, verify the actual result,
+  then continue. Stop on unexpected state and report partial progress honestly.
 """,
 }
 

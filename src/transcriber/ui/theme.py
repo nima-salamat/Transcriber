@@ -730,6 +730,19 @@ def stylesheet(theme: str) -> str:
         font-size: 10px;
         font-weight: 750;
     }}
+    QToolButton#AssistantMessageDisclosure {{
+        color: {c['muted']};
+        background: transparent;
+        border: 0;
+        border-radius: 5px;
+        padding: 2px 5px;
+        font-size: 10px;
+        font-weight: 600;
+    }}
+    QToolButton#AssistantMessageDisclosure:hover {{
+        color: {c['text']};
+        background: {c['surface_hover']};
+    }}
     QTextBrowser#AssistantMessageBody {{
         color: {c['text']};
         background: transparent;

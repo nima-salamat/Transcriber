@@ -24,12 +24,26 @@ class MessageWidget(QFrame):
         layout.setSpacing(5)
 
         header = QHBoxLayout()
+        self._collapsible = self.role in {"tool", "system"}
+        self._details_expanded = False
         self.role_label = QLabel({
             "user": "You", "assistant": "Transcriber", "tool": "Action",
             "error": "Error", "system": "Update",
         }.get(self.role, "Transcriber"))
         self.role_label.setObjectName("AssistantMessageRole")
         header.addWidget(self.role_label)
+        if self._collapsible:
+            self.detail_toggle = QToolButton()
+            self.detail_toggle.setObjectName("AssistantMessageDisclosure")
+            self.detail_toggle.setText("Show details")
+            self.detail_toggle.setArrowType(Qt.ArrowType.RightArrow)
+            self.detail_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            self.detail_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.detail_toggle.setAccessibleName("Show agent activity details")
+            self.detail_toggle.clicked.connect(self._toggle_details)
+            header.addWidget(self.detail_toggle)
+        else:
+            self.detail_toggle = None
         header.addStretch(1)
 
         self.copy_button = QToolButton()
@@ -49,6 +63,9 @@ class MessageWidget(QFrame):
         layout.addWidget(self.body)
 
         self._text = ""
+        if self._collapsible:
+            self.body.hide()
+            self.copy_button.hide()
         self._copy_feedback_timer = QTimer(self)
         self._copy_feedback_timer.setSingleShot(True)
         self._copy_feedback_timer.setInterval(1600)
@@ -63,9 +80,28 @@ class MessageWidget(QFrame):
     def update_text(self, text: str):
         self._text = str(text or "")
         self.body.set_markdown(self._text)
-        self.copy_button.setVisible(bool(self._text))
+        self.copy_button.setVisible(
+            bool(self._text) and (not self._collapsible or self._details_expanded)
+        )
         if not self._text:
             self._restore_copy_button()
+
+    def _toggle_details(self):
+        if not self._collapsible:
+            return
+        self._details_expanded = not self._details_expanded
+        self.body.setVisible(self._details_expanded)
+        self.copy_button.setVisible(self._details_expanded and bool(self._text))
+        self.detail_toggle.setArrowType(
+            Qt.ArrowType.DownArrow if self._details_expanded else Qt.ArrowType.RightArrow
+        )
+        self.detail_toggle.setText(
+            "Hide details" if self._details_expanded else "Show details"
+        )
+        self.detail_toggle.setAccessibleName(
+            "Hide agent activity details" if self._details_expanded
+            else "Show agent activity details"
+        )
 
     def _copy_message(self, *_args):
         """Copy the rendered message text, not Markdown markup, to the system clipboard."""

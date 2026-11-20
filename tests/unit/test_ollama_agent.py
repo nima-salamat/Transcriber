@@ -169,3 +169,32 @@ def test_tools_expose_general_browser_shell_and_skill_actions_when_permissions_e
     assert isinstance(tools, list)
     assert AgentPermission.BROWSER_CONTROL.value == "browser_control"
     assert AgentPermission.COMMAND_EXECUTION.value == "command_execution"
+
+
+def test_agent_continues_through_multiple_tool_results_before_final_answer():
+    client = FakeOllamaClient([
+        {"text": "I will inspect the state.", "tool_calls": [_call("app.get_state", {})], "metrics": {}},
+        {"text": "The state is ready; I will now inspect audio.", "tool_calls": [_call("audio.get_status", {})], "metrics": {}},
+        {"text": "The audio is ready. Here is the result.", "tool_calls": [], "metrics": {}},
+    ])
+    executed = []
+    agent = OllamaAgent(
+        client,
+        lambda name, arguments: executed.append((name, arguments)) or {
+            "step": len(executed), "action": name
+        },
+    )
+
+    result = agent.run(
+        "qwen2.5:7b",
+        [{"role": "user", "content": "Inspect the app and audio, then report."}],
+        [{"type": "function", "function": {"name": "app.get_state"}},
+         {"type": "function", "function": {"name": "audio.get_status"}}],
+    )
+
+    assert [name for name, _args in executed] == ["app.get_state", "audio.get_status"]
+    assert result["tool_count"] == 2
+    assert result["tool_rounds"] == 2
+    assert result["text"] == "The audio is ready. Here is the result."
+    assert client.calls[1]["messages"][-1]["role"] == "tool"
+    assert client.calls[2]["messages"][-1]["role"] == "tool"

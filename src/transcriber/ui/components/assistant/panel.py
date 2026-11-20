@@ -198,17 +198,6 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
 
     status_message = Signal(str)
 
-    QUICK_PROMPTS = {
-        "Search the web": "Search the web for reliable information about the topic I provide, compare sources and summarize the findings with source links.",
-        "Open an app": "Open the desktop application I name and tell me when it is ready.",
-        "Find a file": "Help me locate a file or folder on this computer. Ask for a useful clue if the location is unclear.",
-        "Review transcript": (
-            "Review the currently open transcript for likely speech-recognition mistakes, "
-            "unclear passages and inconsistencies. Explain suggested corrections first; "
-            "do not modify the transcript until I approve."
-        ),
-    }
-
     def __init__(
         self, paths, thread_pool, settings_store=None, parent=None, *,
         voice_transcriber=None, model_manager=None, voice_model_loader=None,
@@ -298,23 +287,11 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
 
         root = QVBoxLayout(self)
         self.root_layout = root
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(14)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        header = QHBoxLayout()
-        header.setSpacing(10)
-        title_group = QVBoxLayout()
-        title_group.setSpacing(3)
-        title = QLabel("AI assistant")
-        title.setObjectName("AssistantTitle")
-        subtitle = QLabel("General desktop agent · browser, apps, commands and skills")
-        subtitle.setObjectName("Muted")
-        subtitle.setWordWrap(True)
-        title_group.addWidget(title)
-        title_group.addWidget(subtitle)
-        header.addLayout(title_group, 1)
-
-        # Kept as hidden compatibility controls for provider lifecycle methods.
+        # Provider lifecycle controls remain available to the connection mixin,
+        # but the conversation surface has no redundant global title/settings bar.
         self.connection_state = QLabel("Disconnected", self)
         self.connection_state.setObjectName("AssistantStatus")
         self.connection_state.setProperty("state", "disconnected")
@@ -330,17 +307,6 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.disconnect_button.clicked.connect(self.disconnect_provider)
         self.disconnect_button.hide()
 
-        self.settings_button = QPushButton(self)
-        self.settings_button.setObjectName("AssistantSettingsButton")
-        self.settings_button.setIcon(self.ui_icons.icon("settings", color="#9aa8b8", size=18))
-        self.settings_button.setFixedSize(40, 40)
-        self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.settings_button.setToolTip("Assistant settings")
-        self.settings_button.setAccessibleName("Open assistant settings")
-        self.settings_button.clicked.connect(self.show_settings)
-        header.addWidget(self.settings_button)
-        root.addLayout(header)
-
         self.page_stack = QStackedWidget(self)
         self.page_stack.setObjectName("AssistantPageStack")
         self.conversation_page = QWidget()
@@ -350,6 +316,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.conversation_layout.setSpacing(0)
 
         self.sidebar = AssistantSidebar(self.session_store, self.ui_icons, self)
+        self.settings_button = self.sidebar.settings_button
+        self.settings_button.setToolTip("Assistant settings")
+        self.settings_button.setAccessibleName("Open assistant settings")
         self.sidebar.new_chat_requested.connect(self.new_chat)
         self.sidebar.session_selected.connect(self._on_session_item_clicked)
         self.sidebar.rename_requested.connect(self._rename_session)
@@ -585,8 +554,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.settings_layout.addStretch(1)
         self.refresh_skills()
 
-        self.conversation_view = ConversationView(self.QUICK_PROMPTS, self.ui_icons, self)
-        self.conversation_view.prompt_requested.connect(self._insert_suggestion)
+        self.conversation_view = ConversationView(self.ui_icons, self)
         self.chat_layout.addWidget(self.conversation_view, 1)
 
         # Legacy inspection surface kept synchronized for integrations that
@@ -595,28 +563,6 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.chat_view.setObjectName("AssistantChatCompatibilityMirror")
         self.chat_view.hide()
         self.log = self.chat_view
-
-        # Tool and action updates are rendered inline in the conversation.
-        suggestion_header = QHBoxLayout()
-        suggestion_label = QLabel("QUICK PROMPTS")
-        suggestion_label.setObjectName("AssistantEyebrow")
-        suggestion_header.addWidget(suggestion_label)
-        suggestion_header.addStretch(1)
-        self.chat_layout.addLayout(suggestion_header)
-
-        suggestions = QHBoxLayout()
-        suggestions.setSpacing(6)
-        for label, prompt in self.QUICK_PROMPTS.items():
-            button = QPushButton(label)
-            button.setObjectName("Suggestion")
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.clicked.connect(lambda _checked=False, text=prompt: self._insert_suggestion(text))
-            suggestions.addWidget(button)
-        self.suggestions_container = QWidget()
-        self.suggestions_container.setObjectName("AssistantSuggestions")
-        self.suggestions_container.setLayout(suggestions)
-        self.chat_layout.addWidget(self.suggestions_container)
-        self.suggestions_container.hide()  # prompts now live in the centered empty state
 
         self.composer = MessageComposer(
             self.ui_icons, self, provider=self._chat_provider

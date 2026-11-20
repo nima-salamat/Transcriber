@@ -1,17 +1,15 @@
 """Incremental conversation renderer with scroll anchoring and safe Markdown."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget, QSizePolicy
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget, QSizePolicy
 
 from .message_widget import MessageWidget
 
 
 class ConversationView(QFrame):
     """Incremental message cards; follow tokens only while the reader is at the bottom."""
-    prompt_requested = Signal(str)
-
-    def __init__(self, quick_prompts=None, icons=None, parent=None):
+    def __init__(self, icons=None, parent=None):
         super().__init__(parent)
         self.setObjectName("AssistantConversationView")
         self.icons = icons
@@ -63,27 +61,6 @@ class ConversationView(QFrame):
         description.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         description.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(description)
-        self.prompt_grid = QGridLayout()
-        self.prompt_grid.setContentsMargins(0, 4, 0, 0)
-        self.prompt_grid.setHorizontalSpacing(12)
-        self.prompt_grid.setVerticalSpacing(10)
-        self._suggestion_buttons = []
-        for label, prompt in (quick_prompts or {}).items():
-            button = QPushButton(label)
-            button.setObjectName("AssistantPromptSuggestion")
-            button.setMinimumHeight(58)
-            button.setMinimumWidth(0)
-            button.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-            )
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setToolTip(prompt)
-            button.clicked.connect(
-                lambda _checked=False, value=prompt: self.prompt_requested.emit(value)
-            )
-            self._suggestion_buttons.append(button)
-        empty_layout.addLayout(self.prompt_grid)
-        self._layout_prompt_suggestions()
         self.content_layout.addWidget(self.empty_state)
         self.content_layout.addStretch(1)
         self.scroll_area.setWidget(self.content)
@@ -94,21 +71,6 @@ class ConversationView(QFrame):
         self.jump_button.clicked.connect(self.scroll_to_latest)
         self.jump_button.hide()
         outer.addWidget(self.jump_button, 0, Qt.AlignmentFlag.AlignHCenter)
-
-    def _layout_prompt_suggestions(self):
-        """Use an even grid and collapse to one column when the chat is narrow."""
-        while self.prompt_grid.count():
-            self.prompt_grid.takeAt(0)
-        narrow = self.width() < 560
-        columns = 2 if self.width() >= 680 else 1
-        for index, button in enumerate(self._suggestion_buttons):
-            row, column = divmod(index, columns)
-            button.setProperty("compact", narrow)
-            button.style().unpolish(button)
-            button.style().polish(button)
-            self.prompt_grid.addWidget(button, row, column)
-        self.prompt_grid.setColumnStretch(0, 1)
-        self.prompt_grid.setColumnStretch(1, 1 if columns == 2 else 0)
 
     def toPlainText(self) -> str:
         return "\n\n".join(str(item.get("text") or "") for item in self._messages)
@@ -226,7 +188,6 @@ class ConversationView(QFrame):
             self._empty_layout.setSpacing(12)
             self.prompt_grid.setHorizontalSpacing(12)
             self.prompt_grid.setVerticalSpacing(10)
-        self._layout_prompt_suggestions()
         for widget in self._widgets:
             widget.body.refresh_document_size()
         if self._is_near_bottom():
