@@ -818,14 +818,14 @@ class AssistantProviderMixin:
             "Use tools to perform actions rather than merely describing how the user could do them. "
             "Show useful results, URLs, file paths, command output and clear action summaries. "
             "Be honest about failures and uncertainty.\n"
-            + AGENT_EXECUTION_CONTRACT
-            + "\n"
             + capability_text
             + (
                 "\nThe following additional prompt pack applies because the user's task is "
                 "specifically about Transcriber audio/transcript features:\n" + prompt_context
                 if prompt_context else ""
             )
+            + "\n\n"
+            + AGENT_EXECUTION_CONTRACT
         )
         history = [dict(item) for item in self._ollama_messages]
         if history and history[0].get("role") == "system":
@@ -958,9 +958,9 @@ class AssistantProviderMixin:
         self.prompt.clear()
         client = self.client
         outbound_prompt = (
-            AGENT_EXECUTION_CONTRACT
+            prompt_context
             + "\n\n"
-            + prompt_context
+            + AGENT_EXECUTION_CONTRACT
             + "\n\n--- USER REQUEST ---\n"
             + prompt
         )

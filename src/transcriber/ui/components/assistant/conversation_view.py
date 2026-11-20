@@ -186,8 +186,6 @@ class ConversationView(QFrame):
             self.content_layout.setContentsMargins(18, 22, 18, 26)
             self._empty_layout.setContentsMargins(18, 34, 18, 34)
             self._empty_layout.setSpacing(12)
-            self.prompt_grid.setHorizontalSpacing(12)
-            self.prompt_grid.setVerticalSpacing(10)
         for widget in self._widgets:
             widget.body.refresh_document_size()
         if self._is_near_bottom():
