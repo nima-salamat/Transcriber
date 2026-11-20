@@ -341,10 +341,22 @@ def test_history_sidebar_shows_a_bounded_latest_user_preview(qtbot, tmp_path):
     )
     row = sidebar.session_list.itemWidget(item)
     assert row is not None
+    # Only the custom row widget should render visible text; the native item
+    # must stay empty or its delegate text bleeds through the transparent row.
+    assert item.text() == ""
     assert row._full_preview.startswith("Latest question about this transcript")
     assert len(row._full_preview) <= 113
     qtbot.wait(40)
     assert row.preview_label.text()
+
+    sidebar.update_session_title(
+        session["id"],
+        "Renamed transcript review",
+        messages=session["messages"],
+        updated_at=session["updated_at"],
+    )
+    assert item.text() == ""
+    assert row.title_label.text() == "Renamed transcript review"
 
 
 def test_loading_a_session_forces_conversation_to_latest_message(qtbot):

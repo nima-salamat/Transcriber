@@ -281,10 +281,15 @@ class AssistantSidebar(QFrame):
         for index in range(self.session_list.count()):
             item = self.session_list.item(index)
             if str(item.data(self.SESSION_ROLE) or "") == identifier:
-                item.setText(clean_title)
+                item.setData(Qt.ItemDataRole.AccessibleTextRole, clean_title)
                 row = self.session_list.itemWidget(item)
                 if isinstance(row, _SessionHistoryRow):
-                    row.set_content(clean_title, self._display_preview(target))
+                    preview = self._display_preview(target)
+                    row.set_content(clean_title, preview)
+                    item.setToolTip(
+                        f"{clean_title}" + (f"\n{preview}" if preview else "") +
+                        f"\n{self._updated_at(target).strftime('%Y-%m-%d %H:%M')}"
+                    )
                 break
 
     def set_active_session(self, session_id: str):
@@ -331,7 +336,11 @@ class AssistantSidebar(QFrame):
                 title = self._display_title(session)
                 provider = "Ollama" if session.get("provider") == "ollama" else "OpenCode"
                 preview = self._display_preview(session)
-                item = QListWidgetItem(title)
+                # The row widget renders the title/preview itself. Keep the
+                # QListWidgetItem text empty so the delegate cannot paint a
+                # second copy through the row's transparent background.
+                item = QListWidgetItem()
+                item.setData(Qt.ItemDataRole.AccessibleTextRole, title)
                 item.setSizeHint(QSize(0, 66))
                 item.setData(self.SESSION_ROLE, str(session.get("id") or ""))
                 item.setToolTip(
