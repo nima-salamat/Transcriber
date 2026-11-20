@@ -180,8 +180,6 @@ class ConversationView(QFrame):
             self.content_layout.setContentsMargins(8, 12, 8, 16)
             self._empty_layout.setContentsMargins(8, 18, 8, 18)
             self._empty_layout.setSpacing(9)
-            self.prompt_grid.setHorizontalSpacing(7)
-            self.prompt_grid.setVerticalSpacing(8)
         else:
             self.content_layout.setContentsMargins(18, 22, 18, 26)
             self._empty_layout.setContentsMargins(18, 34, 18, 34)
