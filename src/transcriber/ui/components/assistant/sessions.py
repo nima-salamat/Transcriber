@@ -148,6 +148,8 @@ class AssistantSessionMixin:
         self._active_opencode_session_id = str(metadata.get("opencode_session_id") or "")
         self._session_requested_ollama_model = str(metadata.get("ollama_model") or "")
         self._streaming_index = None
+        if hasattr(self, "agent_thinking"):
+            self.agent_thinking.reset()
         self._apply_provider_ui()
         self.sidebar.set_active_session(self._active_session_id)
         self._refresh_chat(scroll_to_bottom=True)
@@ -155,7 +157,18 @@ class AssistantSessionMixin:
 
     def _on_session_item_clicked(self, item):
         session_id = str(item if isinstance(item, str) else item.data(Qt.ItemDataRole.UserRole) or "")
-        if not session_id or session_id == self._active_session_id or self._worker_active:
+        if not session_id or session_id == self._active_session_id:
+            return
+        if getattr(self, "_agent_turn_active", False):
+            # Keep the old session selected until its model worker has stopped and
+            # its final partial response/tool history has been saved.
+            self._pending_session_switch = {"session_id": session_id}
+            if not getattr(self, "_stop_requested", False):
+                self.cancel_prompt()
+            self.activity_label.setText("Stopping before switching chat…")
+            return
+        if self._worker_active:
+            self.activity_label.setText("Please wait for the current setup operation to finish.")
             return
         self._persist_current_session(refresh_sidebar=False)
         session = self.session_store.get_session(session_id)
@@ -202,7 +215,16 @@ class AssistantSessionMixin:
         self._append_message("error", "Could not restore the OpenCode session: " + str(message))
     def new_chat(self):
         """Create a separate, locally persisted conversation without discarding older chats."""
+        if getattr(self, "_agent_turn_active", False):
+            # New chat is queued rather than disabled or allowed to mutate the
+            # current transcript while an Agent response is still streaming.
+            self._pending_session_switch = {"new_chat": True}
+            if not getattr(self, "_stop_requested", False):
+                self.cancel_prompt()
+            self.activity_label.setText("Stopping before creating a new chat…")
+            return
         if self._worker_active:
+            self.activity_label.setText("Please wait for the current setup operation to finish.")
             return
         self._persist_current_session()
         session = self.session_store.create_session(self._chat_provider)

@@ -186,10 +186,17 @@ def test_ollama_stop_is_independent_of_opencode_connection(qtbot, tmp_path):
     token = Cancellation()
     panel._chat_provider = "ollama"
     panel._ollama_cancellation = token
+    panel._agent_turn_active = True
+    panel._worker_active = True
 
     panel.cancel_prompt()
 
     assert token.cancelled
+    assert panel._stop_requested
+    assert panel.composer._busy is True
+    assert panel.composer._stoppable is True
+    assert panel.stop_button.isEnabled() is False
+    assert panel.stop_button.toolTip() == "Stop the current response"
     assert "Stop requested" in panel._messages[-1]["text"]
 
 def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
@@ -485,3 +492,122 @@ def test_browser_skill_and_enabled_action_schemas_are_preloaded(qtbot, tmp_path)
     assert "browser.search" in actions
     assert "app_execute_action" in actions
     assert "operation_id" in actions
+
+
+def test_agent_thinking_panel_expands_for_live_provider_chunks_and_resets(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+
+    thinking = panel.agent_thinking
+    assert thinking.isHidden()
+
+    thinking.begin_turn("Thinking")
+    assert not thinking.isHidden()
+    assert thinking.toggle_button.text() == "Thinking"
+    assert thinking.body.isHidden()
+
+    thinking.append_thinking("Checking the first part. ")
+    thinking.append_thinking("Now checking the second part.")
+    assert thinking.body.toPlainText() == (
+        "Checking the first part. Now checking the second part."
+    )
+    assert not thinking.body.isHidden()
+    assert thinking.toggle_button.isEnabled()
+
+    thinking.toggle_expanded()
+    assert thinking.body.isHidden()
+    thinking.append_thinking(" This chunk should stay collapsed.")
+    assert thinking.body.isHidden()
+    assert "This chunk should stay collapsed." in thinking.body.toPlainText()
+
+    thinking.finish_turn("Done")
+    assert thinking.status_label.text() == "Details available"
+
+    thinking.reset()
+    assert thinking.isHidden()
+    assert thinking.body.toPlainText() == ""
+
+
+def test_voice_status_uses_short_friendly_labels_in_thinking_panel(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+
+    panel._set_voice_activity("Microphone is listening. Speak now.", stage="listening")
+    assert panel.agent_thinking.toggle_button.text() == "Listening"
+
+    panel._set_voice_activity("Converting speech to text…", stage="transcribing")
+    assert panel.agent_thinking.toggle_button.text() == "Transcribing"
+
+    panel._set_voice_activity("Speech recognition failed", stage="error")
+    assert panel.agent_thinking.toggle_button.text() == "Error"
+
+
+def test_switching_sessions_during_agent_turn_queues_switch_and_requests_stop(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+
+    source_session_id = panel._active_session_id
+    other = panel.session_store.create_session(panel._chat_provider)
+    stop_requests = []
+    panel._agent_turn_active = True
+    panel.cancel_prompt = lambda: stop_requests.append(True)
+
+    panel._on_session_item_clicked(other["id"])
+
+    assert stop_requests == [True]
+    assert panel._pending_session_switch == {"session_id": other["id"]}
+    assert panel._active_session_id == source_session_id
+
+
+def test_new_chat_during_agent_turn_is_queued_instead_of_ignored(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+
+    stop_requests = []
+    panel._agent_turn_active = True
+    panel.cancel_prompt = lambda: stop_requests.append(True)
+
+    panel.new_chat()
+
+    assert stop_requests == [True]
+    assert panel._pending_session_switch == {"new_chat": True}
+
+
+def test_system_message_heading_uses_its_actual_lifecycle_status(qtbot):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+
+    from transcriber.ui.components.assistant.message_widget import MessageWidget
+
+    message = MessageWidget("system", "Microphone is listening. Speak now.")
+    qtbot.addWidget(message)
+    assert message.role_label.text() == "Listening"
+
+    message.update_text("Model qwen3:8b is loaded and ready.")
+    assert message.role_label.text() == "Loaded"
+
+    message.update_text("Command captured. Converting speech to text with Faster-Whisper.")
+    assert message.role_label.text() == "Transcribing"
+
+    message.update_text("Assistant generation was stopped by you.")
+    assert message.role_label.text() == "Stopped"

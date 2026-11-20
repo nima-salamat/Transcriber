@@ -202,3 +202,109 @@ def test_chat_reports_server_error(monkeypatch):
     monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
     with pytest.raises(OllamaError, match="model not found"):
         OllamaClient().chat("missing:latest", [{"role": "user", "content": "Hi"}])
+
+
+def test_show_model_discovers_thinking_controls_and_uses_model_default(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        payload = {
+            "thinking": {
+                "values": ["low", "medium", "high"],
+                "default": "medium",
+            }
+        }
+        return FakeResponse(json.dumps(payload).encode("utf-8"))
+
+    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    client = OllamaClient()
+
+    metadata = client.show_model("qwen3:8b")
+
+    assert captured["url"].endswith("/api/show")
+    assert captured["body"] == {"model": "qwen3:8b"}
+    assert client.thinking_option(metadata) == "medium"
+
+
+def test_thinking_option_is_enabled_only_when_the_model_advertises_support():
+    assert OllamaClient.thinking_option({
+        "thinking": {"values": [True, False], "default": False}
+    }) is True
+    assert OllamaClient.thinking_option({
+        "thinking": {"values": ["low", "high"], "default": "high"}
+    }) == "high"
+    assert OllamaClient.thinking_option({
+        "thinking": {"values": [False], "default": False}
+    }) is None
+    assert OllamaClient.thinking_option({}) is None
+
+
+def test_chat_requests_thinking_and_streams_it_separately_from_answer(monkeypatch):
+    captured = {}
+    events = [
+        {"message": {"role": "assistant", "thinking": "Let me check "}, "done": False},
+        {"message": {"role": "assistant", "thinking": "the details.", "content": "Here"}, "done": False},
+        {"message": {"role": "assistant", "content": " is the answer."}, "done": False},
+        {"message": {"role": "assistant", "content": ""}, "done": True},
+    ]
+
+    def fake_urlopen(request, timeout):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse("".join(json.dumps(item) + "\n" for item in events).encode("utf-8"))
+
+    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    thought_chunks = []
+    answer_chunks = []
+    result = OllamaClient().chat(
+        "qwen3:8b",
+        [{"role": "user", "content": "Explain this"}],
+        think="medium",
+        on_thinking=thought_chunks.append,
+        on_chunk=answer_chunks.append,
+    )
+
+    assert captured["body"]["think"] == "medium"
+    assert thought_chunks == ["Let me check ", "the details."]
+    assert answer_chunks == ["Here", " is the answer."]
+    assert result["thinking"] == "Let me check the details."
+    assert result["text"] == "Here is the answer."
+
+
+def test_chat_omits_think_parameter_when_model_does_not_advertise_support(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse(b'{"message":{"role":"assistant","content":"Hello"},"done":true}')
+
+    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    OllamaClient().chat(
+        "llama3.2:3b",
+        [{"role": "user", "content": "Hello"}],
+        think=None,
+    )
+
+    assert "think" not in captured["body"]
+
+
+def test_chat_preserves_assistant_thinking_in_follow_up_history(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse(
+            b'{"message":{"role":"assistant","content":"Done"},"done":true}'
+        )
+
+    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    history = [
+        {"role": "assistant", "content": "", "thinking": "I will inspect the action."},
+        {"role": "tool", "tool_name": "browser.search", "content": "{\\"ok\\":true}"},
+        {"role": "user", "content": "Continue"},
+    ]
+
+    OllamaClient().chat("qwen3:8b", history, think="medium")
+
+    assert captured["body"]["messages"][0]["thinking"] == "I will inspect the action."

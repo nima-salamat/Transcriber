@@ -18,6 +18,9 @@ class FakeOllamaClient:
         callback = kwargs.get("on_chunk")
         if callback and response.get("text"):
             callback(response["text"])
+        thinking_callback = kwargs.get("on_thinking")
+        if thinking_callback and response.get("thinking"):
+            thinking_callback(response["thinking"])
         return response
 
 
@@ -357,3 +360,31 @@ def test_agent_recovers_when_it_promises_a_second_action_without_calling_it():
     assert result["tool_count"] == 2
     assert result["text"] == "I found several results. Here is the summary."
     assert "Your previous response described or promised an action" in client.calls[2]["messages"][-1]["content"]
+
+
+def test_agent_forwards_live_thinking_chunks_and_supported_level_to_ollama():
+    client = FakeOllamaClient([
+        {
+            "text": "The answer is 42.",
+            "thinking": "Check the calculation first.",
+            "tool_calls": [],
+            "metrics": {},
+        }
+    ])
+    thinking_chunks = []
+    answer_chunks = []
+    agent = OllamaAgent(client, lambda _name, _args: None)
+
+    result = agent.run(
+        "qwen3:8b",
+        [{"role": "user", "content": "What is the answer?"}],
+        [],
+        think="medium",
+        on_thinking=thinking_chunks.append,
+        on_chunk=answer_chunks.append,
+    )
+
+    assert client.calls[0]["think"] == "medium"
+    assert thinking_chunks == ["Check the calculation first."]
+    assert answer_chunks == ["The answer is 42."]
+    assert result["text"] == "The answer is 42."

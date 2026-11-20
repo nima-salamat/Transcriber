@@ -46,6 +46,8 @@ class AssistantConversationMixin:
                     log_message=f"{provider_name} is generating your response.",
                 )
         self._messages[self._streaming_index]["text"] += str(text)
+        if hasattr(self, "agent_thinking"):
+            self.agent_thinking.set_status("Generating")
         self._schedule_chat_refresh()
         self._schedule_session_persist()
 

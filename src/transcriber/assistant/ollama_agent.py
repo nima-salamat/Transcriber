@@ -422,9 +422,11 @@ class OllamaAgent:
         *,
         keep_alive: str = "30m",
         cancellation=None,
+        think: bool | str | None = None,
         require_tool_call: bool = False,
         fallback_tool_call: dict[str, Any] | None = None,
         on_chunk: Callable[[str], None] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
         on_tool_status: Callable[[str], None] | None = None,
         on_tool_result: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
@@ -464,7 +466,8 @@ class OllamaAgent:
             try:
                 response = self.client.chat(
                     model, working, keep_alive=keep_alive, tools=tools,
-                    cancellation=cancellation, on_chunk=collect,
+                    cancellation=cancellation, think=think, on_chunk=collect,
+                    on_thinking=on_thinking,
                 )
             except OllamaCancelled:
                 partial = "".join(turn_chunks)
@@ -548,6 +551,9 @@ class OllamaAgent:
             if answer and on_chunk and buffer_until_tool_decision:
                 on_chunk(answer)
             assistant_message = {"role": "assistant", "content": answer}
+            thinking_text = str(response.get("thinking") or "")
+            if thinking_text:
+                assistant_message["thinking"] = thinking_text
             if calls:
                 assistant_message["tool_calls"] = calls
             working.append(assistant_message)

@@ -44,6 +44,7 @@ from transcriber.ui.components.assistant.voice import AssistantVoiceMixin
 from transcriber.ui.components.assistant.conversation import AssistantConversationMixin
 from transcriber.ui.components.assistant.composer import MessageComposer
 from transcriber.ui.components.assistant.conversation_view import ConversationView
+from transcriber.ui.components.assistant.activity_widget import AgentThinkingWidget
 from transcriber.ui.components.assistant.header import ConversationHeader
 from transcriber.ui.components.assistant.sidebar import AssistantSidebar
 from transcriber.ui.design.icon_registry import IconRegistry
@@ -65,6 +66,7 @@ class _AssistantSignals(QObject):
     ollama_refresh_error = Signal(str)
     ollama_connected = Signal(object)
     ollama_chunk = Signal(str)
+    ollama_thinking = Signal(str)
     ollama_complete = Signal(object)
     ollama_error = Signal(str)
     ollama_tool_status = Signal(str)
@@ -272,6 +274,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
 
         self.client: OpenCodeACPClient | None = None
         self._worker_active = False
+        self._agent_turn_active = False
+        self._stop_requested = False
+        self._pending_session_switch = None
         self._connection_busy = False
         self._streaming_index: int | None = None
         self._session_file = self.paths.config / "opencode-session.json"
@@ -556,6 +561,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
 
         self.conversation_view = ConversationView(self.ui_icons, self)
         self.chat_layout.addWidget(self.conversation_view, 1)
+        self.agent_thinking = AgentThinkingWidget(self.chat_workspace)
+        self.chat_layout.addWidget(self.agent_thinking, 0)
+        self.signals.ollama_thinking.connect(self.agent_thinking.append_thinking)
 
         # Legacy inspection surface kept synchronized for integrations that
         # historically read chat_view.toPlainText().

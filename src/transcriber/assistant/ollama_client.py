@@ -176,6 +176,31 @@ class OllamaClient:
                 })
         return sorted(models, key=lambda item: item["name"].casefold())
 
+    def show_model(self, model: str) -> dict:
+        """Read /api/show metadata, including the model's supported thinking controls."""
+        selected = str(model or "").strip()
+        if not selected:
+            raise ValueError("Select an installed Ollama model first.")
+        result = self._json_request("POST", "/api/show", {"model": selected})
+        return result if isinstance(result, dict) else {}
+
+    @staticmethod
+    def thinking_option(show_result: dict | None) -> bool | str | None:
+        """Choose a supported thinking value, preferring the model's advertised default."""
+        metadata = show_result.get("thinking") if isinstance(show_result, dict) else None
+        if not isinstance(metadata, dict):
+            return None
+        values = metadata.get("values")
+        if not isinstance(values, list) or not values:
+            return None
+        default = metadata.get("default")
+        if isinstance(default, (bool, str)) and default in values and default is not False:
+            return default
+        if True in values:
+            return True
+        named = next((value for value in values if isinstance(value, str) and value), None)
+        return named
+
     def load_model(
         self,
         model: str,
@@ -203,8 +228,10 @@ class OllamaClient:
         *,
         keep_alive: str = "30m",
         on_chunk: Callable[[str], None] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
         tools: Iterable[dict] | None = None,
         cancellation: OllamaCancellation | None = None,
+        think: bool | str | None = None,
         timeout: float = 900.0,
     ) -> dict:
         """Stream a chat turn, including tool-call messages supported by Ollama."""
@@ -222,6 +249,8 @@ class OllamaClient:
                 message["tool_name"] = str(item["tool_name"])
             if role == "assistant" and item.get("tool_calls"):
                 message["tool_calls"] = item["tool_calls"]
+            if role == "assistant" and item.get("thinking"):
+                message["thinking"] = str(item["thinking"])
             normalized.append(message)
         if not normalized:
             raise ValueError("A chat message is required.")
@@ -235,6 +264,8 @@ class OllamaClient:
         }
         if tool_list:
             payload_data["tools"] = tool_list
+        if think is not None:
+            payload_data["think"] = think
         payload = json.dumps(payload_data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         request = Request(
             f"{self.base_url}/api/chat",
@@ -243,6 +274,7 @@ class OllamaClient:
             headers={"Accept": "application/x-ndjson", "Content-Type": "application/json"},
         )
         chunks: list[str] = []
+        thinking_chunks: list[str] = []
         tool_calls: list[dict] = []
         final: dict = {}
         response = None
@@ -265,6 +297,11 @@ class OllamaClient:
                 if item.get("error"):
                     raise OllamaError(str(item["error"]))
                 message = item.get("message") or {}
+                thinking = str(message.get("thinking") or "")
+                if thinking:
+                    thinking_chunks.append(thinking)
+                    if on_thinking:
+                        on_thinking(thinking)
                 chunk = str(message.get("content") or "")
                 if chunk:
                     chunks.append(chunk)
@@ -310,6 +347,7 @@ class OllamaClient:
         return {
             "model": selected,
             "text": "".join(chunks),
+            "thinking": "".join(thinking_chunks),
             "tool_calls": tool_calls,
             "done": bool(final.get("done", False)),
             "done_reason": final.get("done_reason"),

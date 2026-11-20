@@ -319,6 +319,24 @@ class AssistantVoiceMixin:
         display = str(message or "Voice chat is active")
         self.voice_live_status.setText(display)
         self.voice_state_label.setText(display)
+        if hasattr(self, "agent_thinking"):
+            stage_labels = {
+                "connecting": "Connecting",
+                "waiting": "Listening",
+                "wake-detected": "Listening",
+                "listening": "Listening",
+                "transcribing": "Transcribing",
+                "receiving": "Generating",
+                "response": "Thinking",
+                "resuming": "Listening",
+                "stopped": "Stopped",
+                "cancelled": "Stopped",
+                "error": "Error",
+                "asr-error": "Error",
+            }
+            self.agent_thinking.set_status(
+                stage_labels.get(str(stage or ""), display)
+            )
         self._sync_voice_orb()
         if stage is not None and stage != self._last_voice_stage:
             self._last_voice_stage = stage

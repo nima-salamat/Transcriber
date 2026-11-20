@@ -769,6 +769,39 @@ def stylesheet(theme: str) -> str:
         border: 1px solid {c['border']};
         border-radius: 10px;
     }}
+    QFrame#AssistantThinking {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+    }}
+    QToolButton#AssistantThinkingToggle {{
+        color: {c['text']};
+        background: transparent;
+        border: 0;
+        border-radius: 6px;
+        padding: 3px 5px;
+        font-size: 11px;
+        font-weight: 700;
+    }}
+    QToolButton#AssistantThinkingToggle:disabled {{
+        color: {c['text']};
+    }}
+    QToolButton#AssistantThinkingToggle:hover {{
+        background: {c['surface_hover']};
+    }}
+    QLabel#AssistantThinkingStatus {{
+        color: {c['muted']};
+        font-size: 10px;
+    }}
+    QPlainTextEdit#AssistantThinkingBody {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 7px;
+        font-size: 11px;
+        selection-background-color: {c['accent']};
+    }}
     QLabel#AssistantActivityDetail {{
         color: {c['muted']};
         font-size: 11px;

@@ -28,7 +28,7 @@ class MessageWidget(QFrame):
         self._details_expanded = False
         self.role_label = QLabel({
             "user": "You", "assistant": "Transcriber", "tool": "Action",
-            "error": "Error", "system": "Update",
+            "error": "Error", "system": "Status",
         }.get(self.role, "Transcriber"))
         self.role_label.setObjectName("AssistantMessageRole")
         header.addWidget(self.role_label)
@@ -77,8 +77,34 @@ class MessageWidget(QFrame):
         if hasattr(self, "body"):
             self.body.refresh_document_size()
 
+    @staticmethod
+    def _system_status_title(text: str) -> str:
+        """Replace generic Update/Status headings with the actual lifecycle state."""
+        value = " ".join(str(text or "").casefold().split())
+        labels = (
+            (("listening", "wake word", "waiting for the wake"), "Listening"),
+            (("transcrib", "converting speech", "speech-to-text"), "Transcribing"),
+            (("loading", "load model"), "Loading"),
+            (("loaded", "instructions loaded", "model loaded"), "Loaded"),
+            (("connecting", "connection requested"), "Connecting"),
+            (("connected", "connection established"), "Connected"),
+            (("stopping", "stop requested", "cancellation requested"), "Stopping"),
+            (("stopped", "cancelled", "canceled"), "Stopped"),
+            (("thinking", "reasoning"), "Thinking"),
+            (("generating", "receiving response"), "Generating"),
+            (("waiting", "queued", "pending"), "Waiting"),
+            (("completed", "finished", "successfully"), "Done"),
+            (("error", "could not", "failed", "failure"), "Error"),
+        )
+        for cues, label in labels:
+            if any(cue in value for cue in cues):
+                return label
+        return "Status"
+
     def update_text(self, text: str):
         self._text = str(text or "")
+        if self.role == "system":
+            self.role_label.setText(self._system_status_title(self._text))
         self.body.set_markdown(self._text)
         self.copy_button.setVisible(
             bool(self._text) and (not self._collapsible or self._details_expanded)
