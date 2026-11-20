@@ -316,7 +316,186 @@ def stylesheet(theme: str) -> str:
     }}
     QMenu::item {{ padding: 8px 24px 8px 12px; border-radius: 6px; }}
     QMenu::item:selected {{ background: {c['surface_hover']}; }}
-    QToolTip {{
+    /* Modular AI workspace */
+    QFrame#AssistantSidebar {{
+        background: {c['surface']};
+        border-right: 1px solid {c['border']};
+    }}
+    QLabel#AssistantBrand {{
+        font-size: 15px;
+        font-weight: 750;
+        padding: 3px 2px 9px 2px;
+    }}
+    QPushButton#AssistantIconButton {{
+        background: transparent;
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 0;
+        min-width: 28px;
+        max-width: 30px;
+        min-height: 28px;
+        max-height: 30px;
+        font-size: 17px;
+    }}
+    QLineEdit#AssistantHistorySearch {{
+        background: {c['input']};
+        border: 1px solid {c['border']};
+        border-radius: 9px;
+        padding: 9px 10px;
+    }}
+    QListWidget#AssistantSessionList {{
+        background: transparent;
+        border: 0;
+        padding: 0;
+    }}
+    QListWidget#AssistantSessionList::item {{
+        background: transparent;
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 10px;
+        margin: 1px 0;
+        color: {c['text']};
+    }}
+    QListWidget#AssistantSessionList::item:hover {{
+        background: {c['surface_hover']};
+    }}
+    QListWidget#AssistantSessionList::item:selected {{
+        background: {c['surface_2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+    }}
+    QLabel#AssistantSidebarEmpty {{
+        color: {c['muted']};
+        padding: 18px;
+    }}
+    QFrame#AssistantSidebarFooter {{
+        border-top: 1px solid {c['border']};
+    }}
+    QPushButton#AssistantSidebarAction {{
+        text-align: left;
+        background: transparent;
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 9px;
+    }}
+    QPushButton#AssistantSidebarAction:hover {{
+        background: {c['surface_hover']};
+    }}
+    QFrame#AssistantConversationHeader {{
+        background: {c['window']};
+        border-bottom: 1px solid {c['border']};
+    }}
+    QLabel#AssistantWorkspaceBadge {{
+        color: {c['muted']};
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 6px 9px;
+        max-width: 390px;
+    }}
+    QFrame#AssistantConversationView {{
+        background: {c['window']};
+        border: 0;
+    }}
+    QScrollArea#AssistantConversationScroll {{
+        background: {c['window']};
+        border: 0;
+    }}
+    QWidget#AssistantConversationContent {{
+        background: {c['window']};
+    }}
+    QLabel#AssistantEmptyTitle {{
+        font-size: 27px;
+        font-weight: 720;
+        color: {c['text']};
+    }}
+    QLabel#AssistantEmptyDescription {{
+        color: {c['muted']};
+        font-size: 13px;
+    }}
+    QPushButton#AssistantPromptSuggestion {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+        padding: 9px 12px;
+        text-align: left;
+    }}
+    QPushButton#AssistantPromptSuggestion:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QFrame#AssistantMessage_user {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 14px;
+    }}
+    QFrame#AssistantMessage_assistant {{
+        background: transparent;
+        border: 0;
+    }}
+    QFrame#AssistantMessage_tool {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+    }}
+    QFrame#AssistantMessage_error {{
+        background: {c['danger']};
+        border: 0;
+        border-radius: 10px;
+    }}
+    QFrame#AssistantMessage_system {{
+        background: transparent;
+        border: 0;
+    }}
+    QLabel#AssistantMessageRole {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 750;
+    }}
+    QTextBrowser#AssistantMessageBody {{
+        color: {c['text']};
+        background: transparent;
+        border: 0;
+        padding: 1px 2px;
+        selection-background-color: {c['accent']};
+    }}
+    QToolButton#AssistantMessageAction {{
+        background: transparent;
+        border: 0;
+        color: {c['muted']};
+        padding: 4px 7px;
+    }}
+    QFrame#AssistantActivity {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+    }}
+    QLabel#AssistantActivityDetail {{
+        color: {c['muted']};
+        font-size: 11px;
+        padding-left: 22px;
+    }}
+    QToolButton#AssistantActivityToggle {{
+        background: transparent;
+        border: 0;
+        font-weight: 650;
+    }}
+    QFrame#AssistantActivityRow[state="running"] QLabel#AssistantActivityIcon {{
+        color: {c['warning']};
+    }}
+    QFrame#AssistantActivityRow[state="completed"] QLabel#AssistantActivityIcon {{
+        color: {c['success']};
+    }}
+    QFrame#AssistantActivityRow[state="failed"] QLabel#AssistantActivityIcon {{
+        color: {c['danger']};
+    }}
+    QPushButton#AssistantJumpLatest {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 16px;
+        padding: 7px 13px;
+    }}
+        QToolTip {{
         background: {c['surface']};
         color: {c['text']};
         border: 1px solid {c['border']};

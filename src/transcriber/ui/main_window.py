@@ -156,6 +156,10 @@ class MainWindow(QMainWindow):
         self.transcript_document = TranscriptDocument()
         self.transcript_history = CommandHistory(self.transcript_document)
         self._sidebar_collapsed = False
+        self._assistant_layout_active = False
+        self._assistant_previous_sidebar_collapsed = False
+        self._assistant_previous_toolbar_hidden = False
+        self._assistant_previous_inspector_visible = True
         self.thread_pool = QThreadPool(self)
         self.icon_registry = IconRegistry()
         self.dispatcher = MainThreadDispatcher(self)
@@ -244,6 +248,7 @@ class MainWindow(QMainWindow):
         version.setObjectName("Muted")
         version.setStyleSheet("font-size: 10px; margin: 4px;")
         side_layout.addWidget(version)
+        self.sidebar_version = version
         self.sidebar = sidebar
         root_layout.addWidget(sidebar)
 
@@ -278,6 +283,7 @@ class MainWindow(QMainWindow):
         toolbar_layout.addWidget(self.assistant_button)
         toolbar_layout.addWidget(self.top_status)
         toolbar_layout.addWidget(new_button)
+        self.toolbar = toolbar
         content_layout.addWidget(toolbar)
 
         self.stack = QStackedWidget()
@@ -483,6 +489,10 @@ class MainWindow(QMainWindow):
                     previous = control.blockSignals(True)
                     control.setChecked(bool(visible))
                     control.blockSignals(previous)
+            # Hiding the Inspector is an implementation detail of immersive
+            # Assistant mode. Do not persist that temporary visibility change.
+            if setting == "inspector_visible" and getattr(self, "_assistant_layout_active", False):
+                break
             self.settings_store.update(**{setting: bool(visible)})
             break
 
@@ -1524,19 +1534,29 @@ class MainWindow(QMainWindow):
         dialog.setDefaultButton(QMessageBox.No)
         return dialog.exec() == QMessageBox.Yes
 
-    def toggle_sidebar(self):
-        self._sidebar_collapsed = not getattr(self, "_sidebar_collapsed", False)
+    def _apply_sidebar_collapsed_state(self, collapsed: bool, *, persist: bool = True):
+        self._sidebar_collapsed = bool(collapsed)
         width = 76 if self._sidebar_collapsed else 210
         self.sidebar.setMinimumWidth(width)
         self.sidebar.setMaximumWidth(width)
         self.brand_name.setVisible(not self._sidebar_collapsed)
         self.tagline.setVisible(not self._sidebar_collapsed)
-        self.sidebar_toggle.setText("Expand sidebar" if self._sidebar_collapsed else "Collapse sidebar")
+        self.sidebar_toggle.setText("" if self._sidebar_collapsed else "Collapse sidebar")
+        self.sidebar_toggle.setIcon(self.icon_registry.icon("forward" if self._sidebar_collapsed else "back", size=16))
+        self.sidebar_toggle.setToolTip("Expand sidebar" if self._sidebar_collapsed else "Collapse sidebar")
+        self.sidebar_toggle.setAccessibleName("Expand sidebar" if self._sidebar_collapsed else "Collapse sidebar")
+        self.local_status.setVisible(not self._sidebar_collapsed)
+        self.sidebar_version.setVisible(not self._sidebar_collapsed)
         for key, _icon, title in self.NAVIGATION:
             button = self.nav_buttons[key]
             button.setText("" if self._sidebar_collapsed else title)
             button.setToolTip(title)
-        self.settings_store.update(sidebar_collapsed=self._sidebar_collapsed)
+            button.setAccessibleName(title)
+        if persist:
+            self.settings_store.update(sidebar_collapsed=self._sidebar_collapsed)
+
+    def toggle_sidebar(self):
+        self._apply_sidebar_collapsed_state(not self._sidebar_collapsed)
 
     def _search_library(self):
         self.global_search_popup.activate_current()
@@ -1661,6 +1681,26 @@ class MainWindow(QMainWindow):
     def navigate(self, page_id: str):
         if page_id not in self.pages:
             page_id = "home"
+
+        if page_id == "assistant" and not self._assistant_layout_active:
+            # Reuse the existing MainWindow stack; no second application window.
+            # Save the user's layout and restore it verbatim when leaving Assistant.
+            self._assistant_layout_active = True
+            self._assistant_previous_sidebar_collapsed = self._sidebar_collapsed
+            self._assistant_previous_toolbar_hidden = self.toolbar.isHidden()
+            self._assistant_previous_inspector_visible = not self.assistant_dock.isHidden()
+            self._apply_sidebar_collapsed_state(True, persist=False)
+            self.toolbar.hide()
+            if not self.assistant_dock.isHidden():
+                self.assistant_dock.hide()
+        elif page_id != "assistant" and self._assistant_layout_active:
+            self._assistant_layout_active = False
+            self._apply_sidebar_collapsed_state(
+                self._assistant_previous_sidebar_collapsed, persist=False
+            )
+            self.toolbar.setVisible(not self._assistant_previous_toolbar_hidden)
+            self.assistant_dock.setVisible(self._assistant_previous_inspector_visible)
+
         title, page = self.pages[page_id]
         self.stack.setCurrentWidget(page)
         self.page_title.setText(title)
