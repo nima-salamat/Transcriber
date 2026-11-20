@@ -165,6 +165,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
 
         self.client: OpenCodeACPClient | None = None
         self._worker_active = False
+        self._connection_busy = False
         self._streaming_index: int | None = None
         self._session_file = self.paths.config / "opencode-session.json"
         self._session_persist_timer = QTimer(self)
@@ -270,17 +271,31 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         settings_header.addStretch(1)
         settings_page_layout.addLayout(settings_header)
 
-        self.settings_scroll = QScrollArea()
-        self.settings_scroll.setObjectName("AssistantSettingsScroll")
-        self.settings_scroll.setWidgetResizable(True)
-        self.settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.settings_content = QWidget()
-        self.settings_content.setObjectName("AssistantSettingsContent")
-        self.settings_layout = QVBoxLayout(self.settings_content)
-        self.settings_layout.setContentsMargins(0, 2, 8, 10)
-        self.settings_layout.setSpacing(12)
-        self.settings_scroll.setWidget(self.settings_content)
-        settings_page_layout.addWidget(self.settings_scroll, 1)
+        settings_body = QWidget(self.settings_page)
+        settings_body_layout = QHBoxLayout(settings_body)
+        settings_body_layout.setContentsMargins(0, 2, 0, 0)
+        settings_body_layout.setSpacing(14)
+
+        self.settings_section_nav = QListWidget(settings_body)
+        self.settings_section_nav.setObjectName("AssistantSettingsNav")
+        self.settings_section_nav.setFixedWidth(168)
+        self.settings_section_nav.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.settings_section_nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.settings_section_stack = QStackedWidget(settings_body)
+        self.settings_section_stack.setObjectName("AssistantSettingsSectionStack")
+        self.settings_section_nav.currentRowChanged.connect(
+            self.settings_section_stack.setCurrentIndex
+        )
+        settings_body_layout.addWidget(self.settings_section_nav)
+        settings_body_layout.addWidget(self.settings_section_stack, 1)
+        settings_page_layout.addWidget(settings_body, 1)
+
+        self._settings_general_layout = self._create_settings_section("General")
+        self._settings_agent_layout = self._create_settings_section("Agent")
+        self._settings_voice_layout = self._create_settings_section("Voice")
+        self._settings_privacy_layout = self._create_settings_section("Privacy")
+        self.settings_section_nav.setCurrentRow(0)
+        self.settings_layout = self._settings_general_layout
 
         self.page_stack.addWidget(self.conversation_page)
         self.page_stack.addWidget(self.settings_page)
@@ -302,6 +317,11 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.ollama_url.setPlaceholderText("http://127.0.0.1:11434")
         self.ollama_url.editingFinished.connect(self._provider_base_url_changed)
         ollama_url_row.addWidget(self.ollama_url, 1)
+        self.refresh_ollama_button = QPushButton("Refresh")
+        self.refresh_ollama_button.setObjectName("Subtle")
+        self.refresh_ollama_button.setToolTip("Refresh the Ollama model list")
+        self.refresh_ollama_button.clicked.connect(self.refresh_provider_models)
+        ollama_url_row.addWidget(self.refresh_ollama_button)
         ollama_layout.addLayout(ollama_url_row)
         self.ollama_help = QLabel(
             "Connects to the local Ollama API. Install models with ollama pull <model> first."
@@ -336,6 +356,37 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         project_layout.addWidget(self.project_button)
         self.project_card = project_card
         self.settings_layout.addWidget(project_card)
+        self.settings_layout.addStretch(1)
+
+        # Agent-only controls live in their own settings section, never in the chat dock.
+        self.settings_layout = self._settings_agent_layout
+        agent_mode_card = QFrame()
+        agent_mode_card.setObjectName("AssistantSettingsCard")
+        agent_mode_layout = QVBoxLayout(agent_mode_card)
+        agent_mode_layout.setContentsMargins(14, 12, 14, 12)
+        agent_mode_layout.setSpacing(7)
+        agent_mode_title = QLabel("Agent mode")
+        agent_mode_title.setObjectName("AssistantSectionTitle")
+        agent_mode_description = QLabel(
+            "Enable tool calling for Ollama's local Agent. OpenCode continues to use its own "
+            "ACP tools and the permissions configured for that provider."
+        )
+        agent_mode_description.setObjectName("Muted")
+        agent_mode_description.setWordWrap(True)
+        self.agent_mode_check = QCheckBox("Enable Agent mode for Ollama")
+        self.agent_mode_check.setObjectName("AssistantAgentMode")
+        self.agent_mode_check.setChecked(
+            self.settings_store.settings.assistant_agent_mode
+            if self.settings_store else True
+        )
+        self.agent_mode_check.toggled.connect(self._on_agent_mode_toggled)
+        self.agent_mode_check.setToolTip(
+            "When disabled, Ollama receives no desktop or browser tools."
+        )
+        agent_mode_layout.addWidget(agent_mode_title)
+        agent_mode_layout.addWidget(agent_mode_description)
+        agent_mode_layout.addWidget(self.agent_mode_check)
+        self.settings_layout.addWidget(agent_mode_card)
 
         prompt_library_card = QFrame()
         prompt_library_card.setObjectName("AssistantSettingsCard")
@@ -408,6 +459,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.skills_status_label.setWordWrap(True)
         skills_layout.addWidget(self.skills_status_label)
         self.settings_layout.addWidget(self.skills_card)
+        self.settings_layout.addStretch(1)
         self.refresh_skills()
 
         self.conversation_view = ConversationView(self.QUICK_PROMPTS, self.ui_icons, self)
@@ -447,19 +499,20 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
             self.ui_icons, self, provider=self._chat_provider
         )
         self.prompt = self.composer.prompt
+        self.model_picker = self.composer.model_picker
         self.provider_combo = self.composer.provider_combo
         self.model_combo = self.composer.model_combo
         self.ollama_model_combo = self.model_combo
-        self.refresh_ollama_button = self.composer.refresh_models_button
         self.activity_label = self.composer.status_label
+        self.connection_state = self.model_picker.status_label
         self.voice_chat_button = self.composer.voice_chat_button
         self.voice_live_status = self.composer.voice_live_status
-        self.agent_mode_check = self.composer.agent_mode_check
         self.stop_button = self.composer.stop_button
         self.send_button = self.composer.send_button
         self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
         self.model_combo.currentIndexChanged.connect(self._on_model_changed)
-        self.composer.refresh_models_requested.connect(self.refresh_provider_models)
+        self.composer.connect_requested.connect(self.connect_provider)
+        self.composer.disconnect_requested.connect(self.disconnect_provider)
         self.composer.send_requested.connect(self.send_prompt)
         self.composer.stop_requested.connect(self.cancel_prompt)
         self.composer.voice_requested.connect(self.start_voice_chat)
@@ -467,6 +520,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
 
 
 
+        self.settings_layout = self._settings_voice_layout
         self.voice_panel = QFrame()
         self.voice_panel.setObjectName("AssistantSettingsCard")
         voice_layout = QVBoxLayout(self.voice_panel)
@@ -581,7 +635,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
 
         self.voice_panel.setVisible(True)
         self.settings_layout.addWidget(self.voice_panel)
+        self.settings_layout.addStretch(1)
 
+        self.settings_layout = self._settings_privacy_layout
         privacy = QLabel(
             "Voice wake detection and command audio are processed locally. "
             "Only the recognized text is sent to the selected chat provider."
@@ -607,6 +663,30 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._sync_voice_orb()
         QTimer.singleShot(0, self._auto_connect_provider)
 
+    def _create_settings_section(self, title: str):
+        """Create one scrollable settings page and its matching sidebar entry."""
+        item = QListWidgetItem(str(title))
+        self.settings_section_nav.addItem(item)
+
+        scroll = QScrollArea(self.settings_section_stack)
+        scroll.setObjectName("AssistantSettingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content.setObjectName("AssistantSettingsContent")
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(2, 2, 10, 12)
+        layout.setSpacing(12)
+        scroll.setWidget(content)
+        self.settings_section_stack.addWidget(scroll)
+        if title == "Agent":
+            self.settings_scroll = scroll
+        return layout
+
+    def _on_agent_mode_toggled(self, enabled: bool):
+        if self.settings_store:
+            self.settings_store.update(assistant_agent_mode=bool(enabled))
+
     def refresh_skills(self):
         skills = self.skill_manager.list_skills()
         if not skills:
@@ -621,7 +701,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
 
     def show_skills(self):
         self.show_settings()
-        QTimer.singleShot(0, lambda: self.settings_scroll.ensureWidgetVisible(self.skills_card, 12, 12))
+        self.settings_section_nav.setCurrentRow(1)
 
     def install_selected_skill(self):
         url = str(self.skills_catalog_combo.currentData() or "").strip()
@@ -662,9 +742,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
     def set_agent_runtime(self, action_registry):
         """Attach the application's permission-aware action registry."""
         self._action_registry = action_registry
-        if action_registry is None:
-            self.agent_mode_check.setChecked(False)
-        else:
+        self.agent_mode_check.setEnabled(action_registry is not None)
+        if action_registry is not None:
             self.agent_mode_check.setToolTip(
                 "Ollama sees only currently permitted tools. Desktop actions remain hidden "
                 "until Desktop control is enabled in Settings, and each action asks before running."
@@ -716,6 +795,10 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
             self.voice_silence_spin.setValue(settings.voice_silence_seconds)
         if hasattr(self, "voice_auto_submit_check"):
             self.voice_auto_submit_check.setChecked(settings.voice_auto_submit)
+        if hasattr(self, "agent_mode_check"):
+            self.agent_mode_check.blockSignals(True)
+            self.agent_mode_check.setChecked(settings.assistant_agent_mode)
+            self.agent_mode_check.blockSignals(False)
         self.refresh_wake_models(settings.wake_model_directory)
         if not (self.client and self.client.connected) and settings.opencode_project_directory:
             candidate = Path(settings.opencode_project_directory).expanduser()

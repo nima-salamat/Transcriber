@@ -72,8 +72,33 @@ class AssistantVoiceMixin:
             self.settings_store.update(voice_asr_model=str(self.voice_asr_combo.currentData() or ""))
 
     def _provider_base_url_changed(self):
+        new_url = str(self.ollama_url.text() or "").strip().rstrip("/")
+        old_url = (
+            self.ollama_client.base_url
+            if self.ollama_client is not None else
+            self.settings_store.settings.ollama_base_url if self.settings_store else ""
+        )
         if self.settings_store:
-            self.settings_store.update(ollama_base_url=self.ollama_url.text().strip())
+            normalized = self.settings_store.update(ollama_base_url=new_url)
+            new_url = normalized.ollama_base_url
+            self.ollama_url.setText(new_url)
+        if old_url and new_url == str(old_url).rstrip("/"):
+            return
+
+        # Never send a request through a client still bound to the old URL.
+        self._ollama_connected = False
+        self.ollama_client = None
+        self._ollama_model = ""
+        self.composer.set_provider_ready(False)
+        self.composer.set_connection_state(
+            connected=False, connecting=False, provider="ollama"
+        )
+        self.composer.set_status(
+            "Ollama address changed · checking available models at the new server."
+        )
+        self._session_requested_ollama_model = ""
+        self._auto_connect_pending = True
+        self.refresh_provider_models()
 
     @staticmethod
     def _wake_model_path_key(value: str | None) -> str:

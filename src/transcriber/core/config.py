@@ -54,6 +54,7 @@ class AppSettings:
     voice_auto_submit: bool = False
     voice_asr_model: str = ""
     chat_provider: str = "opencode"
+    assistant_agent_mode: bool = True
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = ""
     ollama_keep_alive: str = "30m"
@@ -106,6 +107,7 @@ class AppSettings:
         self.timeline_visible = as_bool(self.timeline_visible, True)
         self.wake_enabled = as_bool(self.wake_enabled, False)
         self.voice_auto_submit = as_bool(self.voice_auto_submit, False)
+        self.assistant_agent_mode = as_bool(self.assistant_agent_mode, True)
         try:
             self.voice_auto_sleep_seconds = int(self.voice_auto_sleep_seconds)
         except (TypeError, ValueError):
