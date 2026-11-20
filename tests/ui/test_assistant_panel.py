@@ -416,3 +416,72 @@ def test_agent_execution_contract_explains_continue_and_async_completion():
     assert "app_get_operation_status" in AGENT_EXECUTION_CONTRACT
     assert "queued" in AGENT_EXECUTION_CONTRACT
     assert "completed" in AGENT_EXECUTION_CONTRACT
+
+
+def test_consecutive_helper_events_share_one_collapsed_details_card(qtbot):
+    from transcriber.ui.components.assistant.conversation_view import ConversationView
+
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    view = ConversationView()
+    qtbot.addWidget(view)
+    view.resize(720, 520)
+    view.show()
+
+    view.set_messages([
+        {"role": "tool", "text": "Running browser.search"},
+        {"role": "tool", "text": "Completed browser.search"},
+        {"role": "system", "text": "Browser page loaded"},
+        {"role": "assistant", "text": "Here are the search results."},
+        {"role": "tool", "text": "Running browser.snapshot"},
+        {"role": "tool", "text": "Completed browser.snapshot"},
+    ])
+
+    assert len(view._widgets) == 3
+    first_group, answer, second_group = view._widgets
+    assert first_group.role == "tool"
+    assert "Running browser.search" in first_group._text
+    assert "Completed browser.search" in first_group._text
+    assert "Browser page loaded" in first_group._text
+    assert answer.role == "assistant"
+    assert answer._text == "Here are the search results."
+    assert second_group.role == "tool"
+    assert "Running browser.snapshot" in second_group._text
+    assert "Completed browser.snapshot" in second_group._text
+    assert first_group.body.isHidden()
+    assert second_group.body.isHidden()
+
+
+def test_browser_skill_and_enabled_action_schemas_are_preloaded(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+
+    skills = panel._matched_skill_context(
+        "Open Chrome and search for mobile phone prices."
+    )
+    assert "PRELOADED AGENT SKILL: browser-automation" in skills
+    assert "browser.search" in skills
+    assert "real tool call" in skills
+
+    class Registry:
+        def describe(self, *, include_disabled=False):
+            return [{
+                "name": "browser.search",
+                "description": "Search the controlled browser.",
+                "required": ["query"],
+                "permission": "browser_control",
+                "requires_approval": False,
+                "destructive": False,
+                "enabled": True,
+            }]
+
+    panel._action_registry = Registry()
+    actions = panel._mcp_action_context()
+    assert "browser.search" in actions
+    assert "app_execute_action" in actions
+    assert "operation_id" in actions

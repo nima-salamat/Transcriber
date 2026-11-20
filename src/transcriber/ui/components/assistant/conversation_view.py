@@ -79,12 +79,28 @@ class ConversationView(QFrame):
         bar = self.scroll_area.verticalScrollBar()
         return bar.maximum() - bar.value() <= 72
 
+    @staticmethod
+    def _group_helper_messages(messages: list[dict]) -> list[tuple[str, str]]:
+        """Combine consecutive tool/system updates; real assistant replies split groups."""
+        grouped: list[tuple[str, str]] = []
+        helper_roles = {"tool", "system"}
+        for item in messages:
+            role = str(item.get("role") or "assistant")
+            text = str(item.get("text") or "")
+            if role in helper_roles:
+                if grouped and grouped[-1][0] in helper_roles:
+                    previous_role, previous_text = grouped[-1]
+                    combined_role = "tool" if role == "tool" or previous_role == "tool" else "system"
+                    grouped[-1] = (combined_role, previous_text + "\n\n" + text)
+                else:
+                    grouped.append((role, text))
+            else:
+                grouped.append((role, text))
+        return grouped
+
     def set_messages(self, messages: list[dict], *, force_scroll_to_bottom: bool = False):
         values = list(messages or [])[-400:]
-        incoming = [
-            (str(item.get("role") or "assistant"), str(item.get("text") or ""))
-            for item in values
-        ]
+        incoming = self._group_helper_messages(values)
         was_near_bottom = self._is_near_bottom()
         old_count = len(self._signatures)
         stable_count = max(0, old_count - 1)

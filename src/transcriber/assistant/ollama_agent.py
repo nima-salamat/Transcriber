@@ -8,6 +8,7 @@ permissions and per-action user approval before handlers run.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -320,6 +321,99 @@ class OllamaAgent:
             encoded = json.dumps({"result": str(value)}, ensure_ascii=False)
         return encoded[:24_000]
 
+    @staticmethod
+    def is_action_request(prompt: str) -> bool:
+        """Return True for clear requests to perform an action, not explain one."""
+        value = " ".join(str(prompt or "").casefold().split())
+        if not value or value.startswith((
+            "how do i ", "how can i ", "how to ", "what is ", "explain ",
+            "چطور ", "چگونه ", "معنی ", "توضیح بده ",
+        )):
+            return False
+        cues = (
+            "open ", "launch ", "run ", "execute ", "search for ", "search the web",
+            "look up ", "browse ", "find online", "click ", "download ", "install ",
+            "create ", "edit ", "delete ", "move ", "copy ", "rename ", "fill in ",
+            "send ", "export ", "start ", "stop ", "play ", "navigate to ",
+            "باز کن", "اجرا کن", "جستجو کن", "سرچ کن", "پیدا کن", "دانلود کن",
+            "نصب کن", "ایجاد کن", "ویرایش کن", "حذف کن", "منتقل کن", "کپی کن",
+            "بفرست", "شروع کن", "متوقف کن",
+        )
+        return any(cue in value for cue in cues)
+
+    @staticmethod
+    def is_browser_search_request(prompt: str) -> bool:
+        value = " ".join(str(prompt or "").casefold().split())
+        has_browser = any(term in value for term in (
+            "browser", "chrome", "edge", "web", "internet", "مرورگر", "کروم", "اینترنت", "وب",
+        ))
+        has_search = any(term in value for term in (
+            "search", "google", "look up", "browse for", "find online",
+            "search for", "جستجو", "سرچ", "بگرد",
+        ))
+        return has_browser and has_search
+
+    @classmethod
+    def infer_browser_search_tool(
+        cls, prompt: str, available_tool_names: list[str] | set[str] | tuple[str, ...]
+    ) -> dict[str, Any] | None:
+        """Build a safe, read-only browser.search fallback for an explicit search request."""
+        if "browser.search" not in set(available_tool_names):
+            return None
+        if not cls.is_browser_search_request(prompt):
+            return None
+        value = str(prompt or "").strip()
+        quoted = re.findall(r'["“”](.{2,400}?)["“”]', value)
+        query = quoted[-1].strip() if quoted else ""
+        if not query:
+            patterns = (
+                r"\b(?:search|look\s+up|google)\s+(?:(?:the\s+)?(?:web|internet|browser)\s+)?for\s+(.+?)(?:[.!?\n]|$)",
+                r"\b(?:find|search)\s+(.+?)\s+(?:online|on\s+the\s+web)(?:[.!?\n]|$)",
+                r"(?:جستجو|سرچ|بگرد)\s+(?:در\s+(?:وب|اینترنت)\s+)?(?:برای|درباره(?:ی)?|مورد)?\s*(.+?)(?:[.!؟\n]|$)",
+                r"(.+?)\s+(?:را|رو)?\s*(?:جستجو|سرچ)\s*(?:کن|بکن)(?:[.!؟\n]|$)",
+            )
+            for pattern in patterns:
+                match = re.search(pattern, value, flags=re.IGNORECASE)
+                if match:
+                    query = match.group(1).strip()
+                    break
+        query = re.sub(
+            r"\s+(?:using|with)\s+(?:the\s+)?(?:browser|web)\s+automation\s+skill.*$",
+            "", query, flags=re.IGNORECASE,
+        ).strip(" \t\r\n\"'“”.,!?؛،")
+        if not query:
+            return None
+        return {"name": "browser.search", "arguments": {"query": query, "engine": "google"}}
+
+    @staticmethod
+    def response_promises_action(text: str) -> bool:
+        """Detect future-tense action promises that still need a real tool call."""
+        value = " ".join(str(text or "").casefold().split())
+        action_verbs = (
+            "open", "launch", "run", "execute", "search", "browse", "click",
+            "download", "install", "create", "edit", "delete", "move", "copy",
+            "rename", "fill", "send", "export", "start", "stop", "play",
+            "navigate", "inspect", "read", "check", "find", "load", "poll",
+            "call", "continue",
+        )
+        promise_prefix = re.search(
+            r"\b(?:i(?:'ll| will)|i am going to|i'm going to|let me|now i(?:'ll| will))"
+            r"\s+(?:(?:now|next)\s+)?(?:(?:help you)\s+)?(" + "|".join(action_verbs) + r")\b",
+            value,
+        )
+        progressive = (
+            "opening the browser", "opening browser", "searching for ",
+            "running the command", "executing the command", "i'm searching",
+            "i am searching", "now searching", "now opening",
+        )
+        persian = (
+            "الان باز می‌کنم", "الان باز میکنم", "الان جستجو می‌کنم",
+            "الان جستجو میکنم", "الان اجرا می‌کنم", "الان اجرا میکنم",
+            "دارم باز می‌کنم", "دارم باز میکنم", "در حال اجرا",
+            "در حال جستجو", "بعدش اجرا می‌کنم", "بعدش اجرا میکنم",
+        )
+        return bool(promise_prefix) or any(phrase in value for phrase in (*progressive, *persian))
+
     def run(
         self,
         model: str,
@@ -328,6 +422,8 @@ class OllamaAgent:
         *,
         keep_alive: str = "30m",
         cancellation=None,
+        require_tool_call: bool = False,
+        fallback_tool_call: dict[str, Any] | None = None,
         on_chunk: Callable[[str], None] | None = None,
         on_tool_status: Callable[[str], None] | None = None,
         on_tool_result: Callable[[dict[str, Any]], None] | None = None,
@@ -335,6 +431,13 @@ class OllamaAgent:
         working = [dict(item) for item in messages]
         tool_count = 0
         tool_rounds = 0
+        recovery_attempts = 0
+        fallback_attempted = False
+        buffer_until_tool_decision = bool(require_tool_call or fallback_tool_call)
+        available_names = {
+            str((item.get("function") or {}).get("name") or "")
+            for item in tools if isinstance(item, dict)
+        }
         last_result: dict[str, Any] = {"text": "", "metrics": {}}
 
         for _round in range(self.max_rounds):
@@ -352,7 +455,10 @@ class OllamaAgent:
 
             def collect(chunk: str) -> None:
                 turn_chunks.append(str(chunk))
-                if on_chunk:
+                # Preserve token streaming for ordinary conversation. Only
+                # action turns are buffered so false execution promises can be
+                # discarded before they are shown as progress.
+                if on_chunk and not buffer_until_tool_decision:
                     on_chunk(str(chunk))
 
             try:
@@ -364,6 +470,8 @@ class OllamaAgent:
                 partial = "".join(turn_chunks)
                 if partial:
                     working.append({"role": "assistant", "content": partial})
+                    if on_chunk and buffer_until_tool_decision:
+                        on_chunk(partial)
                 return {
                     "model": model, "text": partial, "messages": working,
                     "tool_count": tool_count, "tool_rounds": tool_rounds,
@@ -373,6 +481,72 @@ class OllamaAgent:
             last_result = response
             answer = str(response.get("text") or "")
             calls = response.get("tool_calls") or []
+
+            if not calls and fallback_tool_call and not fallback_attempted:
+                fallback_name = str(fallback_tool_call.get("name") or "")
+                fallback_arguments = fallback_tool_call.get("arguments") or {}
+                if fallback_name in available_names and isinstance(fallback_arguments, dict):
+                    # Some local models narrate the browser action but omit the
+                    # function call. For a clear, read-only search request, issue
+                    # the exact registered search action rather than treating that
+                    # narration as success.
+                    calls = [{
+                        "function": {
+                            "name": fallback_name,
+                            "arguments": fallback_arguments,
+                        }
+                    }]
+                    answer = ""
+                    fallback_attempted = True
+
+            promises_next_action = self.response_promises_action(answer)
+            needs_execution = require_tool_call and (
+                tool_count == 0 or promises_next_action
+            )
+            if not calls and needs_execution and recovery_attempts < 2:
+                working.append({"role": "assistant", "content": answer})
+                working.append({
+                    "role": "user",
+                    "content": (
+                        "Your previous response described or promised an action, but no "
+                        "corresponding execution-tool call was made. The task is still "
+                        "outstanding. Do not send another plan or narration. Use one of the "
+                        "enabled functions listed in the tools parameter now, inspect its "
+                        "actual result, and only then decide whether to continue or finish. "
+                        "If the next step is already complete, give the final factual answer. "
+                        "If no available function can perform it, state exactly what remains "
+                        "unexecuted."
+                    ),
+                })
+                recovery_attempts += 1
+                continue
+
+            if not calls and needs_execution:
+                if tool_count:
+                    failure = (
+                        "Some actions were executed, but the model promised another step "
+                        "without calling a tool. That next step was not executed."
+                    )
+                    incomplete = True
+                else:
+                    failure = (
+                        "I could not execute that request because the model did not call an "
+                        "available action. No browser, desktop or command action was run."
+                    )
+                    incomplete = False
+                working.append({"role": "assistant", "content": failure})
+                if on_chunk:
+                    on_chunk(failure)
+                return {
+                    "model": model, "text": failure, "messages": working,
+                    "tool_count": tool_count, "tool_rounds": tool_rounds,
+                    "cancelled": False, "action_not_executed": not bool(tool_count),
+                    "incomplete": incomplete,
+                    "metrics": response.get("metrics", {}),
+                }
+
+            if answer and on_chunk and buffer_until_tool_decision:
+                on_chunk(answer)
             assistant_message = {"role": "assistant", "content": answer}
             if calls:
                 assistant_message["tool_calls"] = calls
@@ -384,7 +558,7 @@ class OllamaAgent:
                 }
 
             tool_rounds += 1
-            for call in calls:
+            for call_index, call in enumerate(calls):
                 if cancellation and cancellation.cancelled:
                     return {
                         "model": model, "text": answer, "messages": working,
@@ -410,6 +584,7 @@ class OllamaAgent:
                         "cancelled": False, "metrics": response.get("metrics", {}),
                     }
                 name = "unknown"
+                permission_blocked = False
                 try:
                     name, arguments = self._call_details(call)
                     if on_tool_status:
@@ -418,6 +593,7 @@ class OllamaAgent:
                     result_text = self._tool_result_text({"ok": True, "result": result})
                     status = f"Completed {name}"
                 except Exception as exc:
+                    permission_blocked = isinstance(exc, PermissionError)
                     result_text = self._tool_result_text({
                         "ok": False, "error": f"{type(exc).__name__}: {exc}",
                     })
@@ -435,6 +611,39 @@ class OllamaAgent:
                         "ok": result_text.startswith('{"ok":true'),
                         "content": result_text,
                     })
+                if permission_blocked:
+                    blocked_message = (
+                        f"{name} was not executed because the required permission or "
+                        "user approval was denied. I will not retry or bypass that decision."
+                    )
+                    for skipped_call in calls[call_index + 1:]:
+                        skipped_name = str(
+                            ((skipped_call.get("function") or {}).get("name") or "unknown")
+                        )
+                        working.append({
+                            "role": "tool",
+                            "tool_name": skipped_name,
+                            "content": self._tool_result_text({
+                                "ok": False,
+                                "error": (
+                                    "Not executed because an earlier action was denied. "
+                                    "No further actions were started."
+                                ),
+                            }),
+                        })
+                    working.append({"role": "assistant", "content": blocked_message})
+                    if on_chunk:
+                        on_chunk(blocked_message)
+                    return {
+                        "model": model,
+                        "text": blocked_message,
+                        "messages": working,
+                        "tool_count": tool_count,
+                        "tool_rounds": tool_rounds,
+                        "cancelled": False,
+                        "permission_denied": True,
+                        "metrics": response.get("metrics", {}),
+                    }
                 if cancellation and cancellation.cancelled:
                     return {
                         "model": model,

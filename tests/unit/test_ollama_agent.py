@@ -88,22 +88,28 @@ def test_agent_runs_tool_then_returns_follow_up_answer():
     assert client.calls[1]["messages"][-1]["role"] == "tool"
 
 
-def test_agent_reports_denied_action_to_model_without_retrying_it():
+def test_agent_stops_immediately_after_user_denies_an_action():
     call = _call()
     client = FakeOllamaClient([
         {"text": "", "tool_calls": [call], "metrics": {}},
-        {"text": "I could not open Notepad because permission was denied.", "tool_calls": [], "metrics": {}},
     ])
     executions = []
+
     def deny(_name, _arguments):
         executions.append("attempted")
         raise PermissionDenied("The user denied this Agent action")
-    agent = OllamaAgent(client, deny)
 
-    result = agent.run("qwen2.5:7b", [{"role": "user", "content": "Open Notepad"}], [])
+    agent = OllamaAgent(client, deny)
+    result = agent.run(
+        "qwen2.5:7b",
+        [{"role": "user", "content": "Open Notepad"}],
+        [{"type": "function", "function": {"name": "desktop.launch_app"}}],
+    )
 
     assert executions == ["attempted"]
-    assert result["text"].startswith("I could not open Notepad")
+    assert result["permission_denied"] is True
+    assert "I will not retry" in result["text"]
+    assert len(client.calls) == 1
     tool_result = next(item for item in result["messages"] if item["role"] == "tool")
     assert '"ok":false' in tool_result["content"]
     assert "denied" in tool_result["content"]
@@ -198,3 +204,156 @@ def test_agent_continues_through_multiple_tool_results_before_final_answer():
     assert result["text"] == "The audio is ready. Here is the result."
     assert client.calls[1]["messages"][-1]["role"] == "tool"
     assert client.calls[2]["messages"][-1]["role"] == "tool"
+
+
+def test_browser_search_request_is_mapped_to_the_real_search_tool():
+    request = (
+        "Open Chrome/Edge and search for mobile phone prices "
+        "using the browser automation skill."
+    )
+
+    assert OllamaAgent.is_action_request(request)
+    assert OllamaAgent.is_browser_search_request(request)
+    assert OllamaAgent.infer_browser_search_tool(
+        request, ["browser.search", "browser.open"]
+    ) == {
+        "name": "browser.search",
+        "arguments": {"query": "mobile phone prices", "engine": "google"},
+    }
+    assert OllamaAgent.infer_browser_search_tool(
+        request, ["browser.open"]
+    ) is None
+
+
+def test_browser_search_fallback_executes_when_model_only_narrates():
+    client = FakeOllamaClient([
+        {"text": "I will open Chrome and search now.", "tool_calls": [], "metrics": {}},
+        {"text": "I found the latest search results.", "tool_calls": [], "metrics": {}},
+    ])
+    executed = []
+    chunks = []
+    agent = OllamaAgent(
+        client,
+        lambda name, arguments: executed.append((name, arguments)) or {
+            "url": "https://www.google.com/search?q=mobile+phone+prices",
+            "title": "Google Search",
+            "text": "Mobile phone prices results",
+        },
+    )
+
+    result = agent.run(
+        "qwen2.5:7b",
+        [{"role": "user", "content": "Open Chrome and search for mobile phone prices."}],
+        [{"type": "function", "function": {"name": "browser.search"}}],
+        require_tool_call=True,
+        fallback_tool_call={
+            "name": "browser.search",
+            "arguments": {"query": "mobile phone prices", "engine": "google"},
+        },
+        on_chunk=chunks.append,
+    )
+
+    assert executed == [(
+        "browser.search", {"query": "mobile phone prices", "engine": "google"}
+    )]
+    assert result["tool_count"] == 1
+    assert result["cancelled"] is False
+    # The false first-turn narration is suppressed; the final answer is shown only
+    # after the registered browser action has returned a result.
+    assert chunks == ["I found the latest search results."]
+    assert client.calls[1]["messages"][-1]["role"] == "tool"
+    assert "Mobile phone prices results" in client.calls[1]["messages"][-1]["content"]
+
+
+def test_action_request_reprompts_model_when_it_omits_tool_call():
+    call = {
+        "function": {
+            "name": "browser.search",
+            "arguments": {"query": "mobile phone prices", "engine": "google"},
+        }
+    }
+    client = FakeOllamaClient([
+        {"text": "I'll search that now.", "tool_calls": [], "metrics": {}},
+        {"text": "", "tool_calls": [call], "metrics": {}},
+        {"text": "Here are the results.", "tool_calls": [], "metrics": {}},
+    ])
+    executed = []
+    agent = OllamaAgent(
+        client,
+        lambda name, args: executed.append((name, args)) or {"ok": True},
+    )
+
+    result = agent.run(
+        "qwen2.5:7b",
+        [{"role": "user", "content": "Open the browser and search for mobile prices."}],
+        [{"type": "function", "function": {"name": "browser.search"}}],
+        require_tool_call=True,
+    )
+
+    assert len(client.calls) == 3
+    assert "Your previous message only described an action" in client.calls[1]["messages"][-1]["content"]
+    assert len(executed) == 1
+    assert result["text"] == "Here are the results."
+
+
+def test_action_request_never_reports_success_after_two_narration_only_turns():
+    client = FakeOllamaClient([
+        {"text": "I am opening the browser.", "tool_calls": [], "metrics": {}},
+        {"text": "I am searching now.", "tool_calls": [], "metrics": {}},
+        {"text": "I can help with that.", "tool_calls": [], "metrics": {}},
+    ])
+    executed = []
+    agent = OllamaAgent(client, lambda name, args: executed.append((name, args)))
+
+    result = agent.run(
+        "qwen2.5:7b",
+        [{"role": "user", "content": "Open the browser and search for mobile prices."}],
+        [{"type": "function", "function": {"name": "browser.search"}}],
+        require_tool_call=True,
+    )
+
+    assert executed == []
+    assert result["action_not_executed"] is True
+    assert "No browser, desktop or command action was run" in result["text"]
+
+
+def test_agent_detects_action_promises_but_not_normal_final_answers():
+    assert OllamaAgent.response_promises_action(
+        "I'll help you open Chrome and search for mobile phone prices."
+    )
+    assert OllamaAgent.response_promises_action("Opening the browser now.")
+    assert OllamaAgent.response_promises_action("I will now run the command.")
+    assert not OllamaAgent.response_promises_action(
+        "I found three useful search results and compared the listed prices."
+    )
+    assert not OllamaAgent.response_promises_action(
+        "Here is how to open Chrome from the Start menu."
+    )
+
+
+def test_agent_recovers_when_it_promises_a_second_action_without_calling_it():
+    first_call = _call("browser.open", {"url": "https://example.com"})
+    second_call = _call("browser.search", {"query": "mobile prices", "engine": "google"})
+    client = FakeOllamaClient([
+        {"text": "Opening the requested site.", "tool_calls": [first_call], "metrics": {}},
+        {"text": "I'll now search for mobile prices.", "tool_calls": [], "metrics": {}},
+        {"text": "Here are the mobile prices I found.", "tool_calls": [second_call], "metrics": {}},
+        {"text": "I found several results. Here is the summary.", "tool_calls": [], "metrics": {}},
+    ])
+    executed = []
+    agent = OllamaAgent(
+        client,
+        lambda name, args: executed.append((name, args)) or {"ok": True, "action": name},
+    )
+    result = agent.run(
+        "qwen2.5:7b",
+        [{"role": "user", "content": "Open the site, then search for mobile prices."}],
+        [{"type": "function", "function": {"name": "browser.open"}},
+         {"type": "function", "function": {"name": "browser.search"}}],
+        require_tool_call=True,
+    )
+
+    assert [name for name, _args in executed] == ["browser.open", "browser.search"]
+    assert result["tool_count"] == 2
+    assert result["text"] == "I found several results. Here is the summary."
+    assert "Your previous response described or promised an action" in client.calls[2]["messages"][-1]["content"]
