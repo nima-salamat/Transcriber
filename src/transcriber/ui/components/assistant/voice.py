@@ -440,7 +440,7 @@ class AssistantVoiceMixin:
                 self._sync_voice_orb()
 
     def _on_voice_asr_error(self, message: str):
-        self._append_message("error", f"Voice transcription failed: {message}")
+        self.composer.set_status(f"Voice transcription failed: {message}", error=True)
         self.status_message.emit(f"Voice transcription: {message}")
         self._set_voice_activity(
             "Speech recognition failed · resuming wake-word detection…",
@@ -485,7 +485,7 @@ class AssistantVoiceMixin:
             f"Voice input error · {message}", stage="error", log_message=f"Voice input error: {message}"
         )
         self.status_message.emit(f"Voice input: {message}")
-        QMessageBox.warning(self, "Voice input failed", str(message))
+        self.composer.set_status(f"Voice input failed: {message}", error=True)
 
     def push_to_talk(self):
         if not self.voice_agent:
@@ -496,7 +496,7 @@ class AssistantVoiceMixin:
                 return
             self.voice_agent.push_to_talk()
         except Exception as exc:
-            QMessageBox.warning(self, "Voice input failed", str(exc))
+            self.composer.set_status(f"Voice input failed: {exc}", error=True)
 
     def _on_voice_transcript(self, text):
         self.prompt.setPlainText(text)

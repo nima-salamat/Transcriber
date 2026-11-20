@@ -7,13 +7,14 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QEasingCurve, QObject, QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QPalette, QShortcut, QTextCursor, QTextDocument
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
+    QGraphicsOpacityEffect,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStackedWidget,
     QTextBrowser,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -73,6 +75,122 @@ class _AssistantSignals(QObject):
     ollama_tool_result = Signal(object)
     opencode_models_ready = Signal(object)
     opencode_models_error = Signal(str)
+
+
+class _ChatErrorToast(QFrame):
+    """Dismissible, short-lived error notice overlayed below the conversation header."""
+
+    def __init__(self, parent: QWidget, anchor: QWidget | None = None):
+        super().__init__(parent)
+        self.anchor = anchor
+        self.setObjectName("AssistantErrorToast")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setMaximumHeight(150)
+        self.hide()
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 10, 9, 10)
+        layout.setSpacing(9)
+
+        marker = QLabel("!", self)
+        marker.setObjectName("AssistantErrorToastMark")
+        marker.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        marker.setFixedSize(22, 22)
+        layout.addWidget(marker, 0, Qt.AlignmentFlag.AlignTop)
+
+        self.message_label = QLabel("", self)
+        self.message_label.setObjectName("AssistantErrorToastText")
+        self.message_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.message_label.setWordWrap(True)
+        self.message_label.setMinimumWidth(0)
+        layout.addWidget(self.message_label, 1)
+
+        self.close_button = QToolButton(self)
+        self.close_button.setObjectName("AssistantToastClose")
+        self.close_button.setText("×")
+        self.close_button.setToolTip("Dismiss error")
+        self.close_button.setAccessibleName("Dismiss error notification")
+        self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_button.setFixedSize(24, 24)
+        self.close_button.clicked.connect(self._dismiss)
+        layout.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
+
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self.opacity_effect)
+
+        self.hide_timer = QTimer(self)
+        self.hide_timer.setSingleShot(True)
+        self.hide_timer.setInterval(6500)
+        self.hide_timer.timeout.connect(self._fade_out)
+
+        self.fade_animation = QPropertyAnimation(self.opacity_effect, b"opacity", self)
+        self.fade_animation.setDuration(190)
+        self.fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.fade_animation.finished.connect(self._on_fade_finished)
+        self._hiding = False
+
+        parent.installEventFilter(self)
+        if anchor is not None:
+            anchor.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if watched in (self.parentWidget(), self.anchor) and event.type() in (
+            QEvent.Type.Resize,
+            QEvent.Type.Move,
+            QEvent.Type.Show,
+            QEvent.Type.LayoutRequest,
+        ):
+            QTimer.singleShot(0, self._reposition)
+        return super().eventFilter(watched, event)
+
+    def _reposition(self):
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        width = max(220, min(440, parent.width() - 32))
+        self.setFixedWidth(width)
+        self.adjustSize()
+        header_bottom = self.anchor.geometry().bottom() if self.anchor is not None else 0
+        self.move(max(16, parent.width() - self.width() - 16), max(8, header_bottom + 10))
+
+    def show_message(self, message: str):
+        value = str(message or "").strip()
+        if not value:
+            return
+        self.hide_timer.stop()
+        self.fade_animation.stop()
+        self._hiding = False
+        self.message_label.setText(value)
+        self._reposition()
+        self.opacity_effect.setOpacity(0.0)
+        self.show()
+        self.raise_()
+        self.fade_animation.setStartValue(0.0)
+        self.fade_animation.setEndValue(1.0)
+        self.fade_animation.start()
+        self.hide_timer.start()
+
+    def _fade_out(self):
+        if not self.isVisible():
+            return
+        self._hiding = True
+        self.fade_animation.stop()
+        self.fade_animation.setStartValue(self.opacity_effect.opacity())
+        self.fade_animation.setEndValue(0.0)
+        self.fade_animation.start()
+
+    def _on_fade_finished(self):
+        if self._hiding:
+            self.hide()
+            self._hiding = False
+
+    def _dismiss(self):
+        self.hide_timer.stop()
+        self.fade_animation.stop()
+        self.hide()
+        self._hiding = False
+
 
 
 class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, AssistantVoiceMixin, AssistantConversationMixin):
@@ -242,7 +360,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.session_list = self.sidebar.session_list
         self.skills_button = self.sidebar.skills_button
         self.conversation_layout.addWidget(self.agent_sidebar)
-        chat_workspace = QWidget()
+        self.chat_workspace = QWidget()
+        chat_workspace = self.chat_workspace
         chat_workspace.setObjectName("AssistantChatWorkspace")
         self.chat_layout = QVBoxLayout(chat_workspace)
         self.chat_layout.setContentsMargins(18, 4, 10, 6)
@@ -251,6 +370,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.session_title_label = self.conversation_header.title_label
         self.session_subtitle_label = self.conversation_header.subtitle_label
         self.chat_layout.addWidget(self.conversation_header)
+        self.error_toast = _ChatErrorToast(chat_workspace, self.conversation_header)
         self.conversation_layout.addWidget(chat_workspace, 1)
 
         self.settings_page = QWidget()
@@ -516,6 +636,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.composer.send_requested.connect(self.send_prompt)
         self.composer.stop_requested.connect(self.cancel_prompt)
         self.composer.voice_requested.connect(self.start_voice_chat)
+        self.composer.error_requested.connect(self.error_toast.show_message)
+        self.composer.retry_requested.connect(self.retry_provider_connection)
         self.chat_layout.addWidget(self.composer)
 
 

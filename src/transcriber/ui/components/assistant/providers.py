@@ -75,7 +75,7 @@ class AssistantProviderMixin:
                     for item in self.client.config_options
                 )
             )
-            self.model_combo.setEnabled(model_available and connected and not self._worker_active)
+            self.model_combo.setEnabled(model_available and not self._worker_active)
 
         self.composer.set_connection_state(
             connected=connected,
@@ -342,21 +342,22 @@ class AssistantProviderMixin:
 
     def _on_ollama_refresh_error(self, message: str):
         self._connection_busy = False
-        self.ollama_help.setText(str(message))
+        self._ollama_connected = False
+        self._ollama_model = ""
+        self.ollama_client = None
+        self.ollama_help.setText(
+            "Ollama could not be reached. Check the server URL, then use Retry connection."
+        )
         self.composer.set_status(f"Ollama is unavailable: {message}", error=True)
+        self.composer.set_provider_ready(False)
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        self.model_combo.addItem("Ollama unavailable · retry to reload", "")
+        self.model_combo.blockSignals(False)
         self.composer.set_connection_state(
-            connected=self._ollama_connected, active_model=self._ollama_model,
-            error="" if self._ollama_connected else str(message), provider="ollama",
+            connected=False, active_model="", error=str(message), provider="ollama",
         )
         self.status_message.emit(f"Ollama model discovery: {message}")
-        if not self._ollama_connected:
-            self.composer.set_provider_ready(False)
-            self.model_combo.blockSignals(True)
-            self.model_combo.clear()
-            self.model_combo.addItem("Ollama unavailable", "")
-            self.model_combo.blockSignals(False)
-        else:
-            self.composer.set_provider_ready(True)
 
     def _on_ollama_models_ready(self, models):
         self._connection_busy = False
@@ -437,6 +438,12 @@ class AssistantProviderMixin:
         if self._worker_active:
             return
         if self._chat_provider == "ollama":
+            if not str(self.model_combo.currentData() or "").strip():
+                # A failed first connection may leave an empty placeholder in the list.
+                # Re-discover installed models before deciding that Connect cannot proceed.
+                self._auto_connect_pending = True
+                self.refresh_ollama_models()
+                return
             self.connect_ollama()
             return
         if not self.client or not self.client.connected:
@@ -448,6 +455,18 @@ class AssistantProviderMixin:
         else:
             self.composer.set_status("OpenCode is connected and ready.")
 
+    def retry_provider_connection(self):
+        """Retry a disconnected provider from the compact toolbar."""
+        if self._worker_active:
+            return
+        if self._chat_provider == "ollama":
+            if str(self.model_combo.currentData() or "").strip():
+                self.connect_ollama()
+            else:
+                self._auto_connect_pending = True
+                self.refresh_ollama_models()
+            return
+        self.connect_opencode()
 
     def connect_ollama(self):
         if self._worker_active:
@@ -578,7 +597,9 @@ class AssistantProviderMixin:
         self._connection_busy = False
         self._ollama_cancellation = None
         self._streaming_index = None
-        self.ollama_help.setText(str(message))
+        self.ollama_help.setText(
+            "Ollama could not connect or load this model. Check the server and selection, then retry."
+        )
         self.composer.set_status(
             f"Could not load the selected Ollama model: {message}", error=True
         )
@@ -594,7 +615,6 @@ class AssistantProviderMixin:
         else:
             self.connection_state.setText("Ollama unavailable")
             self.connection_state.setProperty("state", "error")
-            self._append_message("error", str(message))
             self.composer.set_provider_ready(False)
         self.connection_state.style().unpolish(self.connection_state)
         self.connection_state.style().polish(self.connection_state)
@@ -617,6 +637,7 @@ class AssistantProviderMixin:
         if self._chat_provider == "ollama":
             self._connection_busy = False
             self._ollama_connected = False
+            self._ollama_model = ""
             self.ollama_client = None
             self.connection_state.setText("Disconnected")
             self.connection_state.setProperty("state", "disconnected")
@@ -726,7 +747,7 @@ class AssistantProviderMixin:
         try:
             from transcriber.assistant.ollama_agent import OllamaAgent
         except ImportError as exc:
-            self._append_message("error", f"The local Agent runtime could not be loaded: {exc}")
+            self.composer.set_status(f"The local Agent runtime could not be loaded: {exc}", error=True)
             return
 
         query = str(prompt or "").casefold()
@@ -743,7 +764,7 @@ class AssistantProviderMixin:
                 prompt_files = self.prompt_library.prompt_files_for_request(prompt)
                 prompt_context = self.prompt_library.context_for_request(prompt)
             except (OSError, ValueError) as exc:
-                self._append_message("error", f"Could not load the Transcriber instructions: {exc}")
+                self.composer.set_status(f"Could not load the Transcriber instructions: {exc}", error=True)
                 self.status_message.emit(f"Agent prompt library: {exc}")
                 return
 
@@ -912,9 +933,9 @@ class AssistantProviderMixin:
             prompt_files = self.prompt_library.prompt_files_for_request(prompt)
             prompt_context = self.prompt_library.context_for_request(prompt)
         except (OSError, ValueError) as exc:
-            self._append_message(
-                "error",
+            self.composer.set_status(
                 f"Could not load the current Agent prompt instructions: {exc}",
+                error=True,
             )
             self.status_message.emit(f"Agent prompt library: {exc}")
             return
@@ -1029,7 +1050,6 @@ class AssistantProviderMixin:
     def _on_error(self, message):
         self._connection_busy = False
         self._streaming_index = None
-        self._append_message("error", str(message))
         self.connection_state.setText("Connection error")
         self.connection_state.setProperty("state", "error")
         self.connection_state.style().unpolish(self.connection_state)

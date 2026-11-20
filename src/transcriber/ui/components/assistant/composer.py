@@ -1,11 +1,11 @@
-"""Compact chat composer with a model picker and ChatGPT-style input row."""
+"""Responsive chat composer with a reliable model popup and compact toolbar."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
-    QComboBox, QFrame, QHBoxLayout, QLabel, QMenu, QPlainTextEdit, QProgressBar,
-    QPushButton, QSizePolicy, QToolButton, QVBoxLayout, QWidgetAction,
+    QComboBox, QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
+    QSizePolicy, QToolButton, QVBoxLayout, QWidget,
 )
 
 
@@ -42,10 +42,11 @@ class PromptEditor(QPlainTextEdit):
 
 
 class ModelPicker(QFrame):
-    """Left-side model menu with provider selection, connect/disconnect and status."""
+    """Provider/model selector with a real popup (not an interactive QMenu action)."""
 
     connect_requested = Signal()
     disconnect_requested = Signal()
+    retry_requested = Signal()
 
     def __init__(self, icons, parent=None, *, provider="opencode"):
         super().__init__(parent)
@@ -55,7 +56,10 @@ class ModelPicker(QFrame):
         self._connected = False
         self._connecting = False
         self._busy = False
+        self._spinner_frames = ("◴", "◷", "◶", "◵")
+        self._spinner_index = 0
         self.setObjectName("AssistantModelPicker")
+        self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -67,50 +71,66 @@ class ModelPicker(QFrame):
         self.button.setIcon(icons.icon("models", size=17))
         self.button.setText("Choose model")
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.button.setToolTip("Choose the AI provider and model, then connect")
         self.button.setMinimumHeight(42)
-        self.button.setMinimumWidth(150)
+        self.button.setMinimumWidth(128)
         self.button.setMaximumWidth(230)
+        self.button.clicked.connect(self._toggle_popup)
         layout.addWidget(self.button)
 
-        self.spinner = QProgressBar(self)
+        self.retry_button = QToolButton(self)
+        self.retry_button.setObjectName("AssistantRetryConnection")
+        self.retry_button.setText("↻")
+        self.retry_button.setToolTip("Retry connection")
+        self.retry_button.setAccessibleName("Retry provider connection")
+        self.retry_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.retry_button.setFixedSize(34, 34)
+        self.retry_button.clicked.connect(self.retry_requested.emit)
+        layout.addWidget(self.retry_button)
+
+        self.spinner = QLabel("◴", self)
         self.spinner.setObjectName("AssistantConnectionSpinner")
-        self.spinner.setRange(0, 0)
-        self.spinner.setTextVisible(False)
-        self.spinner.setFixedSize(16, 16)
+        self.spinner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spinner.setFixedSize(17, 17)
         self.spinner.hide()
         layout.addWidget(self.spinner)
+
+        self.spinner_timer = QTimer(self)
+        self.spinner_timer.setInterval(300)
+        self.spinner_timer.timeout.connect(self._advance_spinner)
 
         self.status_label = QLabel("Disconnected", self)
         self.status_label.setObjectName("AssistantModelConnectionStatus")
         self.status_label.setProperty("state", "disconnected")
-        self.status_label.setMinimumWidth(78)
+        self.status_label.setMinimumWidth(0)
+        self.status_label.setMaximumWidth(112)
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.status_label)
 
-        self.menu = QMenu(self.button)
-        self.menu.setObjectName("AssistantModelPickerMenu")
-        popup = QFrame()
-        popup.setObjectName("AssistantModelPickerPopup")
-        popup.setMinimumWidth(370)
-        popup_layout = QVBoxLayout(popup)
+        # A dedicated Popup frame keeps embedded combos and buttons fully interactive.
+        self.popup = QFrame(self, Qt.WindowType.Popup)
+        self.popup.setObjectName("AssistantModelPickerPopup")
+        self.popup.setMinimumWidth(370)
+        self.popup.setMaximumWidth(480)
+        self.popup.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        popup_layout = QVBoxLayout(self.popup)
         popup_layout.setContentsMargins(14, 13, 14, 13)
         popup_layout.setSpacing(9)
 
-        provider_label = QLabel("PROVIDER")
+        provider_label = QLabel("PROVIDER", self.popup)
         provider_label.setObjectName("AssistantModelPickerCaption")
         popup_layout.addWidget(provider_label)
-        self.provider_combo = QComboBox(popup)
+        self.provider_combo = QComboBox(self.popup)
         self.provider_combo.setObjectName("AssistantProviderSelect")
         self.provider_combo.addItem("OpenCode", "opencode")
         self.provider_combo.addItem("Ollama", "ollama")
         self.provider_combo.setCurrentIndex(max(0, self.provider_combo.findData(self._provider)))
         popup_layout.addWidget(self.provider_combo)
 
-        model_label = QLabel("MODEL")
+        model_label = QLabel("MODEL", self.popup)
         model_label.setObjectName("AssistantModelPickerCaption")
         popup_layout.addWidget(model_label)
-        self.model_combo = QComboBox(popup)
+        self.model_combo = QComboBox(self.popup)
         self.model_combo.setObjectName("AssistantModelSelect")
         self.model_combo.addItem("Loading available models…", "")
         self.model_combo.setMinimumHeight(38)
@@ -118,7 +138,7 @@ class ModelPicker(QFrame):
         model_row.setSpacing(8)
         model_row.addWidget(self.model_combo, 1)
 
-        self.connect_button = QPushButton("Connect", popup)
+        self.connect_button = QPushButton("Connect", self.popup)
         self.connect_button.setObjectName("AssistantModelConnectButton")
         self.connect_button.setMinimumHeight(38)
         self.connect_button.setMinimumWidth(92)
@@ -126,7 +146,7 @@ class ModelPicker(QFrame):
         self.connect_button.clicked.connect(self.connect_requested.emit)
         model_row.addWidget(self.connect_button)
 
-        self.disconnect_button = QPushButton("Disconnect", popup)
+        self.disconnect_button = QPushButton("Disconnect", self.popup)
         self.disconnect_button.setObjectName("Subtle")
         self.disconnect_button.setMinimumHeight(38)
         self.disconnect_button.clicked.connect(self.disconnect_requested.emit)
@@ -134,19 +154,28 @@ class ModelPicker(QFrame):
         model_row.addWidget(self.disconnect_button)
         popup_layout.addLayout(model_row)
 
-        self.menu_status = QLabel("Choose a model to connect.", popup)
+        self.menu_status = QLabel("Choose a model to connect.", self.popup)
         self.menu_status.setObjectName("AssistantModelPickerMenuStatus")
         self.menu_status.setWordWrap(True)
         popup_layout.addWidget(self.menu_status)
 
-        menu_action = QWidgetAction(self.menu)
-        menu_action.setDefaultWidget(popup)
-        self.menu.addAction(menu_action)
-        self.button.setMenu(self.menu)
-
         self.provider_combo.currentIndexChanged.connect(self._sync_button_text)
         self.model_combo.currentIndexChanged.connect(self._sync_button_text)
         self._sync_button_text()
+
+    def _toggle_popup(self):
+        if self.popup.isVisible():
+            self.popup.hide()
+            return
+        self.popup.adjustSize()
+        origin = self.button.mapToGlobal(QPoint(0, self.button.height() + 6))
+        self.popup.move(origin)
+        self.popup.show()
+        self.popup.raise_()
+
+    def _advance_spinner(self):
+        self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
+        self.spinner.setText(self._spinner_frames[self._spinner_index])
 
     def _sync_button_text(self, *_args):
         provider = str(self.provider_combo.currentData() or self._provider)
@@ -186,9 +215,6 @@ class ModelPicker(QFrame):
         if connecting:
             text, state = "Connecting…", "connecting"
             menu_text = "Connecting to the selected model…"
-        elif error:
-            text, state = "Connection failed", "error"
-            menu_text = str(error)
         elif matches_active:
             text, state = "Connected", "connected"
             menu_text = (
@@ -210,15 +236,29 @@ class ModelPicker(QFrame):
         self.status_label.style().unpolish(self.status_label)
         self.status_label.style().polish(self.status_label)
         self.menu_status.setText(menu_text)
-        self.spinner.setVisible(bool(connecting))
+
+        if connecting:
+            self.spinner.show()
+            if not self.spinner_timer.isActive():
+                self._spinner_index = 0
+                self.spinner.setText(self._spinner_frames[0])
+                self.spinner_timer.start()
+        else:
+            self.spinner_timer.stop()
+            self.spinner.setText(self._spinner_frames[0])
+            self.spinner.hide()
+
         self.connect_button.setEnabled(
             not self._busy
             and not connecting
             and not matches_active
-            and (bool(selected) or self._provider == "opencode")
+            and self._provider in {"opencode", "ollama"}
         )
         self.disconnect_button.setVisible(bool(connected))
         self.disconnect_button.setEnabled(bool(connected) and not connecting and not self._busy)
+        self.retry_button.setVisible(not connected)
+        self.retry_button.setEnabled(not self._busy and not connecting)
+        self.retry_button.setToolTip("Retry connection")
         self._sync_button_text()
 
     def set_busy(self, busy: bool):
@@ -228,16 +268,26 @@ class ModelPicker(QFrame):
         if self._busy:
             self.connect_button.setEnabled(False)
             self.disconnect_button.setEnabled(False)
+            self.retry_button.setEnabled(False)
+        else:
+            self.set_connection_state(
+                connected=self._connected,
+                active_model=self._active_model,
+                connecting=self._connecting,
+                provider=self._provider,
+            )
 
 
 class MessageComposer(QFrame):
-    """One-row input dock: model at left, prompt in the middle, voice/send at right."""
+    """Adaptive composer: one row on wide windows, input + toolbar on narrow windows."""
 
     send_requested = Signal()
     stop_requested = Signal()
     voice_requested = Signal()
     connect_requested = Signal()
     disconnect_requested = Signal()
+    retry_requested = Signal()
+    error_requested = Signal(str)
 
     def __init__(self, icons, parent=None, *, provider="opencode"):
         super().__init__(parent)
@@ -245,25 +295,38 @@ class MessageComposer(QFrame):
         self._provider_ready = False
         self._busy = False
         self._stoppable = False
+        self._compact_mode: bool | None = None
+        self._compact_threshold = 760
         self.setObjectName("AssistantComposer")
+        self.setMinimumWidth(0)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 9, 12, 9)
         root.setSpacing(5)
-        row = QHBoxLayout()
-        row.setSpacing(10)
+
+        self.row_container = QWidget(self)
+        self.row_container.setObjectName("AssistantComposerInputRow")
+        self.row_layout = QHBoxLayout(self.row_container)
+        self.row_layout.setContentsMargins(0, 0, 0, 0)
+        self.row_layout.setSpacing(9)
+
+        self.bottom_row_container = QWidget(self)
+        self.bottom_row_container.setObjectName("AssistantComposerToolbar")
+        self.bottom_row_layout = QHBoxLayout(self.bottom_row_container)
+        self.bottom_row_layout.setContentsMargins(0, 0, 0, 0)
+        self.bottom_row_layout.setSpacing(8)
+        self.bottom_row_container.hide()
 
         self.model_picker = ModelPicker(icons, self, provider=provider)
         self.model_picker.connect_requested.connect(self.connect_requested.emit)
         self.model_picker.disconnect_requested.connect(self.disconnect_requested.emit)
+        self.model_picker.retry_requested.connect(self.retry_requested.emit)
         self.provider_combo = self.model_picker.provider_combo
         self.model_combo = self.model_picker.model_combo
-        row.addWidget(self.model_picker, 0)
 
         self.prompt = PromptEditor(self)
         self.prompt.send_requested.connect(self._on_primary_action)
         self.prompt.textChanged.connect(self._sync_send_button)
-        row.addWidget(self.prompt, 1)
 
         self.voice_chat_button = QPushButton("Start voice", self)
         self.voice_chat_button.setObjectName("AssistantVoiceButton")
@@ -273,7 +336,6 @@ class MessageComposer(QFrame):
         self.voice_chat_button.setToolTip("Start or stop local voice conversation")
         self.voice_chat_button.setMinimumHeight(42)
         self.voice_chat_button.clicked.connect(self.voice_requested.emit)
-        row.addWidget(self.voice_chat_button, 0)
 
         self.send_button = QPushButton(self)
         self.send_button.setObjectName("AssistantSendButton")
@@ -284,24 +346,67 @@ class MessageComposer(QFrame):
         self.send_button.setAccessibleName("Send message")
         self.send_button.clicked.connect(self._on_primary_action)
         self.send_button.setEnabled(False)
-        row.addWidget(self.send_button, 0)
         self.stop_button = self.send_button
 
-        root.addLayout(row)
+        self.status_label = QLabel("", self)
+        self.status_label.setObjectName("AssistantComposerStatus")
+        self.status_label.setWordWrap(True)
+        self.status_label.setMinimumWidth(0)
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.status_label.hide()
 
         self.voice_live_status = QLabel("Voice off", self)
         self.voice_live_status.setObjectName("AssistantVoiceStatus")
         self.voice_live_status.setWordWrap(True)
         self.voice_live_status.setAccessibleName("Voice chat status")
         self.voice_live_status.hide()
+
+        root.addWidget(self.row_container)
+        root.addWidget(self.bottom_row_container)
         root.addWidget(self.voice_live_status)
 
-        self.status_label = QLabel("Disconnected", self)
-        self.status_label.setObjectName("AssistantComposerStatus")
-        self.status_label.setWordWrap(True)
-        self.status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.status_label.hide()
-        root.addWidget(self.status_label)
+        self._set_compact_mode(False)
+
+    def _set_compact_mode(self, compact: bool):
+        compact = bool(compact)
+        if self._compact_mode is compact:
+            return
+        self._compact_mode = compact
+        for widget in (
+            self.model_picker, self.prompt, self.voice_chat_button,
+            self.send_button, self.status_label,
+        ):
+            self.row_layout.removeWidget(widget)
+            self.bottom_row_layout.removeWidget(widget)
+
+        if compact:
+            self.row_layout.addWidget(self.prompt, 1)
+            self.bottom_row_layout.addWidget(self.model_picker, 0)
+            self.bottom_row_layout.addWidget(self.status_label, 1)
+            self.bottom_row_layout.addWidget(self.voice_chat_button, 0)
+            self.bottom_row_layout.addWidget(self.send_button, 0)
+            self.bottom_row_container.show()
+        else:
+            self.row_layout.addWidget(self.model_picker, 0)
+            self.row_layout.addWidget(self.prompt, 1)
+            self.row_layout.addWidget(self.voice_chat_button, 0)
+            self.row_layout.addWidget(self.send_button, 0)
+            self.bottom_row_container.hide()
+        self._update_status_visibility()
+        self._sync_send_button()
+
+    def _update_status_visibility(self):
+        show_status = self._compact_mode and bool(self.status_label.text().strip())
+        self.status_label.setVisible(show_status)
+        self.model_picker.status_label.setVisible(
+            not self._compact_mode or self.width() >= 620
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._set_compact_mode(event.size().width() < self._compact_threshold)
+        self._update_status_visibility()
 
     def _on_primary_action(self):
         if self._busy:
@@ -312,11 +417,14 @@ class MessageComposer(QFrame):
             self.send_requested.emit()
 
     def set_status(self, text: str, *, error: bool = False):
-        self.status_label.setText(str(text or ""))
-        self.status_label.setProperty("state", "error" if error else "normal")
-        self.status_label.style().unpolish(self.status_label)
-        self.status_label.style().polish(self.status_label)
-        self.status_label.setVisible(bool(text))
+        value = str(text or "").strip()
+        if error and value:
+            self.status_label.clear()
+            self.status_label.hide()
+            self.error_requested.emit(value)
+            return
+        self.status_label.setText(value)
+        self._update_status_visibility()
 
     def set_connection_state(self, **kwargs):
         self.model_picker.set_connection_state(**kwargs)

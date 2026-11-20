@@ -102,7 +102,8 @@ def stylesheet(theme: str) -> str:
     }}
     QFrame#AssistantModelPickerPopup {{
         background: {c['surface']};
-        border: 0;
+        border: 1px solid {c['border']};
+        border-radius: 13px;
     }}
     QLabel#AssistantModelPickerCaption {{
         color: {c['muted']};
@@ -141,6 +142,62 @@ def stylesheet(theme: str) -> str:
     QProgressBar#AssistantConnectionSpinner::chunk {{
         background: {c['accent']};
         border-radius: 7px;
+    }}
+    QLabel#AssistantConnectionSpinner {{
+        color: {c['accent']};
+        font-size: 15px;
+        font-weight: 800;
+    }}
+    QToolButton#AssistantRetryConnection {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 17px;
+        color: {c['accent']};
+        padding: 0;
+        font-size: 22px;
+        font-weight: 600;
+    }}
+    QToolButton#AssistantRetryConnection:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QToolButton#AssistantRetryConnection:disabled {{
+        color: {c['muted']};
+        background: {c['surface']};
+    }}
+    QFrame#AssistantErrorToast {{
+        background: {c['surface']};
+        border: 1px solid {c['danger']};
+        border-radius: 12px;
+    }}
+    QLabel#AssistantErrorToastMark {{
+        background: {c['danger']};
+        color: white;
+        border-radius: 11px;
+        font-size: 13px;
+        font-weight: 800;
+    }}
+    QLabel#AssistantErrorToastText {{
+        color: {c['text']};
+        font-size: 12px;
+        font-weight: 550;
+    }}
+    QToolButton#AssistantToastClose {{
+        background: transparent;
+        border: 0;
+        border-radius: 7px;
+        color: {c['muted']};
+        padding: 0;
+        font-size: 19px;
+        font-weight: 650;
+    }}
+    QToolButton#AssistantToastClose:hover {{
+        background: {c['surface_hover']};
+        color: {c['text']};
+    }}
+    QWidget#AssistantComposerInputRow, QWidget#AssistantComposerToolbar {{
+        background: transparent;
+        border: 0;
     }}
     QPushButton#AssistantModelConnectButton {{
         background: {c['accent']};
