@@ -205,6 +205,7 @@ class ConversationView(QFrame):
             streaming=bool(item.get("streaming", False)),
         )
         widget.setMinimumWidth(0)
+        widget.setMaximumWidth(self._responsive_message_max_width())
         widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         if role == "user":
             row_layout.addStretch(1)
@@ -340,6 +341,18 @@ class ConversationView(QFrame):
         self.jump_button.hide()
         self._follow_stream = True
 
+    def _responsive_message_max_width(self) -> int:
+        """Use a slightly wider message measure on roomy desktop chat surfaces."""
+        viewport_width = self.scroll_area.viewport().width()
+        return min(1120, max(960, int(viewport_width * 0.88)))
+
+    def _update_message_widths(self):
+        max_width = self._responsive_message_max_width()
+        for widget in self._widgets:
+            if widget.maximumWidth() != max_width:
+                widget.setMaximumWidth(max_width)
+                widget.body.refresh_document_size()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         narrow = event.size().width() < 560
@@ -353,5 +366,7 @@ class ConversationView(QFrame):
             self._empty_layout.setSpacing(12)
         for widget in self._widgets:
             widget.body.refresh_document_size()
+        # Let the scroll area's viewport finish its layout before measuring it.
+        QTimer.singleShot(0, self._update_message_widths)
         if self._is_near_bottom():
             self.scroll_to_latest()
