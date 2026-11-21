@@ -618,3 +618,28 @@ def test_ollama_thinking_signal_is_rendered_inside_the_assistant_message(qtbot, 
     assert widget.thinking_body.toPlainText() == "Checking the project structure."
     assert widget.body.toPlainText() == "I found the project files."
     assert not hasattr(panel, "agent_thinking")
+
+
+def test_conversation_messages_expand_a_little_on_wide_desktops(qtbot):
+    from transcriber.ui.components.assistant.conversation_view import ConversationView
+
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    view = ConversationView()
+    qtbot.addWidget(view)
+    view.resize(900, 520)
+    view.show()
+    view.set_messages([
+        {"role": "assistant", "text": "A response that should remain readable."},
+        {"role": "user", "text": "A longer user message that can use more horizontal room."},
+    ])
+    qtbot.wait(30)
+
+    assert all(widget.maximumWidth() == 960 for widget in view._widgets)
+
+    view.resize(1500, 520)
+    qtbot.wait(50)
+
+    assert all(widget.maximumWidth() == 1120 for widget in view._widgets)
+    assert all(widget.width() <= view.scroll_area.viewport().width() for widget in view._widgets)
+
