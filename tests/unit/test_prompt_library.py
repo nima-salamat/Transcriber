@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from transcriber.assistant.prompt_library import LEGACY_DEFAULT_PROMPTS, PromptLibrary
+from transcriber.assistant.prompt_library import (\n    LEGACY_DEFAULT_PROMPTS,\n    LEGACY_DEFAULT_PROMPT_VERSIONS,\n    PromptLibrary,\n)
 
 
 def test_prompt_library_seeds_specialist_workflows_and_bootstrap(tmp_path):
@@ -45,7 +45,9 @@ def test_prompt_library_migrates_unchanged_legacy_agent_prompts(tmp_path):
     assert "general-purpose desktop, development, file and web agent" in coordinator
     assert "not a browser-only assistant" in coordinator
     assert "system.run_command" in coordinator
-    assert "This file covers only actions inside the Transcriber desktop application" in workspace
+    assert "Transcriber host actions and permissions" in workspace
+    assert "general-purpose system.run_command" in workspace
+    assert "OpenCode calls" in workspace
     assert "native terminal/shell" in workspace
 
 
@@ -121,3 +123,25 @@ def test_copied_prompt_pack_is_self_contained_and_includes_voice_specialist(tmp_
     assert "PROMPT FILE: 00-AGENT.md" in copied
     assert "PROMPT FILE: 60-voice-agent.md" in copied
     assert "The selected Vosk model is the local wake-word detector only." in copied
+
+
+
+def test_prompt_library_migrates_previous_workspace_prompt_without_overwriting_custom_edits(
+    tmp_path,
+):
+    directory = tmp_path / "prompts"
+    library = PromptLibrary(directory)
+    previous = LEGACY_DEFAULT_PROMPT_VERSIONS["50-workspace-actions.md"][0].replace(
+        "{PROMPT_DIRECTORY}", str(directory.resolve())
+    )
+    (directory / "50-workspace-actions.md").write_text(
+        previous.rstrip() + "\n", encoding="utf-8"
+    )
+
+    library.ensure_defaults()
+
+    workspace = library.read("50-workspace-actions.md")
+    assert "Transcriber host actions and permissions" in workspace
+    assert "general-purpose system.run_command" in workspace
+    assert "app_execute_action" in workspace
+    assert "OpenCode native terminal/shell" in workspace
