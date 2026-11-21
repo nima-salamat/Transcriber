@@ -379,7 +379,7 @@ not limit the agent to Transcriber or replace the active provider's native tools
   MCP action names or use shell commands to imitate app-only operations.
 - For independent Windows, filesystem, repository, development, build, test or
   process tasks, choose the active provider's real command/terminal tool instead:
-  Ollama uses the registered system.run_command PowerShell action when present in
+  Ollama uses the registered `system.run_command` PowerShell action when present in
   its supplied tools list; OpenCode uses its native terminal/shell tool when exposed.
   The Python host executes Ollama commands as the current user; the model never runs
   PowerShell itself. Submit the requested command rather than merely printing it.
