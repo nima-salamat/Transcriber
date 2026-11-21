@@ -598,6 +598,7 @@ def test_main_window_cancellable_command_adapter_forwards_arguments_and_event():
     assert received["arguments"] is arguments
     assert received["cancel_event"] is cancel_event
 
+
 def test_trusted_browser_permission_skips_only_browser_confirmations():
     approvals = []
     calls = []
