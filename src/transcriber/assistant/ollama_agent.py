@@ -185,7 +185,7 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "parameters": {"type": "object", "properties": {}},
     },
     "system.run_command": {
-        "description": "Request the Transcriber Python host to run a PowerShell command as the current Windows user. Python validates, requests approval and executes it; the model never runs shell commands. No elevation; output and runtime are bounded.",
+        "description": "Run a custom PowerShell command for local Windows, filesystem, repository, development, build, test, package or process tasks. The Python host validates it, requests the required approval and executes it as the current Windows user; the model never runs shell commands. No elevation; output and runtime are bounded.",
         "parameters": {"type": "object", "properties": {
             "command": {"type": "string", "description": "PowerShell command or script"},
             "cwd": {"type": "string", "description": "Optional existing working directory"},
@@ -193,7 +193,7 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         }, "required": ["command"]},
     },
     "agent.skills_search": {
-        "description": "Find matching installed Agent Skills for the user's task. This should be the first tool for multi-step browser, desktop, file, research or coding work.",
+        "description": "Optionally find installed specialist instructions when a complex task would benefit from them. Do not use this as a mandatory pre-step for routine commands or straightforward tasks.",
         "parameters": {"type": "object", "properties": {
             "query": {"type": "string", "description": "The user's complete task"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 8},
@@ -355,20 +355,34 @@ class OllamaAgent:
             "inspect ", "check ", "verify ", "review ", "read ", "list ",
             "test ", "build ", "compile ", "analyze ", "fix ", "update ",
             "configure ", "scan ", "fetch ", "query ", "run tests",
-            "باز کن", "اجرا کن", "جستجو کن", "سرچ کن", "پیدا کن", "دانلود کن",
-            "نصب کن", "ایجاد کن", "ویرایش کن", "حذف کن", "منتقل کن", "کپی کن",
-            "بفرست", "شروع کن", "متوقف کن",
+            "اجرا کن", "ران کن", "باز کن", "بررسی کن", "جستجو کن", "سرچ کن",
+            "پیدا کن", "دانلود کن", "نصب کن", "ایجاد کن", "ویرایش کن", "حذف کن",
+            "منتقل کن", "کپی کن", "بفرست", "شروع کن", "متوقف کن", "تست کن",
+            "کامپایل کن", "فیکس کن",
         )
         if any(cue in value for cue in cues):
             return True
+        # Explicit command-line requests, including Persian phrasing that does not
+        # necessarily begin with the action verb.
+        command_action = (
+            r"\\b(?:run|execute|issue)\\s+(?:this\\s+)?(?:a\\s+)?(?:powershell|terminal|shell|command|script)\\b",
+            r"\\b(?:use|open)\\s+(?:powershell|terminal|cmd|shell)\\s+(?:to|and)\\s+\\w+",
+            r"\\b(?:via|using|in)\\s+(?:powershell|terminal|cmd|shell)\\b.{0,100}\\b(?:run|execute|check|list|show|build|test|install)\\b",
+        )
+        if any(re.search(pattern, value) for pattern in command_action):
+            return True
         # Explicit Persian action verbs, without treating explanatory questions as actions.
         persian_action = (
-            r"(?:لطفا|لطفاً)?\s*(?:برام|برای من)?\s*(?:باز کن|اجرا کن|ران کن|"
+            r"(?:لطفا|لطفاً)?\\s*(?:برام|برای من)?\\s*(?:باز کن|اجرا کن|ران کن|"
             r"بررسی کن|جستجو کن|سرچ کن|پیدا کن|نصب کن|دانلود کن|ایجاد کن|"
             r"ویرایش کن|حذف کن|منتقل کن|کپی کن|تغییر بده|راه‌اندازی کن|متوقف کن)",
-            r"(?:میخوام|می‌خوام|می خواهم|میخواهم).{0,50}(?:انجام بدی|انجام بدهی|"
-            r"بررسی کنی|اجرا کنی|باز کنی|بسازی|تغییر بدی|درست کنی|فیکس کنی)",
-            r"(?:دستور|کامند|فرمان).{0,40}(?:اجرا|ران|انجام)",
+            r"(?:میخوام|می‌خوام|می خواهم|میخواهم).{0,80}(?:انجام بدی|انجام بدهی|"
+            r"بررسی کنی|اجرا کنی|باز کنی|بسازی|تغییر بدی|درست کنی|فیکس کنی|"
+            r"ران کنی|تست کنی|لیست کنی)",
+            r"(?:دستور|کامند|فرمان|اسکریپت).{0,80}(?:اجرا|ران|انجام|بزن|اعمال)",
+            r"(?:پاورشل|powershell|ترمینال|terminal|cmd|شل|shell).{0,80}"
+            r"(?:اجرا|ران|باز|استفاده|بزن)",
+            r"(?:اجرا|ران|وارد|بزن).{0,50}(?:دستور|کامند|فرمان|اسکریپت|پاورشل|ترمینال)",
         )
         return any(re.search(pattern, value) for pattern in persian_action)
 
@@ -599,8 +613,8 @@ class OllamaAgent:
                     incomplete = True
                 else:
                     failure = (
-                        "I could not execute that request because the model did not call an "
-                        "available action. No browser, desktop or command action was run."
+                        "The model did not call an enabled host action after the execution "
+                        "reminders. No command, desktop, browser or Transcriber action was run."
                     )
                     incomplete = False
                 working.append({"role": "assistant", "content": failure})
