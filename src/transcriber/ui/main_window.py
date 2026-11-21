@@ -1155,7 +1155,7 @@ class MainWindow(QMainWindow):
         ))
         register(ActionSpec(
             "system.run_command",
-            "Run PowerShell for local Windows, file, process, repository, development, build, test and package tasks as the current user; the host validates and asks for approval for every command.",
+            "Run any valid PowerShell command or multi-line script for local Windows tasks available to the current account, including files, processes, repositories, development, builds, tests, package managers and system diagnostics/configuration; the host asks for approval for every invocation.",
             AgentPermission.COMMAND_EXECUTION,
             self._agent_run_command,
             required=("command",),
