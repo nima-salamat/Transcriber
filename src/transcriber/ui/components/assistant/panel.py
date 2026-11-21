@@ -505,8 +505,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         permissions_title = QLabel("Tool permissions")
         permissions_title.setObjectName("AssistantSectionTitle")
         permissions_description = QLabel(
-            "Choose which built-in Transcriber tools the Agent can use. Changes are saved "
-            "immediately and remain active after restarting the app."
+            "Choose which built-in Transcriber tools the Agent can use. Grants are saved immediately "
+            "and remain active after restarting the app. Sensitive actions may still ask for "
+            "confirmation according to the approval policy below."
         )
         permissions_description.setObjectName("Muted")
         permissions_description.setWordWrap(True)
@@ -529,7 +530,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
             (AgentPermission.BROWSER_CONTROL, "Browser control",
              "Allow searching the web, opening pages and reading the controlled browser."),
             (AgentPermission.DESKTOP_CONTROL, "Desktop control",
-             "Allow launching approved apps and opening local files or folders."),
+             "Allow launching approved apps and opening local files or folders. Individual desktop "
+             "actions still request confirmation."),
             (AgentPermission.COMMAND_EXECUTION, "Run PowerShell commands",
              "Allow requesting PowerShell commands. Each command still requires confirmation."),
             (AgentPermission.DESTRUCTIVE_ACTIONS, "Destructive actions",
@@ -581,8 +583,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         )
         trust_browser_layout.addWidget(self.agent_trust_browser_check)
         trust_browser_note = QLabel(
-            "Only applies to Browser control. PowerShell and destructive actions always keep "
-            "their own confirmation safeguards."
+            "Only applies to Browser control. Desktop actions, PowerShell commands and destructive "
+            "operations still keep their own confirmation safeguards."
         )
         trust_browser_note.setObjectName("Muted")
         trust_browser_note.setWordWrap(True)
@@ -1053,7 +1055,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
             self._sync_agent_permission_controls()
             self.agent_mode_check.setToolTip(
                 "Ollama sees only tools enabled in the Tool permissions section. "
-                "Browser interactions can be trusted persistently; PowerShell and destructive "
+                "Browser interactions can be trusted persistently; desktop, PowerShell and destructive "
                 "actions still require confirmation."
             )
         self._apply_provider_ui()
