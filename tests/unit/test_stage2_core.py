@@ -557,3 +557,25 @@ def test_command_execution_is_never_run_when_gui_approval_is_denied():
         registry.execute("system.run_command", {"command": "Get-Location"})
     assert approvals == ["system.run_command"]
     assert calls == []
+
+def test_main_window_cancellable_command_adapter_forwards_arguments_and_event():
+    from transcriber.ui.main_window import MainWindow
+
+    arguments = {"command": "Get-Location"}
+    cancel_event = threading.Event()
+    received = {}
+
+    class FakeWindow:
+        def _agent_run_command(self, actual_arguments, *, cancel_event=None):
+            received["arguments"] = actual_arguments
+            received["cancel_event"] = cancel_event
+            return {"exit_code": 0}
+
+    result = MainWindow._run_agent_command_action_cancellable(
+        FakeWindow(), arguments, cancel_event
+    )
+
+    assert result == {"exit_code": 0}
+    assert received["arguments"] is arguments
+    assert received["cancel_event"] is cancel_event
+
