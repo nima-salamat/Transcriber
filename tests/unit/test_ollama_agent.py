@@ -574,6 +574,6 @@ def test_power_shell_tool_exposure_tracks_the_user_command_execution_permission(
 
     assert command_tool["parameters"]["properties"]["command"]["maxLength"] == 16000
     assert command_tool["parameters"]["properties"]["timeout_seconds"]["maximum"] == 3600
-    assert "general-purpose PowerShell" in command_tool["description"]
+    assert "general-purpose powershell" in command_tool["description"].casefold()
     assert "browser" in command_tool["description"].casefold()
     assert registry.describe(include_disabled=False)[0]["requires_approval"] is True
