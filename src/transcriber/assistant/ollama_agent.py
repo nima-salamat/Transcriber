@@ -514,6 +514,36 @@ class OllamaAgent:
             last_result = response
             answer = str(response.get("text") or "")
             calls = response.get("tool_calls") or []
+            decision_status = None
+
+            # Some local models narrate an action instead of emitting native
+            # tool_calls. Convert the strict control envelope into the same
+            # registered-action path; only the Python host executes it.
+            decision = parse_agent_decision(answer) if tools and not calls else None
+            if decision is not None:
+                decision_status = decision.status
+                if decision.status == "continue" and decision.action is not None:
+                    progress_parts = []
+                    if decision.response:
+                        progress_parts.append(decision.response)
+                    if decision.plan:
+                        plan_lines = [
+                            f"{index + 1}. {item['title']} · {item['status']}"
+                            for index, item in enumerate(decision.plan)
+                        ]
+                        progress_parts.append("Plan:\n" + "\n".join(plan_lines))
+                    if progress_parts and on_tool_status:
+                        on_tool_status("\n".join(progress_parts))
+                    calls = [{
+                        "function": {
+                            "name": decision.action["name"],
+                            "arguments": decision.action["arguments"],
+                        }
+                    }]
+                    # Progress is an activity event, not assistant answer text.
+                    answer = ""
+                else:
+                    answer = decision.response
 
             if not calls and fallback_tool_call and not fallback_attempted:
                 fallback_name = str(fallback_tool_call.get("name") or "")
@@ -533,8 +563,10 @@ class OllamaAgent:
                     fallback_attempted = True
 
             promises_next_action = self.response_promises_action(answer)
-            needs_execution = require_tool_call and (
-                tool_count == 0 or promises_next_action
+            needs_execution = (
+                require_tool_call
+                and decision_status not in {"blocked", "needs_input"}
+                and (tool_count == 0 or promises_next_action)
             )
             if not calls and needs_execution and recovery_attempts < 2:
                 working.append({"role": "assistant", "content": answer})
@@ -589,8 +621,15 @@ class OllamaAgent:
             working.append(assistant_message)
             if not calls:
                 return {
-                    **response, "messages": working, "tool_count": tool_count,
-                    "tool_rounds": tool_rounds, "cancelled": False,
+                    **response,
+                    "text": answer,
+                    "messages": working,
+                    "tool_count": tool_count,
+                    "tool_rounds": tool_rounds,
+                    "cancelled": False,
+                    "agent_status": decision_status or "done",
+                    "blocked": decision_status == "blocked",
+                    "needs_input": decision_status == "needs_input",
                 }
 
             tool_rounds += 1
@@ -621,17 +660,25 @@ class OllamaAgent:
                     }
                 name = "unknown"
                 permission_blocked = False
+                action_ok = False
                 try:
                     name, arguments = self._call_details(call)
                     if on_tool_status:
                         on_tool_status(f"Running {name}…")
                     result = self.action_executor(name, arguments)
-                    result_text = self._tool_result_text({"ok": True, "result": result})
-                    status = f"Completed {name}"
+                    action_ok = self._action_result_ok(result)
+                    result_text = self._tool_result_text({
+                        "ok": action_ok, "action": name, "result": result,
+                    })
+                    status = (
+                        f"Completed {name}" if action_ok
+                        else f"Failed {name} · host returned an unsuccessful result"
+                    )
                 except Exception as exc:
                     permission_blocked = isinstance(exc, PermissionError)
                     result_text = self._tool_result_text({
-                        "ok": False, "error": f"{type(exc).__name__}: {exc}",
+                        "ok": False, "action": name,
+                        "error": f"{type(exc).__name__}: {exc}",
                     })
                     status = f"Could not run {name}: {exc}"
                 if on_tool_status:
@@ -644,7 +691,7 @@ class OllamaAgent:
                 if on_tool_result:
                     on_tool_result({
                         "name": name,
-                        "ok": result_text.startswith('{"ok":true'),
+                        "ok": action_ok,
                         "content": result_text,
                     })
                 if permission_blocked:
