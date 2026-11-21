@@ -172,8 +172,15 @@ class MainWindow(QMainWindow):
                 configured_permissions.add(AgentPermission(value))
             except ValueError:
                 continue
+        configured_trusted_permissions = set()
+        for value in settings_store.settings.agent_trusted_permissions or []:
+            try:
+                configured_trusted_permissions.add(AgentPermission(value))
+            except ValueError:
+                continue
         self.action_registry = ActionRegistry(
             permissions=configured_permissions,
+            trusted_permissions=configured_trusted_permissions,
             dispatcher=self.dispatcher, approval=self._approve_agent_action,
         )
         self._waveform_generation = 0
