@@ -50,7 +50,7 @@ class AppSettings:
     ])
     # Incremented by validate() after one-time permission migrations. Keeping
     # it persisted allows users to intentionally disable shell access later.
-    agent_permissions_version: int = 0
+    agent_permissions_version: int = 1
     wake_phrase: str = "transcriber"
     wake_model_directory: str | None = None
     wake_enabled: bool = False
@@ -227,6 +227,11 @@ class SettingsStore:
                         raise ValueError("Settings root must be a JSON object")
                     allowed = {item.name for item in fields(AppSettings)}
                     values = {key: value for key, value in raw.items() if key in allowed}
+                    # Files written before the permission-version field need
+                    # one migration pass. Fresh defaults and corrupt-file
+                    # fallbacks keep the current version and stay immutable.
+                    if "agent_permissions_version" not in raw:
+                        values["agent_permissions_version"] = 0
                     self._settings = AppSettings(**values)
                 except (OSError, ValueError, TypeError):
                     # Keep the corrupt file intact so the user can inspect/recover it.
