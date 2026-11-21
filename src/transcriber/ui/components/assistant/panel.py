@@ -1052,8 +1052,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
             )
             self._sync_agent_permission_controls()
             self.agent_mode_check.setToolTip(
-                "Ollama sees only currently permitted tools. Desktop actions remain hidden "
-                "until Desktop control is enabled in Settings, and each action asks before running."
+                "Ollama sees only tools enabled in the Tool permissions section. "
+                "Browser interactions can be trusted persistently; PowerShell and destructive "
+                "actions still require confirmation."
             )
         self._apply_provider_ui()
 
