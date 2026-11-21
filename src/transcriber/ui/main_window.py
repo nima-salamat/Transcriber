@@ -1676,11 +1676,11 @@ class MainWindow(QMainWindow):
         dialog.setIcon(QMessageBox.Warning if spec.requires_approval else QMessageBox.Question)
         if spec.name == "system.run_command":
             command = str(args.get("command") or "").strip()
-            visible_command = command if len(command) <= 1800 else command[:1800] + "\\n… (see Details for the full command)"
+            visible_command = command if len(command) <= 1800 else command[:1800] + "\n… (see Details for the full command)"
             dialog.setText("Allow the AI Assistant to run this PowerShell command?")
             dialog.setInformativeText(
                 visible_command
-                + "\\n\\nPowerShell will run as your current Windows user, without administrator elevation."
+                + "\n\nPowerShell will run as your current Windows user, without administrator elevation."
             )
         else:
             dialog.setText(f"Allow the Agent to run {spec.name}?")
