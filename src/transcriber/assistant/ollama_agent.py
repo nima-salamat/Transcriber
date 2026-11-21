@@ -472,6 +472,7 @@ class OllamaAgent:
         fallback_tool_call: dict[str, Any] | None = None,
         on_chunk: Callable[[str], None] | None = None,
         on_thinking: Callable[[str], None] | None = None,
+        on_round_start: Callable[[int], None] | None = None,
         on_tool_status: Callable[[str], None] | None = None,
         on_tool_result: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
@@ -500,6 +501,11 @@ class OllamaAgent:
                     "cancelled": True,
                     "metrics": last_result.get("metrics", {}),
                 }
+            # The caller can show a fresh inline Thinking card before each model
+            # generation round. This matters after a tool result: the previous
+            # assistant stream is closed while the model is deciding what to do next.
+            if on_round_start:
+                on_round_start(_round + 1)
             turn_chunks: list[str] = []
 
             def collect(chunk: str) -> None:
