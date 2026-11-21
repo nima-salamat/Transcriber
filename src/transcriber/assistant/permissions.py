@@ -21,9 +21,6 @@ class AgentPermission(StrEnum):
 DEFAULT_PERMISSIONS = frozenset({
     AgentPermission.READ_ONLY,
     AgentPermission.EDIT_CONTENT,
-    AgentPermission.DESKTOP_CONTROL,
-    AgentPermission.BROWSER_CONTROL,
-    AgentPermission.COMMAND_EXECUTION,
 })
 
 

@@ -46,7 +46,7 @@ class AppSettings:
     opencode_project_directory: str | None = None
     opencode_session_id: str | None = None
     agent_permissions: list[str] = field(default_factory=lambda: [
-        "read_only", "edit_content", "desktop_control", "browser_control", "command_execution"
+        "read_only", "edit_content"
     ])
     wake_phrase: str = "transcriber"
     wake_model_directory: str | None = None
@@ -148,7 +148,20 @@ class AppSettings:
             "file_export", "model_management", "destructive_actions", "desktop_control",
             "browser_control", "command_execution",
         }
-        raw_permissions = self.agent_permissions if isinstance(self.agent_permissions, list) else ["read_only", "edit_content", "desktop_control", "browser_control", "command_execution"]
+        raw_permissions = (
+            self.agent_permissions
+            if isinstance(self.agent_permissions, list)
+            else ["read_only", "edit_content"]
+        )
+        # Previous releases silently enabled desktop, browser and shell access
+        # on first run. Treat that exact legacy default as implicit, not as
+        # an explicit user grant, and migrate it to the least-privilege set.
+        legacy_implicit = {
+            "read_only", "edit_content", "desktop_control",
+            "browser_control", "command_execution",
+        }
+        if len(raw_permissions) == len(legacy_implicit) and set(raw_permissions) == legacy_implicit:
+            raw_permissions = ["read_only", "edit_content"]
         self.agent_permissions = list(dict.fromkeys(
             str(value) for value in raw_permissions if str(value) in valid_permissions
         ))
