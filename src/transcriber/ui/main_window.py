@@ -1149,7 +1149,7 @@ class MainWindow(QMainWindow):
             required=("command",),
             requires_approval=True,
             background=True,
-            cancellation_handler=self._run_agent_command_cancellable,
+            cancellation_handler=self._run_agent_command_action_cancellable,
         ))
         register(ActionSpec(
             "agent.skills_search",
@@ -1568,6 +1568,12 @@ class MainWindow(QMainWindow):
             "truncated": len(stdout) > 12_000 or len(stderr) > 6_000,
             "timed_out": False,
         }
+
+    def _run_agent_command_action_cancellable(
+        self, args: dict, cancel_event: threading.Event
+    ):
+        """Adapt ActionRegistry's cancellation callback to the command runner."""
+        return self._agent_run_command(args, cancel_event=cancel_event)
 
     def _agent_run_command(self, args, *, cancel_event=None):
         """Execute an explicitly approved PowerShell command without elevation or shell=True."""
