@@ -576,9 +576,9 @@ class OllamaAgent:
                 working.append({
                     "role": "user",
                     "content": (
-                        "Your previous message only described an action; in other words, "
-                        "your previous response described or promised an action without "
-                        "making the corresponding execution-tool call. The task is still "
+                        "Your previous message only described an action. Your previous "
+                        "response described or promised an action without making the "
+                        "corresponding execution-tool call. The task is still "
                         "outstanding. Do not send another plan or narration. Use one of the "
                         "enabled functions listed in the tools parameter now, inspect its "
                         "actual result, and only then decide whether to continue or finish. "
