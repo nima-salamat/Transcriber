@@ -478,8 +478,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         agent_mode_title = QLabel("Agent mode")
         agent_mode_title.setObjectName("AssistantSectionTitle")
         agent_mode_description = QLabel(
-            "Enable tool calling for Ollama's local Agent. OpenCode continues to use its own "
-            "ACP tools and the permissions configured for that provider."
+            "Enable all permitted Ollama Agent tools, including PowerShell commands, desktop "
+            "actions, browser actions, Transcriber app actions and Skills. OpenCode uses its "
+            "separate native tools and the same host permission policies."
         )
         agent_mode_description.setObjectName("Muted")
         agent_mode_description.setWordWrap(True)
@@ -491,7 +492,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         )
         self.agent_mode_check.toggled.connect(self._on_agent_mode_toggled)
         self.agent_mode_check.setToolTip(
-            "When disabled, Ollama receives no desktop or browser tools."
+            "When disabled, Ollama receives no action tools (PowerShell, desktop, browser, "
+            "Transcriber app actions or Skills)."
         )
         agent_mode_layout.addWidget(agent_mode_title)
         agent_mode_layout.addWidget(agent_mode_description)
