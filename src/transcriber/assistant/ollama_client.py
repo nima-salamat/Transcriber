@@ -7,6 +7,7 @@ performed by callers from a worker thread, never from the Qt GUI thread.
 from __future__ import annotations
 
 import json
+import socket
 from collections.abc import Callable, Iterable
 from threading import Event, Lock
 from urllib.error import HTTPError, URLError
@@ -53,6 +54,32 @@ class OllamaCancellation:
 
     @staticmethod
     def _close_response(response) -> None:
+        """Interrupt a blocking HTTP read before closing its response object.
+
+        HTTPResponse.close() alone may not wake a thread blocked in socket.makefile
+        while Ollama is generating a long response. Shutting down the underlying
+        socket first makes the blocked iterator/read return promptly.
+        """
+        candidates = [response]
+        seen = set()
+        while candidates:
+            current = candidates.pop()
+            if current is None or id(current) in seen:
+                continue
+            seen.add(id(current))
+            sock = getattr(current, "_sock", None)
+            if sock is not None:
+                shutdown = getattr(sock, "shutdown", None)
+                if callable(shutdown):
+                    try:
+                        shutdown(socket.SHUT_RDWR)
+                    except (OSError, ValueError):
+                        pass
+            for attribute in ("fp", "raw", "buffer", "_sock"):
+                nested = getattr(current, attribute, None)
+                if nested is not None and id(nested) not in seen:
+                    candidates.append(nested)
+
         close = getattr(response, "close", None)
         if callable(close):
             try:
