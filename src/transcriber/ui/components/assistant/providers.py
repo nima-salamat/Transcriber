@@ -39,19 +39,29 @@ class AssistantProviderMixin:
         return "\n\n".join(sections)
 
     def _mcp_action_context(self) -> str:
-        """Describe the exact enabled Transcriber actions available through OpenCode MCP."""
+        """Describe Transcriber's app-specific MCP actions without hiding provider tools."""
         registry = getattr(self, "_action_registry", None)
         if registry is None:
-            return "No Transcriber action registry is attached to this session."
+            return (
+                "No Transcriber-specific MCP app-action registry is attached. "
+                "This does not disable or describe OpenCode's separate native tools."
+            )
         try:
             actions = [
                 item for item in registry.describe(include_disabled=False)
                 if item.get("enabled")
             ]
         except Exception as exc:
-            return f"Could not inspect enabled Transcriber actions: {type(exc).__name__}: {exc}"
+            return (
+                "Could not inspect Transcriber MCP app actions: "
+                f"{type(exc).__name__}: {exc}. OpenCode's separate native tools are unaffected."
+            )
         if not actions:
-            return "No Transcriber actions are currently enabled by permissions."
+            return (
+                "No Transcriber-specific MCP app actions are enabled by permissions. "
+                "This is not a list of all available tools: inspect and use OpenCode's "
+                "native terminal/shell, file, browser or other tools when they are exposed."
+            )
         rows = []
         for item in actions:
             required = ", ".join(str(value) for value in item.get("required") or []) or "none"
@@ -63,12 +73,18 @@ class AssistantProviderMixin:
                 f"(required arguments: {required}; permission: {item.get('permission')}{approval})"
             )
         return (
-            "ENABLED TRANSCRIBER MCP ACTIONS (exact names; only these are available):\n"
+            "ENABLED TRANSCRIBER MCP APP ACTIONS (exact names; use these for "
+            "Transcriber application state and workflows only):\n"
             + "\n".join(rows)
             + "\nTo execute one, call the real MCP tool app_execute_action with "
             "action_name, arguments, a unique idempotency_key and deadline_seconds. "
             "Keep its operation_id and poll app_get_operation_status until a terminal "
-            "state; queued/running is not completion."
+            "state; queued/running is not completion.\n"
+            "IMPORTANT: This is only the Transcriber app-action catalog, not the full "
+            "OpenCode tool catalog. Do not infer that native terminal/shell, file, web "
+            "or other tools are unavailable because they are absent from this list. "
+            "For local commands and project work, use an actually exposed native "
+            "terminal/shell tool; for web tasks use an actually exposed web tool."
         )
 
     def _on_ollama_tool_result(self, result):
@@ -898,26 +914,42 @@ class AssistantProviderMixin:
         tools = OllamaAgent.tools_for_registry(self._action_registry) if agent_enabled else []
         tool_names = [item["function"]["name"] for item in tools]
         browser_search_request = OllamaAgent.is_browser_search_request(prompt)
+        # A read-only browser fallback may help when that exact tool is enabled,
+        # but a missing browser permission must never suppress other tool families.
         fallback_tool_call = OllamaAgent.infer_browser_search_tool(prompt, tool_names)
-        if browser_search_request and "browser.search" not in tool_names:
-            self._append_message("error", (
-                "Browser search was not run. In Assistant settings > Agent, enable "
-                "Agent mode and the Browser control permission under Tool permissions. "
-                "No browser action has been executed."
-            ))
-            self.activity_label.setText("Browser action unavailable · no action executed.")
-            self.composer.set_busy(False)
-            return
         skills = self.skill_manager.summaries()
         skills_context = "\n".join(
             f"- {item['name']}: {item['description']}" for item in skills[:40]
         )
         matched_skill_context = self._matched_skill_context(prompt, limit=3)
         capability_text = (
-            "You are a general-purpose Windows desktop and web agent. You are NOT limited "
-            "to the Transcriber application. Help with normal computer tasks, websites, "
-            "research, files, applications, PowerShell commands and specialist workflows. "
-            "Compose several tool calls when a task needs multiple steps.\n"
+            "You are a general-purpose Windows and desktop agent running through the "
+            "Transcriber Python host. You are NOT restricted to Transcriber, the browser, "
+            "or any single tool category. Help with local system tasks, repositories, code, "
+            "files, folders, processes, command-line work, desktop applications, websites, "
+            "research and Transcriber workflows. Select the tool that matches the user's "
+            "actual intent; never choose the browser by default.\n"
+            "TOOL SELECTION: For local Windows/project/files/process/build/test/package "
+            "commands, use system.run_command (PowerShell executed by the Python host). "
+            "For launching applications or opening local paths, use desktop.* actions. "
+            "For websites and internet research, use browser.* actions. For Transcriber "
+            "pages, audio, transcript or subtitles, use the relevant app/editor/audio/"
+            "subtitle actions. OpenCode has separate native tools; use its actual terminal/"
+            "shell or web tools when exposed. Combine tools when necessary.\n"
+            "When the user explicitly asks to run a command, do not merely explain how or "
+            "print the command: call system.run_command if it is in this turn's tools list. "
+            "The model NEVER executes PowerShell or Python itself. The Python host validates "
+            "and executes requested actions through ActionRegistry, then returns the real "
+            "result for your next decision. Commands run as the current Windows user, never "
+            "elevated. Commands and destructive operations follow their required approval "
+            "and permission checks; never bypass a prompt or retry after denial.\n"
+            "Tool categories are independent. A missing browser action must not stop a "
+            "PowerShell, desktop, file or Transcriber action that is separately available. "
+            "Do not tell the user to enable Browser control for a non-browser task. If a "
+            "specific required tool is missing, identify that exact tool/permission and "
+            "consider other legitimate enabled tools before declaring the task blocked.\n"
+            "Compose several sequential tool calls when a task needs multiple steps. "
+            "After each result, inspect it and decide what to do next.\n"
         )
         if tools:
             action_catalog = []
@@ -929,19 +961,15 @@ class AssistantProviderMixin:
                     "parameters": function.get("parameters") or {"type": "object", "properties": {}},
                 })
             capability_text += (
-                "Use only functions supplied in the tools list. Prefer browser.search or "
-                "browser.open for web tasks, browser.snapshot to inspect a page, and browser "
-                "actions only when the target is clear. The controlled Chrome/Edge window uses "
-                "a separate profile from the user's personal browser profile.\n"
-                "Use system.run_command only when the task genuinely needs a PowerShell command. "
-                "The model NEVER executes PowerShell or Python. You are the planner/controller; "
-                "the Transcriber Python host validates and executes each requested action through "
-                "ActionRegistry, then returns the real result for your next decision. "
-                "The host applies the user's saved approval settings. Browser clicks, form fills, "
-                "key presses and close actions run without another dialog only when persistent "
-                "Browser control trust is enabled; otherwise the host asks. PowerShell commands "
-                "and destructive operations always require confirmation. Never bypass a host "
-                "prompt or retry after denial. Commands run as the current user, never elevated.\n"
+                "Use only functions supplied in the tools list. This is the complete set "
+                "of enabled Ollama host actions for this turn, and it may include Transcriber "
+                "app actions, desktop actions, browser actions, Skills and system.run_command. "
+                "Choose only the relevant function; the list is not browser-only.\n"
+                "The controlled Chrome/Edge browser uses a separate profile from the user's "
+                "personal browser profile. Browser clicks, form fills, key presses and close "
+                "actions are subject to the saved browser approval policy. PowerShell commands, "
+                "desktop actions and destructive operations retain their own host approval "
+                "requirements. Browser trust does not enable or disable other tool categories.\n"
                 "For every Agent turn with tools enabled, prefer the strict JSON control protocol "
                 "below instead of narrating an action. Return exactly one JSON object and no "
                 "Markdown or surrounding prose. Send ONE action per response, then inspect the "
@@ -967,9 +995,11 @@ class AssistantProviderMixin:
             )
         else:
             capability_text += (
-                "No application, browser or desktop tools are enabled for this turn. Do not "
-                "claim to have opened apps, searched websites or run commands. Explain which "
-                "permission must be enabled in Assistant settings.\n"
+                "No Ollama Agent action tools are enabled for this turn. Do not claim to have "
+                "run commands or changed the desktop. This is not a browser-specific limitation. "
+                "Explain that Agent mode must be enabled and identify the specific permission "
+                "needed for the requested task (for example Command execution, Desktop control, "
+                "Browser control or the relevant Transcriber capability).\n"
             )
         if skills_context:
             capability_text += (
@@ -1049,8 +1079,10 @@ class AssistantProviderMixin:
         if agent_enabled and not tools:
             self._append_message(
                 "system",
-                "Agent tools are enabled in the composer, but no tool permissions are active. "
-                "Enable Browser control, Desktop control or Command execution in Settings.",
+                "Agent mode is enabled, but no permitted action tool is currently available. "
+                "Enable the permission that matches the task: Command execution for PowerShell, "
+                "Desktop control for Windows apps/paths, Browser control for web automation, "
+                "or the relevant Transcriber app capability.",
             )
         keep_alive = self.settings_store.settings.ollama_keep_alive if self.settings_store else "30m"
         cancellation = OllamaCancellation()
@@ -1159,17 +1191,9 @@ class AssistantProviderMixin:
         except Exception:
             action_names = []
         browser_search_request = OllamaAgent.is_browser_search_request(prompt)
+        # This fallback is optional and browser-specific. Its absence must not
+        # prevent OpenCode from using its separately exposed native tools.
         browser_fallback = OllamaAgent.infer_browser_search_tool(prompt, action_names)
-        if browser_search_request and "browser.search" not in action_names:
-            self._append_message("user", prompt)
-            self.prompt.clear()
-            self._append_message(
-                "error",
-                "Browser search was not run. Enable the Browser control permission in "
-                "Assistant settings; no browser action has been executed.",
-            )
-            self.activity_label.setText("Browser action unavailable · no action executed.")
-            return
 
         self._opencode_turn_requires_tool = OllamaAgent.is_action_request(prompt)
         self._opencode_turn_action_called = False
