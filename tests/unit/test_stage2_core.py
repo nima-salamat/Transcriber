@@ -9,10 +9,10 @@ import pytest
 
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
-from transcriber.core.config import SettingsStore
 from transcriber.assistant.voice_controller import VoiceAgentController, VoiceState
 from transcriber.audio.processing import build_filter_chain, process_audio
 from transcriber.audio.waveform import build_waveform
+from transcriber.core.config import SettingsStore
 from transcriber.editor.cleanup import apply_cleanup, preview_cleanup
 from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
