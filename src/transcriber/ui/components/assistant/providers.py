@@ -900,8 +900,9 @@ class AssistantProviderMixin:
         fallback_tool_call = OllamaAgent.infer_browser_search_tool(prompt, tool_names)
         if browser_search_request and "browser.search" not in tool_names:
             self._append_message("error", (
-                "Browser search was not run. Enable Agent mode and the Browser control "
-                "permission in Assistant settings; no browser action has been executed."
+                "Browser search was not run. In Assistant settings > Agent, enable "
+                "Agent mode and the Browser control permission under Tool permissions. "
+                "No browser action has been executed."
             ))
             self.activity_label.setText("Browser action unavailable · no action executed.")
             self.composer.set_busy(False)
@@ -935,9 +936,11 @@ class AssistantProviderMixin:
                 "The model NEVER executes PowerShell or Python. You are the planner/controller; "
                 "the Transcriber Python host validates and executes each requested action through "
                 "ActionRegistry, then returns the real result for your next decision. "
-                "Every command and browser interaction that can submit data or change a page "
-                "requires user confirmation. Never retry after denial or bypass permission. "
-                "Commands run as the current user, never elevated.\n"
+                "The host applies the user's saved approval settings. Browser clicks, form fills, "
+                "key presses and close actions run without another dialog only when persistent "
+                "Browser control trust is enabled; otherwise the host asks. PowerShell commands "
+                "and destructive operations always require confirmation. Never bypass a host "
+                "prompt or retry after denial. Commands run as the current user, never elevated.\n"
                 "For every Agent turn with tools enabled, prefer the strict JSON control protocol "
                 "below instead of narrating an action. Return exactly one JSON object and no "
                 "Markdown or surrounding prose. Send ONE action per response, then inspect the "
