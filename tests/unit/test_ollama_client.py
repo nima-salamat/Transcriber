@@ -196,6 +196,8 @@ def test_cancellation_closes_an_attached_response():
 
     assert token.cancelled
     assert response.closed
+
+
 def test_cancellation_shuts_down_the_underlying_stream_socket():
     class FakeSocket:
         def __init__(self):
