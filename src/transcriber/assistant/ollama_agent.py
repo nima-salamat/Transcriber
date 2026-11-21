@@ -149,7 +149,7 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "parameters": {"type": "object", "properties": {}},
     },
     "browser.click": {
-        "description": "Click a visible browser element by text, CSS selector or ARIA role. The user must approve the click.",
+        "description": "Click a visible browser element by text, CSS selector or ARIA role. The host applies the saved Browser control approval policy.",
         "parameters": {"type": "object", "properties": {
             "text": {"type": "string"},
             "selector": {"type": "string"},
@@ -157,7 +157,7 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         }},
     },
     "browser.fill": {
-        "description": "Fill one browser form field by its label, placeholder or CSS selector. The user must approve the data submission step.",
+        "description": "Fill one browser form field by its label, placeholder or CSS selector. The host applies the saved Browser control approval policy.",
         "parameters": {"type": "object", "properties": {
             "value": {"type": "string"},
             "selector": {"type": "string"},
@@ -166,7 +166,7 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         }, "required": ["value"]},
     },
     "browser.press": {
-        "description": "Press a limited browser keyboard key such as Enter or Tab. The user must approve the key action.",
+        "description": "Press a limited browser keyboard key such as Enter or Tab. The host applies the saved Browser control approval policy.",
         "parameters": {"type": "object", "properties": {
             "key": {"type": "string"},
             "selector": {"type": "string"},
@@ -181,7 +181,7 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "parameters": {"type": "object", "properties": {}},
     },
     "browser.close": {
-        "description": "Close the controlled browser and its dedicated profile window. User approval is required.",
+        "description": "Close the controlled browser and its dedicated profile window. The host applies the saved Browser control approval policy.",
         "parameters": {"type": "object", "properties": {}},
     },
     "system.run_command": {
