@@ -1267,7 +1267,12 @@ class AssistantProviderMixin:
             name="Transcriber-opencode-cancel",
             daemon=True,
         )
-        cancel_thread.start()
+        self._shutdown_threads.append(cancel_thread)
+        try:
+            cancel_thread.start()
+        except RuntimeError as exc:
+            self._on_cancel_error(f"Could not start the cancellation worker: {exc}")
+            return
         self.activity_label.setText("Stopping…")
         self._append_message("system", "Stop requested.")
 
