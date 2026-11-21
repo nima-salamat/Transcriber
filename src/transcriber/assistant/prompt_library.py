@@ -229,40 +229,45 @@ formats. It is not the primary place to rewrite the transcript.
   configured phrase, microphone input and the visible voice status. Do not
   assume the wake detector is active merely because a model is installed.
 """,
-    "50-workspace-actions.md": """# Transcriber MCP actions and permissions
+    "50-workspace-actions.md": """# Transcriber host actions and permissions
 
-This file covers only actions inside the Transcriber desktop application. It does
-not limit the agent to Transcriber or replace the active provider's native tools.
+This file explains how app-specific actions, PowerShell, desktop and browser
+capabilities work together. It does not restrict the Agent to Transcriber.
 
-- Discover available Transcriber MCP app actions and their exact schemas before
-  invoking them. This list is for app-specific work such as navigation, transcript
-  segments, audio playback, subtitles and model state.
-- Read current Transcriber app state before acting on the wrong page, media or
-  transcript. Do not request app state for an unrelated Windows/project task.
+- Discover available Transcriber app-action names and schemas before using them.
+  These actions are for application state and workflows such as navigation,
+  transcript segments, audio playback, subtitles and model state.
+- Read current Transcriber app state only when the request concerns this application.
+  Do not request app state for an unrelated Windows, repository or file task.
 - Use semantic Transcriber actions for Transcriber GUI/domain changes. Do not invent
-  MCP action names or use shell commands to imitate app-only operations.
-- For independent Windows, filesystem, repository, development, build, test or
-  process tasks, choose the active provider's real command/terminal tool instead:
-  Ollama uses the registered `system.run_command` PowerShell action when present in
-  its supplied tools list; OpenCode uses its native terminal/shell tool when exposed.
-  The Python host executes Ollama commands as the current user; the model never runs
-  PowerShell itself. Submit the requested command rather than merely printing it.
+  action names or use shell commands to imitate app-only operations.
+- For any independent local Windows task that can be performed with PowerShell,
+  use the general-purpose system.run_command action whenever it appears in the
+  enabled action catalog. This is not a fixed list of presets: it supports arbitrary
+  valid PowerShell commands and multi-line scripts for files, folders, processes,
+  repositories, development, builds, tests, packages and system diagnostics/configuration.
+- With Ollama, call the supplied system.run_command function. With OpenCode, call
+  app_execute_action with action_name="system.run_command", the actual command in
+  arguments.command, optional cwd, a suitable timeout_seconds, a unique idempotency
+  key and a sufficient deadline_seconds. Preserve operation_id and poll
+  app_get_operation_status until the action reaches a terminal state.
+- If system.run_command is absent, Command execution is disabled or Agent mode is off.
+  Do not use an OpenCode native terminal/shell or another tool to evade that choice.
+  Tell the user to enable Run PowerShell commands in Assistant settings.
+- Every PowerShell invocation shows the complete command and requires explicit
+  user approval. Recognized destructive/system-changing operations additionally
+  require the separate Destructive actions permission. The process starts as the
+  current user; never suppress or bypass a normal Windows UAC prompt.
 - For launching/opening desktop apps or paths, use enabled desktop actions. For web
-  research, use browser/native web tools only when the task needs the internet. These
-  tool families are independent: the absence of a Transcriber MCP action does not
-  imply that provider-native terminal, shell, file or web tools are unavailable.
-- The application enforces permission scopes and explicit approval for commands,
-  desktop actions and destructive operations. Never bypass a permission prompt,
-  run elevated commands or retry after denial.
-- app_execute_action submits asynchronous Transcriber work. Preserve its operation_id;
-  submission with state queued/running is not completion.
-- Poll app_get_operation_status(operation_id) while state is queued, running or
-  cancelling. Continue only after completed, failed, cancelled or timed_out, and
-  inspect the returned result/error before deciding the next step.
-- Give each distinct action its own idempotency key. Reuse the same key only when
-  safely retrying the exact same logical request.
-- For multi-step tasks, perform one logical step at a time, verify the actual result,
-  then continue. Stop on unexpected state and report partial progress honestly.
+  research and browsing, use browser/native web tools only when the task needs the
+  internet. Do not use browser control for local command-line work.
+- app_execute_action submits asynchronous Transcriber work. A queued/running state
+  is not completion. Poll app_get_operation_status(operation_id) while the state is
+  queued, running or cancelling; continue only after completed, failed, cancelled
+  or timed_out and inspect the returned result/error.
+- Give each distinct operation its own idempotency key. For multi-step work, verify
+  each logical result before continuing. Never bypass a permission prompt or retry
+  an action after it is denied.
 """,
 }
 
@@ -355,6 +360,50 @@ Read `10-transcription.md` for recognition and model choices,
 """,
 }
 
+# The immediately preceding workspace prompt shipped with a conflicting native-shell
+# recommendation. Migrate it only when the file is byte-for-byte unchanged; preserve
+# any user-edited prompt contents.
+LEGACY_DEFAULT_PROMPT_VERSIONS: dict[str, tuple[str, ...]] = {
+    "50-workspace-actions.md": (
+        """# Transcriber MCP actions and permissions
+
+This file covers only actions inside the Transcriber desktop application. It does
+not limit the agent to Transcriber or replace the active provider's native tools.
+
+- Discover available Transcriber MCP app actions and their exact schemas before
+  invoking them. This list is for app-specific work such as navigation, transcript
+  segments, audio playback, subtitles and model state.
+- Read current Transcriber app state before acting on the wrong page, media or
+  transcript. Do not request app state for an unrelated Windows/project task.
+- Use semantic Transcriber actions for Transcriber GUI/domain changes. Do not invent
+  MCP action names or use shell commands to imitate app-only operations.
+- For independent Windows, filesystem, repository, development, build, test or
+  process tasks, choose the active provider's real command/terminal tool instead:
+  Ollama uses the registered system.run_command PowerShell action when present in
+  its supplied tools list; OpenCode uses its native terminal/shell tool when exposed.
+  The Python host executes Ollama commands as the current user; the model never runs
+  PowerShell itself. Submit the requested command rather than merely printing it.
+- For launching/opening desktop apps or paths, use enabled desktop actions. For web
+  research, use browser/native web tools only when the task needs the internet. These
+  tool families are independent: the absence of a Transcriber MCP action does not
+  imply that provider-native terminal, shell, file or web tools are unavailable.
+- The application enforces permission scopes and explicit approval for commands,
+  desktop actions and destructive operations. Never bypass a permission prompt,
+  run elevated commands or retry after denial.
+- app_execute_action submits asynchronous Transcriber work. Preserve its operation_id;
+  submission with state queued/running is not completion.
+- Poll app_get_operation_status(operation_id) while state is queued, running or
+  cancelling. Continue only after completed, failed, cancelled or timed_out, and
+  inspect the returned result/error before deciding the next step.
+- Give each distinct action its own idempotency key. Reuse the same key only when
+  safely retrying the exact same logical request.
+- For multi-step tasks, perform one logical step at a time, verify the actual result,
+  then continue. Stop on unexpected state and report partial progress honestly.
+""",
+    ),
+}
+
+
 
 class PromptLibrary:
     """Maintain user-editable Markdown instructions without overwriting edits."""
@@ -374,20 +423,26 @@ class PromptLibrary:
                 path.write_text(content.rstrip() + "\n", encoding="utf-8")
                 continue
 
-            # Upgrade only exact built-in defaults from the previous release.
+            # Upgrade only exact built-in defaults from this or a previous release.
             # Any local edits, even small ones, are preserved verbatim.
+            legacy_candidates = []
             legacy = LEGACY_DEFAULT_PROMPTS.get(filename)
-            if legacy is None:
+            if legacy is not None:
+                legacy_candidates.append(legacy)
+            legacy_candidates.extend(LEGACY_DEFAULT_PROMPT_VERSIONS.get(filename, ()))
+            if not legacy_candidates:
                 continue
-            legacy_content = legacy.replace(
-                "{PROMPT_DIRECTORY}", str(self.directory)
-            ).rstrip() + "\n"
             try:
                 existing = path.read_text(encoding="utf-8")
             except (OSError, UnicodeError):
                 continue
-            if existing == legacy_content:
-                path.write_text(content.rstrip() + "\n", encoding="utf-8")
+            for legacy_template in legacy_candidates:
+                legacy_content = legacy_template.replace(
+                    "{PROMPT_DIRECTORY}", str(self.directory)
+                ).rstrip() + "\n"
+                if existing == legacy_content:
+                    path.write_text(content.rstrip() + "\n", encoding="utf-8")
+                    break
 
     @staticmethod
     def _safe_filename(name: str) -> str:
