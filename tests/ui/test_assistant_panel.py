@@ -681,6 +681,7 @@ def test_agent_permissions_and_remembered_browser_approval_are_persistent(qtbot,
     assert AgentPermission.BROWSER_CONTROL not in registry.trusted_permissions
     assert not panel.agent_trust_browser_check.isEnabled()
 
+
 def test_opencode_stop_bypasses_a_saturated_shared_worker_pool(qtbot, tmp_path):
     from threading import Event
 
