@@ -48,6 +48,7 @@ from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.browser import WindowsBrowserController
 from transcriber.assistant.operations import OperationManager
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
+from transcriber.assistant.powershell import build_powershell_script
 from transcriber.audio.decoder import validate_audio_file
 from transcriber.audio.waveform import build_waveform
 from transcriber.editor.commands import CommandHistory
@@ -1612,10 +1613,7 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             timeout = 30
         timeout = max(1, min(timeout, 120))
-        script = (
-            "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; "
-            "$ErrorActionPreference = 'Stop'; " + command
-        )
+        script = build_powershell_script(command)
         command_line = [
             powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script
         ]
