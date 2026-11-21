@@ -428,7 +428,7 @@ def test_agent_execution_contract_explains_continue_and_async_completion():
     assert "Ollama" in AGENT_EXECUTION_CONTRACT
     assert "OpenCode" in AGENT_EXECUTION_CONTRACT
     assert "Destructive actions" in AGENT_EXECUTION_CONTRACT
-    assert "never use a separate shell to evade" in AGENT_EXECUTION_CONTRACT
+    assert "do not use a separate shell to evade" in AGENT_EXECUTION_CONTRACT
 
 
 def test_consecutive_helper_events_share_one_collapsed_details_card(qtbot):
