@@ -537,9 +537,9 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
              "Allow launching approved apps and opening local files or folders. Individual desktop "
              "actions still request confirmation."),
             (AgentPermission.COMMAND_EXECUTION, "Run PowerShell commands",
-             "Allow requesting PowerShell commands. Each command still requires confirmation."),
+             "Allow the Agent to run general-purpose PowerShell commands and scripts available to your current Windows account, including local files, processes, repositories, development, builds, tests and system diagnostics. Every invocation still shows the command and requires your confirmation."),
             (AgentPermission.DESTRUCTIVE_ACTIONS, "Destructive actions",
-             "Unlock delete, overwrite, move and install operations. These always ask for confirmation."),
+             "Allow recognized destructive or system-changing PowerShell operations such as deletion, overwrite, moves, package installation, registry, disk and system configuration. These still require per-command confirmation."),
         )
         configured = set(
             str(value) for value in (
