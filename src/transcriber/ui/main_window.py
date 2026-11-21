@@ -1089,7 +1089,7 @@ class MainWindow(QMainWindow):
         ))
         register(ActionSpec(
             "browser.click",
-            "Click a browser element after the user approves the target.",
+            "Click a browser element; the host applies the saved Browser control approval policy.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.click(
                 text=str(args.get("text") or ""),
@@ -1101,7 +1101,7 @@ class MainWindow(QMainWindow):
         ))
         register(ActionSpec(
             "browser.fill",
-            "Fill a browser form field after the user approves the value.",
+            "Fill a browser form field; the host applies the saved Browser control approval policy.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.fill(
                 str(args.get("value") or ""),
@@ -1115,7 +1115,7 @@ class MainWindow(QMainWindow):
         ))
         register(ActionSpec(
             "browser.press",
-            "Press a limited keyboard key in the controlled browser.",
+            "Press a limited keyboard key; the host applies the saved Browser control approval policy.",
             AgentPermission.BROWSER_CONTROL,
             lambda args: self.agent_browser.press(
                 str(args.get("key") or ""), selector=str(args.get("selector") or "")
