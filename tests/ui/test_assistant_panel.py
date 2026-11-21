@@ -643,3 +643,37 @@ def test_conversation_messages_expand_a_little_on_wide_desktops(qtbot):
     assert all(widget.maximumWidth() == 1120 for widget in view._widgets)
     assert all(widget.width() <= view.scroll_area.viewport().width() for widget in view._widgets)
 
+def test_agent_permissions_and_remembered_browser_approval_are_persistent(qtbot, tmp_path):
+    from transcriber.assistant.action_registry import ActionRegistry
+    from transcriber.assistant.permissions import AgentPermission
+    from transcriber.core.config import SettingsStore
+
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    paths = SimpleNamespace(config=tmp_path, models=tmp_path)
+    settings_store = SettingsStore(tmp_path / "settings.json")
+    settings_store.load()
+    panel = AssistantPanel(paths, QThreadPool(), settings_store)
+    qtbot.addWidget(panel)
+    registry = ActionRegistry(
+        permissions={AgentPermission.READ_ONLY, AgentPermission.EDIT_CONTENT},
+    )
+    panel.set_agent_runtime(registry)
+
+    browser_permission = panel.agent_permission_checks[AgentPermission.BROWSER_CONTROL]
+    assert not browser_permission.isChecked()
+    browser_permission.setChecked(True)
+    assert "browser_control" in settings_store.settings.agent_permissions
+    assert AgentPermission.BROWSER_CONTROL in registry.permissions
+    assert panel.agent_trust_browser_check.isEnabled()
+
+    panel.agent_trust_browser_check.setChecked(True)
+    assert settings_store.settings.agent_trusted_permissions == ["browser_control"]
+    assert AgentPermission.BROWSER_CONTROL in registry.trusted_permissions
+
+    browser_permission.setChecked(False)
+    assert "browser_control" not in settings_store.settings.agent_permissions
+    assert settings_store.settings.agent_trusted_permissions == []
+    assert AgentPermission.BROWSER_CONTROL not in registry.trusted_permissions
+    assert not panel.agent_trust_browser_check.isEnabled()
+
