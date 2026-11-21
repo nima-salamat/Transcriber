@@ -129,6 +129,13 @@ class AssistantProviderMixin:
         model = str(getattr(self, "_ollama_model", "") or "Ollama")
         self.activity_label.setText(f"Thinking · {model}")
 
+    def _on_opencode_followup_started(self):
+        """Show Thinking before an automatic follow-up prompt is sent to OpenCode."""
+        if getattr(self, "_shutting_down", False) or getattr(self, "_stop_requested", False):
+            return
+        self._begin_assistant_stream("Thinking")
+        self.activity_label.setText("Thinking · OpenCode")
+
     def _on_ollama_tool_result(self, result):
         """Show tool results inline rather than in a detached activity panel."""
         if not isinstance(result, dict):
@@ -1744,6 +1751,10 @@ class AssistantProviderMixin:
 
         def execute_and_summarize(_emit):
             action_result = registry.execute(action_name, arguments)
+            # The browser action has finished; OpenCode is now generating its
+            # user-facing summary. Put the next Thinking indicator on screen
+            # before the follow-up request starts blocking in the worker.
+            self.signals.opencode_followup_started.emit()
             serialized = json.dumps(action_result, ensure_ascii=False, default=str)[:14_000]
             response = client.prompt(
                 "A real registered browser action has just been executed by the host. "
@@ -1795,7 +1806,8 @@ class AssistantProviderMixin:
         self._worker_active = True
         self.composer.set_busy(True)
         self.stop_button.setEnabled(True)
-        self.activity_label.setText("Waiting for a real action-tool call…")
+        self._begin_assistant_stream("Thinking")
+        self.activity_label.setText("Thinking · OpenCode · requesting the required tool call…")
         worker = FunctionWorker(lambda _emit: client.prompt(recovery_prompt, timeout=None))
         worker.signals.result.connect(self.signals.prompt_complete.emit)
         worker.signals.error.connect(self.signals.error.emit)
