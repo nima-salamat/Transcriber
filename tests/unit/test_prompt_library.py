@@ -56,6 +56,21 @@ def test_prompt_context_includes_current_coordinator_index_and_relevant_speciali
     assert "PROMPT FILE: 30-subtitles.md" not in context
 
 
+def test_general_windows_tasks_do_not_load_transcription_or_workspace_specialists(tmp_path):
+    library = PromptLibrary(tmp_path / "prompts")
+
+    request = "Run Get-ChildItem in PowerShell and inspect the project folder."
+    selected = library.prompt_files_for_request(request)
+    context = library.context_for_request(request)
+
+    assert selected == []
+    assert "general-purpose desktop, development, file and web agent" in context
+    assert "not a browser-only assistant" in context
+    assert "system.run_command" in context
+    assert "PROMPT FILE: 10-transcription.md" not in context
+    assert "PROMPT FILE: 50-workspace-actions.md" not in context
+
+
 def test_prompt_context_reloads_user_edits_instead_of_caching(tmp_path):
     library = PromptLibrary(tmp_path / "prompts")
 
