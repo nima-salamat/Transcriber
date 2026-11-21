@@ -1150,7 +1150,7 @@ class MainWindow(QMainWindow):
         ))
         register(ActionSpec(
             "system.run_command",
-            "Run a custom PowerShell command as the current Windows user; every command requires approval.",
+            "Run PowerShell for local Windows, file, process, repository, development, build, test and package tasks as the current user; the host validates and asks for approval for every command.",
             AgentPermission.COMMAND_EXECUTION,
             self._agent_run_command,
             required=("command",),
