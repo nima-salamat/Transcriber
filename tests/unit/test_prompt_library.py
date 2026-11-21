@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from transcriber.assistant.prompt_library import PromptLibrary
+from transcriber.assistant.prompt_library import LEGACY_DEFAULT_PROMPTS, PromptLibrary
 
 
 def test_prompt_library_seeds_specialist_workflows_and_bootstrap(tmp_path):
@@ -26,6 +26,38 @@ def test_prompt_library_preserves_user_edits_when_seeding(tmp_path):
     library.ensure_defaults()
 
     assert "Keep the user's phrasing." in library.read("20-transcript-editing.md")
+
+
+def test_prompt_library_migrates_unchanged_legacy_agent_prompts(tmp_path):
+    directory = tmp_path / "prompts"
+    library = PromptLibrary(directory)
+
+    for filename in ("00-AGENT.md", "50-workspace-actions.md"):
+        legacy = LEGACY_DEFAULT_PROMPTS[filename].replace(
+            "{PROMPT_DIRECTORY}", str(directory.resolve())
+        )
+        (directory / filename).write_text(legacy.rstrip() + "\n", encoding="utf-8")
+
+    library.ensure_defaults()
+
+    coordinator = library.read("00-AGENT.md")
+    workspace = library.read("50-workspace-actions.md")
+    assert "general-purpose desktop, development, file and web agent" in coordinator
+    assert "not a browser-only assistant" in coordinator
+    assert "system.run_command" in coordinator
+    assert "This file covers only actions inside the Transcriber desktop application" in workspace
+    assert "native terminal/shell" in workspace
+
+
+def test_prompt_library_does_not_overwrite_customized_agent_prompt_during_migration(tmp_path):
+    directory = tmp_path / "prompts"
+    library = PromptLibrary(directory)
+    custom = "# My general agent\nRun approved commands and keep my workflow."
+    library.save("00-AGENT.md", custom)
+
+    library.ensure_defaults()
+
+    assert library.read("00-AGENT.md") == custom + "\n"
 
 
 def test_prompt_library_imports_clipboard_content_as_a_safe_markdown_file(tmp_path):
