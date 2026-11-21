@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from transcriber.assistant.prompt_library import (\n    LEGACY_DEFAULT_PROMPTS,\n    LEGACY_DEFAULT_PROMPT_VERSIONS,\n    PromptLibrary,\n)
+from transcriber.assistant.prompt_library import (
+    LEGACY_DEFAULT_PROMPTS,
+    LEGACY_DEFAULT_PROMPT_VERSIONS,
+    PromptLibrary,
+)
 
 
 def test_prompt_library_seeds_specialist_workflows_and_bootstrap(tmp_path):
@@ -47,7 +51,7 @@ def test_prompt_library_migrates_unchanged_legacy_agent_prompts(tmp_path):
     assert "system.run_command" in coordinator
     assert "Transcriber host actions and permissions" in workspace
     assert "general-purpose system.run_command" in workspace
-    assert "OpenCode calls" in workspace
+    assert "With OpenCode, call" in workspace
     assert "native terminal/shell" in workspace
 
 
