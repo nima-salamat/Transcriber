@@ -1,9 +1,9 @@
 """OpenCode and Ollama lifecycle and request orchestration for the AI Assistant."""
 from __future__ import annotations
 
-import threading
 import json
 import os
+import threading
 
 from PySide6.QtCore import QTimer
 
@@ -1238,14 +1238,16 @@ class AssistantProviderMixin:
         if self._chat_provider == "ollama":
             cancellation = self._ollama_cancellation
             if cancellation is None:
-                self.activity_label.setText("Stopping…")
+                self._on_cancel_error(
+                    "No active Ollama cancellation token is attached to this turn."
+                )
                 return
             cancellation.cancel()
             self.activity_label.setText("Stopping…")
             self._append_message("system", "Stop requested · no further Agent tools will be started.")
             return
         if not self.client or not self.client.connected:
-            self.activity_label.setText("Cannot stop · provider disconnected")
+            self._on_cancel_error("OpenCode disconnected before the cancel request was sent.")
             return
         client = self.client
 
