@@ -174,11 +174,19 @@ def test_tools_expose_general_browser_shell_and_skill_actions_when_permissions_e
         {"name": "system.run_command", "enabled": True, "destructive": False},
         {"name": "agent.skill_load", "enabled": True, "destructive": False},
     ]
-    tools = OllamaAgent.tools_for_registry(
-        FakeRegistry(actions)
-    ) if "FakeRegistry" in globals() else []
-    # Tool schemas are deliberately independent of the Transcriber-specific action set.
-    assert isinstance(tools, list)
+    actions.append({"name": "desktop.launch_app", "enabled": True, "destructive": False})
+    tools = OllamaAgent.tools_for_registry(FakeRegistry(actions))
+    names = {item["function"]["name"] for item in tools}
+
+    # A command tool remains available alongside browser, desktop and Skill tools.
+    assert names == {
+        "browser.search", "system.run_command", "agent.skill_load", "desktop.launch_app"
+    }
+    command_tool = next(
+        item["function"] for item in tools
+        if item["function"]["name"] == "system.run_command"
+    )
+    assert "PowerShell command" in command_tool["description"]
     assert AgentPermission.BROWSER_CONTROL.value == "browser_control"
     assert AgentPermission.COMMAND_EXECUTION.value == "command_execution"
 
@@ -320,7 +328,7 @@ def test_action_request_never_reports_success_after_two_narration_only_turns():
 
     assert executed == []
     assert result["action_not_executed"] is True
-    assert "No browser, desktop or command action was run" in result["text"]
+    assert "No command, desktop, browser or Transcriber action was run" in result["text"]
 
 
 def test_agent_detects_action_promises_but_not_normal_final_answers():
@@ -522,6 +530,14 @@ def test_action_request_recognizes_common_persian_execution_phrases():
     assert OllamaAgent.is_action_request("لطفاً این دستور رو اجرا کن")
     assert OllamaAgent.is_action_request("می‌خوام برنامه رو باز کنی")
     assert not OllamaAgent.is_action_request("چگونه می‌توانم PowerShell را باز کنم؟")
+
+
+def test_action_request_recognizes_general_powershell_and_terminal_tasks():
+    assert OllamaAgent.is_action_request("Run this PowerShell command: Get-ChildItem")
+    assert OllamaAgent.is_action_request("Please use PowerShell to list the files.")
+    assert OllamaAgent.is_action_request("این دستور را در PowerShell اجرا کن")
+    assert OllamaAgent.is_action_request("پاورشل رو اجرا کن")
+    assert not OllamaAgent.is_action_request("How do I use PowerShell to list files?")
 
 def test_action_request_recognizes_common_inspection_and_development_tasks():
     assert OllamaAgent.is_action_request("Please inspect the repository structure.")
