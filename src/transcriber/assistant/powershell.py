@@ -1,7 +1,5 @@
 """PowerShell execution helpers and permission-aware risk classification."""
 
-from __future__ import annotations
-
 import re
 
 
