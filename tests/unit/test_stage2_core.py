@@ -597,3 +597,60 @@ def test_main_window_cancellable_command_adapter_forwards_arguments_and_event():
     ) == {"exit_code": 0}
     assert received["arguments"] is arguments
     assert received["cancel_event"] is cancel_event
+
+def test_trusted_browser_permission_skips_only_browser_confirmations():
+    approvals = []
+    calls = []
+    registry = ActionRegistry(
+        permissions={
+            AgentPermission.BROWSER_CONTROL,
+            AgentPermission.COMMAND_EXECUTION,
+            AgentPermission.DESTRUCTIVE_ACTIONS,
+        },
+        trusted_permissions={AgentPermission.BROWSER_CONTROL},
+        approval=lambda spec, _args: approvals.append(spec.name) or True,
+    )
+    registry.register(ActionSpec(
+        "browser.click", "Click a page element", AgentPermission.BROWSER_CONTROL,
+        lambda _args: calls.append("browser") or {"clicked": True},
+        requires_approval=True, background=True,
+    ))
+    registry.register(ActionSpec(
+        "system.run_command", "Run PowerShell", AgentPermission.COMMAND_EXECUTION,
+        lambda _args: calls.append("command") or {"exit_code": 0},
+        requires_approval=True, background=True,
+    ))
+    registry.register(ActionSpec(
+        "project.delete", "Delete project", AgentPermission.DESTRUCTIVE_ACTIONS,
+        lambda _args: calls.append("delete") or {"deleted": True},
+        destructive=True,
+    ))
+
+    assert registry.execute("browser.click") == {"clicked": True}
+    assert registry.execute("system.run_command") == {"exit_code": 0}
+    assert registry.execute("project.delete") == {"deleted": True}
+    assert approvals == ["system.run_command", "project.delete"]
+    assert calls == ["browser", "command", "delete"]
+
+    approval_state = {
+        row["name"]: row["requires_approval"] for row in registry.describe()
+    }
+    assert approval_state == {
+        "browser.click": False,
+        "system.run_command": True,
+        "project.delete": True,
+    }
+
+
+def test_settings_only_persist_browser_trust_not_shell_or_destructive_bypass(tmp_path):
+    store = SettingsStore(tmp_path / "settings.json")
+    store.load()
+
+    store.update(agent_trusted_permissions=[
+        "browser_control", "command_execution", "destructive_actions", "unknown"
+    ])
+    assert store.settings.agent_trusted_permissions == ["browser_control"]
+
+    store.update(agent_trusted_permissions=[])
+    assert store.settings.agent_trusted_permissions == []
+
