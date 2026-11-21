@@ -1,6 +1,7 @@
 """OpenCode and Ollama lifecycle and request orchestration for the AI Assistant."""
 from __future__ import annotations
 
+import threading
 import json
 import os
 
@@ -1247,9 +1248,24 @@ class AssistantProviderMixin:
             self.activity_label.setText("Cannot stop · provider disconnected")
             return
         client = self.client
-        worker = FunctionWorker(lambda _emit: client.cancel(timeout=5))
-        worker.signals.error.connect(self._on_cancel_error)
-        self.thread_pool.start(worker)
+
+        def send_cancel_request():
+            try:
+                # Do not queue cancellation behind model or tool workers in the
+                # same QThreadPool. The active session/prompt occupies a worker,
+                # and a saturated pool can otherwise make Stop wait indefinitely.
+                client.cancel(timeout=5)
+            except Exception as exc:
+                self.signals.cancel_error.emit(
+                    f"{type(exc).__name__}: {exc}"
+                )
+
+        cancel_thread = threading.Thread(
+            target=send_cancel_request,
+            name="Transcriber-opencode-cancel",
+            daemon=True,
+        )
+        cancel_thread.start()
         self.activity_label.setText("Stopping…")
         self._append_message("system", "Stop requested.")
 
