@@ -627,6 +627,9 @@ def test_trusted_browser_permission_skips_only_browser_confirmations():
         destructive=True,
     ))
 
+    with pytest.raises(ValueError, match="only for browser control"):
+        registry.set_trusted_permission(AgentPermission.COMMAND_EXECUTION, True)
+
     assert registry.execute("browser.click") == {"clicked": True}
     assert registry.execute("system.run_command") == {"exit_code": 0}
     assert registry.execute("project.delete") == {"deleted": True}
