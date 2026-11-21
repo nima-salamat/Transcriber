@@ -83,6 +83,7 @@ class _AssistantSignals(QObject):
     ollama_tool_result = Signal(object)
     opencode_models_ready = Signal(object)
     opencode_models_error = Signal(str)
+    cancel_error = Signal(str)
 
 
 class _ChatErrorToast(QFrame):
@@ -277,6 +278,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.signals.ollama_tool_result.connect(self._on_ollama_tool_result)
         self.signals.opencode_models_ready.connect(self._on_opencode_models_ready)
         self.signals.opencode_models_error.connect(self._on_opencode_models_error)
+        self.signals.cancel_error.connect(self._on_cancel_error)
 
         self.client: OpenCodeACPClient | None = None
         self._worker_active = False
