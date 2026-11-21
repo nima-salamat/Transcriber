@@ -599,3 +599,22 @@ def test_assistant_shutdown_cancels_active_models_voice_and_opencode(qtbot, tmp_
         timeout=3000,
     )
     assert panel.shutdown_complete
+
+def test_ollama_thinking_signal_is_rendered_inside_the_assistant_message(qtbot, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+
+    panel._begin_assistant_stream("Thinking")
+    panel.signals.ollama_thinking.emit("Checking the project structure.")
+    panel._append_stream_chunk("I found the project files.")
+
+    widget = panel.conversation_view._widgets[-1]
+    assert widget.role == "assistant"
+    assert widget.thinking_body.toPlainText() == "Checking the project structure."
+    assert widget.body.toPlainText() == "I found the project files."
+    assert not hasattr(panel, "agent_thinking")
