@@ -681,3 +681,40 @@ def test_agent_permissions_and_remembered_browser_approval_are_persistent(qtbot,
     assert AgentPermission.BROWSER_CONTROL not in registry.trusted_permissions
     assert not panel.agent_trust_browser_check.isEnabled()
 
+def test_opencode_stop_bypasses_a_saturated_shared_worker_pool(qtbot, tmp_path):
+    from threading import Event
+
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+
+    cancelled = Event()
+
+    class FakeClient:
+        connected = True
+
+        def cancel(self, *, timeout=3.0):
+            assert timeout == 5
+            cancelled.set()
+
+    class SaturatedPool:
+        def start(self, *_args, **_kwargs):
+            raise AssertionError("Stop must not be queued in the shared worker pool.")
+
+    panel.client = FakeClient()
+    panel.thread_pool = SaturatedPool()
+    panel._chat_provider = "opencode"
+    panel._agent_turn_active = True
+    panel._worker_active = True
+
+    panel.cancel_prompt()
+
+    qtbot.waitUntil(cancelled.is_set, timeout=1500)
+    assert panel._stop_requested
+    assert not panel.stop_button.isEnabled()
+    assert panel.activity_label.text() == "Stopping…"
+
