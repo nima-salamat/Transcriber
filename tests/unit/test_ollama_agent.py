@@ -522,3 +522,10 @@ def test_action_request_recognizes_common_persian_execution_phrases():
     assert OllamaAgent.is_action_request("لطفاً این دستور رو اجرا کن")
     assert OllamaAgent.is_action_request("می‌خوام برنامه رو باز کنی")
     assert not OllamaAgent.is_action_request("چگونه می‌توانم PowerShell را باز کنم؟")
+
+def test_action_request_recognizes_common_inspection_and_development_tasks():
+    assert OllamaAgent.is_action_request("Please inspect the repository structure.")
+    assert OllamaAgent.is_action_request("Check whether the tests pass.")
+    assert OllamaAgent.is_action_request("Build the project.")
+    assert OllamaAgent.is_action_request("Review the latest log file.")
+    assert not OllamaAgent.is_action_request("How do I check the project structure?")
