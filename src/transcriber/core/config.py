@@ -48,6 +48,9 @@ class AppSettings:
     agent_permissions: list[str] = field(default_factory=lambda: [
         "read_only", "edit_content", "command_execution"
     ])
+    # Incremented by validate() after one-time permission migrations. Keeping
+    # it persisted allows users to intentionally disable shell access later.
+    agent_permissions_version: int = 0
     wake_phrase: str = "transcriber"
     wake_model_directory: str | None = None
     wake_enabled: bool = False
@@ -153,22 +156,30 @@ class AppSettings:
             if isinstance(self.agent_permissions, list)
             else ["read_only", "edit_content", "command_execution"]
         )
-        # Desktop and browser automation remain opt-in. PowerShell is exposed
-        # by default only because every individual command has a mandatory
-        # foreground confirmation dialog in MainWindow._approve_agent_action.
-        # Migrate both the pre-hardening defaults and the temporary minimal
-        # defaults so existing installs do not get stuck before that dialog.
-        legacy_implicit = {
-            "read_only", "edit_content", "desktop_control",
-            "browser_control", "command_execution",
-        }
-        if set(raw_permissions) == legacy_implicit:
-            raw_permissions = ["read_only", "edit_content", "command_execution"]
-        elif set(raw_permissions) == {"read_only", "edit_content"}:
-            raw_permissions = ["read_only", "edit_content", "command_execution"]
+        try:
+            permission_version = max(0, int(self.agent_permissions_version))
+        except (TypeError, ValueError):
+            permission_version = 0
+        if permission_version < 1:
+            # Desktop and browser automation remain opt-in. PowerShell is
+            # available by default only because every command has mandatory
+            # per-invocation confirmation in MainWindow._approve_agent_action.
+            # Older versions shipped an implicit five-permission default; a
+            # previous development build also temporarily wrote read/edit only.
+            legacy_implicit = {
+                "read_only", "edit_content", "desktop_control",
+                "browser_control", "command_execution",
+            }
+            if set(raw_permissions) in (
+                legacy_implicit,
+                {"read_only", "edit_content"},
+            ):
+                raw_permissions = ["read_only", "edit_content", "command_execution"]
+            permission_version = 1
         self.agent_permissions = list(dict.fromkeys(
             str(value) for value in raw_permissions if str(value) in valid_permissions
         ))
+        self.agent_permissions_version = permission_version
         self.wake_model_directory = str(self.wake_model_directory) if self.wake_model_directory else None
         self.local_only = as_bool(self.local_only, True)
         self.cloud_consent = as_bool(self.cloud_consent, False)

@@ -442,6 +442,44 @@ def test_settings_agent_permissions_are_validated_and_default_safe(tmp_path):
     assert store.settings.agent_permissions == ["read_only", "destructive_actions"]
 
 
+def test_legacy_permission_settings_migrate_once_and_preserve_later_opt_out(tmp_path):
+    import json
+
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({
+        "agent_permissions": ["read_only", "edit_content"],
+    }), encoding="utf-8")
+    store = SettingsStore(path)
+    store.load()
+    assert set(store.settings.agent_permissions) == {
+        "read_only", "edit_content", "command_execution"
+    }
+    assert store.settings.agent_permissions_version == 1
+
+    # Once migrated, an explicit user choice to disable command execution
+    # must not be silently reversed by AppSettings.validate().
+    store.update(agent_permissions=["read_only", "edit_content"])
+    assert store.settings.agent_permissions == ["read_only", "edit_content"]
+    assert store.settings.agent_permissions_version == 1
+
+
+def test_legacy_privileged_defaults_keep_command_approval_but_disable_browser_desktop(tmp_path):
+    import json
+
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({
+        "agent_permissions": [
+            "read_only", "edit_content", "desktop_control",
+            "browser_control", "command_execution",
+        ],
+    }), encoding="utf-8")
+    store = SettingsStore(path)
+    store.load()
+    assert set(store.settings.agent_permissions) == {
+        "read_only", "edit_content", "command_execution"
+    }
+
+
 def test_packaged_mcp_entrypoint_does_not_import_qt(monkeypatch):
     import builtins
     import sys
