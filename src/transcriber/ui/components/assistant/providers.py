@@ -85,7 +85,7 @@ class AssistantProviderMixin:
         )
         if "system.run_command" in names:
             context += (
-                "\nPOWERHELL / COMMAND EXECUTION IS ENABLED: system.run_command is a "
+                "\nPOWERSHELL / COMMAND EXECUTION IS ENABLED: system.run_command is a "
                 "general-purpose PowerShell executor for the current Windows account. It "
                 "is not restricted to browser automation, Transcriber actions, or a fixed "
                 "set of presets. Use it for any local Windows task that can be performed "
@@ -964,17 +964,19 @@ class AssistantProviderMixin:
             "For launching applications or opening local paths, use desktop.* actions. "
             "For websites and internet research, use browser.* actions. For Transcriber "
             "pages, audio, transcript or subtitles, use the relevant app/editor/audio/"
-            "subtitle actions. OpenCode has separate native tools; use its actual terminal/"
-            "shell or web tools when exposed. For PowerShell, prefer the permission-aware "
-            "system.run_command action and never bypass its absence with another shell. "
-            "Combine tools when necessary.\n"
+            "subtitle actions. OpenCode also exposes native tools for other task families. "
+            "For PowerShell, always use the permission-aware system.run_command action when "
+            "enabled; never use a native terminal/shell to bypass its absence. "
+            "Combine tool families when the task requires it.\n"
             "When the user explicitly asks to run a command, do not merely explain how or "
             "print the command: call system.run_command if it is in this turn's tools list. "
             "The model NEVER executes PowerShell or Python itself. The Python host validates "
             "and executes requested actions through ActionRegistry, then returns the real "
-            "result for your next decision. Commands run as the current Windows user, never "
-            "elevated. Commands and destructive operations follow their required approval "
-            "and permission checks; never bypass a prompt or retry after denial.\n"
+            "result for your next decision. PowerShell starts as the current Windows user. "
+            "A script may launch an elevated child only through the normal interactive "
+            "Windows UAC prompt; never suppress or bypass it. Commands and destructive "
+            "operations follow their required approval and permission checks; never bypass "
+            "a prompt or retry after denial.\n"
             "Tool categories are independent. A missing browser action must not stop a "
             "PowerShell, desktop, file or Transcriber action that is separately available. "
             "Do not tell the user to enable Browser control for a non-browser task. If a "
@@ -985,7 +987,7 @@ class AssistantProviderMixin:
         )
         if "system.run_command" in tool_names:
             capability_text += (
-                "\nPOWERHELL IS ENABLED BY THE USER: system.run_command is a general-purpose "
+                "\nPOWERSHELL IS ENABLED BY THE USER: system.run_command is a general-purpose "
                 "PowerShell gateway, not a browser-only tool, not a short list of presets and "
                 "not limited to Transcriber features. Use it for any local Windows task that "
                 "can be performed by a PowerShell command or script, including files, folders, "
