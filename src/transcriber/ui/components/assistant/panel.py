@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
 
 from transcriber.assistant.chat_sessions import ChatSessionStore
 from transcriber.assistant.ollama_client import OllamaClient
+from transcriber.assistant.permissions import AgentPermission, DEFAULT_PERMISSIONS
 from transcriber.assistant.prompt_library import PromptLibrary
 from transcriber.assistant.skills import AgentSkillManager
 from transcriber.opencode.acp_client import OpenCodeACPClient
@@ -495,6 +496,101 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         agent_mode_layout.addWidget(self.agent_mode_check)
         self.settings_layout.addWidget(agent_mode_card)
 
+        # Keep capability grants visible and persistent in Assistant settings.
+        permissions_card = QFrame()
+        permissions_card.setObjectName("AssistantSettingsCard")
+        permissions_layout = QVBoxLayout(permissions_card)
+        permissions_layout.setContentsMargins(14, 12, 14, 14)
+        permissions_layout.setSpacing(8)
+        permissions_title = QLabel("Tool permissions")
+        permissions_title.setObjectName("AssistantSectionTitle")
+        permissions_description = QLabel(
+            "Choose which built-in Transcriber tools the Agent can use. Changes are saved "
+            "immediately and remain active after restarting the app."
+        )
+        permissions_description.setObjectName("Muted")
+        permissions_description.setWordWrap(True)
+        permissions_layout.addWidget(permissions_title)
+        permissions_layout.addWidget(permissions_description)
+
+        permission_options = (
+            (AgentPermission.READ_ONLY, "Read app and transcript data",
+             "Allow reading the current page, audio state, transcript and project metadata."),
+            (AgentPermission.EDIT_CONTENT, "Edit transcripts and subtitles",
+             "Allow changing transcript text, timings, speakers and subtitle cues."),
+            (AgentPermission.MODIFY_SETTINGS, "Change application settings",
+             "Allow the Agent to change supported application preferences."),
+            (AgentPermission.AUDIO_CAPTURE, "Capture microphone audio",
+             "Allow microphone capture and voice-related actions."),
+            (AgentPermission.FILE_EXPORT, "Export transcripts and subtitle files",
+             "Allow writing supported exports to application-managed output locations."),
+            (AgentPermission.MODEL_MANAGEMENT, "Manage and download AI models",
+             "Allow model installation, removal and runtime management."),
+            (AgentPermission.BROWSER_CONTROL, "Browser control",
+             "Allow searching the web, opening pages and reading the controlled browser."),
+            (AgentPermission.DESKTOP_CONTROL, "Desktop control",
+             "Allow launching approved apps and opening local files or folders."),
+            (AgentPermission.COMMAND_EXECUTION, "Run PowerShell commands",
+             "Allow requesting PowerShell commands. Each command still requires confirmation."),
+            (AgentPermission.DESTRUCTIVE_ACTIONS, "Destructive actions",
+             "Unlock delete, overwrite, move and install operations. These always ask for confirmation."),
+        )
+        configured = set(
+            str(value) for value in (
+                self.settings_store.settings.agent_permissions
+                if self.settings_store else [item.value for item in DEFAULT_PERMISSIONS]
+            )
+        )
+        self.agent_permission_checks: dict[AgentPermission, QCheckBox] = {}
+        for permission, label, help_text in permission_options:
+            checkbox = QCheckBox(label)
+            checkbox.setObjectName(f"AssistantPermission_{permission.value}")
+            checkbox.setToolTip(help_text)
+            checkbox.setChecked(permission.value in configured)
+            checkbox.toggled.connect(
+                lambda enabled, selected=permission: self._on_agent_permission_toggled(
+                    selected, enabled
+                )
+            )
+            self.agent_permission_checks[permission] = checkbox
+            permissions_layout.addWidget(checkbox)
+
+        trust_browser_row = QFrame()
+        trust_browser_row.setObjectName("AssistantPermissionTrustRow")
+        trust_browser_layout = QVBoxLayout(trust_browser_row)
+        trust_browser_layout.setContentsMargins(8, 8, 8, 6)
+        trust_browser_layout.setSpacing(4)
+        self.agent_trust_browser_check = QCheckBox(
+            "Remember browser approval — do not ask before each interaction"
+        )
+        self.agent_trust_browser_check.setObjectName("AssistantTrustBrowser")
+        trusted_permissions = (
+            self.settings_store.settings.agent_trusted_permissions
+            if self.settings_store else []
+        )
+        self.agent_trust_browser_check.setChecked(
+            AgentPermission.BROWSER_CONTROL.value in trusted_permissions
+        )
+        self.agent_trust_browser_check.setToolTip(
+            "When enabled, browser clicks, form fills, key presses and browser close actions "
+            "can run without a separate confirmation dialog. Search/open/read already run "
+            "without a per-action prompt. This does not trust PowerShell or destructive actions."
+        )
+        self.agent_trust_browser_check.toggled.connect(
+            self._on_agent_trust_browser_toggled
+        )
+        trust_browser_layout.addWidget(self.agent_trust_browser_check)
+        trust_browser_note = QLabel(
+            "Only applies to Browser control. PowerShell and destructive actions always keep "
+            "their own confirmation safeguards."
+        )
+        trust_browser_note.setObjectName("Muted")
+        trust_browser_note.setWordWrap(True)
+        trust_browser_layout.addWidget(trust_browser_note)
+        permissions_layout.addWidget(trust_browser_row)
+        self.settings_layout.addWidget(permissions_card)
+        self._sync_agent_permission_controls()
+
         prompt_library_card = QFrame()
         prompt_library_card.setObjectName("AssistantSettingsCard")
         prompt_library_layout = QVBoxLayout(prompt_library_card)
@@ -796,6 +892,94 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         if self.settings_store:
             self.settings_store.update(assistant_agent_mode=bool(enabled))
 
+    def _current_agent_permissions(self) -> set[AgentPermission]:
+        if self.settings_store:
+            values = self.settings_store.settings.agent_permissions or []
+        elif self._action_registry is not None:
+            return set(self._action_registry.permissions)
+        else:
+            return set(DEFAULT_PERMISSIONS)
+        result = set()
+        for value in values:
+            try:
+                result.add(AgentPermission(value))
+            except ValueError:
+                continue
+        return result
+
+    def _sync_agent_permission_controls(self):
+        permissions = self._current_agent_permissions()
+        for permission, checkbox in getattr(self, "agent_permission_checks", {}).items():
+            checkbox.blockSignals(True)
+            checkbox.setChecked(permission in permissions)
+            checkbox.blockSignals(False)
+        trusted = (
+            self.settings_store.settings.agent_trusted_permissions
+            if self.settings_store else []
+        )
+        trust_enabled = AgentPermission.BROWSER_CONTROL.value in trusted
+        if not self.settings_store and self._action_registry is not None:
+            trust_enabled = AgentPermission.BROWSER_CONTROL in self._action_registry.trusted_permissions
+        checkbox = getattr(self, "agent_trust_browser_check", None)
+        if checkbox is not None:
+            checkbox.blockSignals(True)
+            checkbox.setChecked(trust_enabled)
+            checkbox.setEnabled(AgentPermission.BROWSER_CONTROL in permissions)
+            checkbox.blockSignals(False)
+
+    def _on_agent_permission_toggled(self, permission: AgentPermission, enabled: bool):
+        permissions = self._current_agent_permissions()
+        if enabled:
+            permissions.add(permission)
+        else:
+            permissions.discard(permission)
+        if self.settings_store:
+            self.settings_store.update(
+                agent_permissions=sorted(item.value for item in permissions)
+            )
+        if self._action_registry is not None:
+            self._action_registry.set_permission(permission, bool(enabled))
+
+        if permission == AgentPermission.BROWSER_CONTROL and not enabled:
+            # Revoking browser control also clears its remembered trust grant.
+            trust_checkbox = getattr(self, "agent_trust_browser_check", None)
+            if trust_checkbox is not None:
+                trust_checkbox.blockSignals(True)
+                trust_checkbox.setChecked(False)
+                trust_checkbox.setEnabled(False)
+                trust_checkbox.blockSignals(False)
+            if self.settings_store:
+                trusted = set(self.settings_store.settings.agent_trusted_permissions)
+                trusted.discard(AgentPermission.BROWSER_CONTROL.value)
+                self.settings_store.update(agent_trusted_permissions=sorted(trusted))
+            if self._action_registry is not None:
+                self._action_registry.set_trusted_permission(
+                    AgentPermission.BROWSER_CONTROL, False
+                )
+        elif permission == AgentPermission.BROWSER_CONTROL:
+            trust_checkbox = getattr(self, "agent_trust_browser_check", None)
+            if trust_checkbox is not None:
+                trust_checkbox.setEnabled(True)
+
+    def _on_agent_trust_browser_toggled(self, enabled: bool):
+        if enabled and AgentPermission.BROWSER_CONTROL not in self._current_agent_permissions():
+            browser_checkbox = self.agent_permission_checks[AgentPermission.BROWSER_CONTROL]
+            browser_checkbox.setChecked(True)
+        trusted = set(
+            self.settings_store.settings.agent_trusted_permissions
+            if self.settings_store else []
+        )
+        if enabled:
+            trusted.add(AgentPermission.BROWSER_CONTROL.value)
+        else:
+            trusted.discard(AgentPermission.BROWSER_CONTROL.value)
+        if self.settings_store:
+            self.settings_store.update(agent_trusted_permissions=sorted(trusted))
+        if self._action_registry is not None:
+            self._action_registry.set_trusted_permission(
+                AgentPermission.BROWSER_CONTROL, bool(enabled)
+            )
+
     def refresh_skills(self):
         skills = self.skill_manager.list_skills()
         if not skills:
@@ -853,6 +1037,19 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._action_registry = action_registry
         self.agent_mode_check.setEnabled(action_registry is not None)
         if action_registry is not None:
+            for permission in AgentPermission:
+                action_registry.set_permission(
+                    permission, permission in self._current_agent_permissions()
+                )
+            trusted = (
+                self.settings_store.settings.agent_trusted_permissions
+                if self.settings_store else []
+            )
+            action_registry.set_trusted_permission(
+                AgentPermission.BROWSER_CONTROL,
+                AgentPermission.BROWSER_CONTROL.value in trusted,
+            )
+            self._sync_agent_permission_controls()
             self.agent_mode_check.setToolTip(
                 "Ollama sees only currently permitted tools. Desktop actions remain hidden "
                 "until Desktop control is enabled in Settings, and each action asks before running."
@@ -908,6 +1105,16 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
             self.agent_mode_check.blockSignals(True)
             self.agent_mode_check.setChecked(settings.assistant_agent_mode)
             self.agent_mode_check.blockSignals(False)
+        self._sync_agent_permission_controls()
+        if self._action_registry is not None:
+            for permission in AgentPermission:
+                self._action_registry.set_permission(
+                    permission, permission.value in settings.agent_permissions
+                )
+            self._action_registry.set_trusted_permission(
+                AgentPermission.BROWSER_CONTROL,
+                AgentPermission.BROWSER_CONTROL.value in settings.agent_trusted_permissions,
+            )
         self.refresh_wake_models(settings.wake_model_directory)
         if not (self.client and self.client.connected) and settings.opencode_project_directory:
             candidate = Path(settings.opencode_project_directory).expanduser()
