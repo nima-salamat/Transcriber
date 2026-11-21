@@ -545,3 +545,35 @@ def test_action_request_recognizes_common_inspection_and_development_tasks():
     assert OllamaAgent.is_action_request("Build the project.")
     assert OllamaAgent.is_action_request("Review the latest log file.")
     assert not OllamaAgent.is_action_request("How do I check the project structure?")
+
+
+
+def test_power_shell_tool_exposure_tracks_the_user_command_execution_permission():
+    registry = ActionRegistry(permissions={AgentPermission.READ_ONLY})
+    registry.register(ActionSpec(
+        name="system.run_command",
+        description="General-purpose PowerShell command executor.",
+        permission=AgentPermission.COMMAND_EXECUTION,
+        handler=lambda arguments: {"exit_code": 0},
+        required=("command",),
+        requires_approval=True,
+        background=True,
+    ))
+
+    assert "system.run_command" not in {
+        item["function"]["name"] for item in OllamaAgent.tools_for_registry(registry)
+    }
+
+    # Toggling the real app permission immediately changes the tools sent to Ollama.
+    registry.set_permission(AgentPermission.COMMAND_EXECUTION, True)
+    tools = OllamaAgent.tools_for_registry(registry)
+    command_tool = next(
+        item["function"] for item in tools
+        if item["function"]["name"] == "system.run_command"
+    )
+
+    assert command_tool["parameters"]["properties"]["command"]["maxLength"] == 16000
+    assert command_tool["parameters"]["properties"]["timeout_seconds"]["maximum"] == 3600
+    assert "general-purpose PowerShell" in command_tool["description"]
+    assert "browser" in command_tool["description"].casefold()
+    assert registry.describe(include_disabled=False)[0]["requires_approval"] is True
