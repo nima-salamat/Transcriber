@@ -1037,9 +1037,10 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._action_registry = action_registry
         self.agent_mode_check.setEnabled(action_registry is not None)
         if action_registry is not None:
+            configured_permissions = self._current_agent_permissions()
             for permission in AgentPermission:
                 action_registry.set_permission(
-                    permission, permission in self._current_agent_permissions()
+                    permission, permission in configured_permissions
                 )
             trusted = (
                 self.settings_store.settings.agent_trusted_permissions
