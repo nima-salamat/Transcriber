@@ -388,3 +388,143 @@ def test_agent_forwards_live_thinking_chunks_and_supported_level_to_ollama():
     assert thinking_chunks == ["Check the calculation first."]
     assert answer_chunks == ["The answer is 42."]
     assert result["text"] == "The answer is 42."
+
+def test_agent_executes_structured_host_action_then_returns_final_response():
+    import json
+    from transcriber.assistant.agent_protocol import PROTOCOL_ID
+
+    action_envelope = {
+        "protocol": PROTOCOL_ID,
+        "status": "continue",
+        "response": "I am checking the project directory.",
+        "action": {
+            "name": "system.run_command",
+            "arguments": {"command": "Get-ChildItem", "cwd": "C:/workspace"},
+        },
+        "done": False,
+        "plan": [{"title": "Inspect the project", "status": "running"}],
+    }
+    final_envelope = {
+        "protocol": PROTOCOL_ID,
+        "status": "done",
+        "response": "The project contains the expected source files.",
+        "action": None,
+        "done": True,
+    }
+    client = FakeOllamaClient([
+        {"text": json.dumps(action_envelope), "tool_calls": [], "metrics": {}},
+        {"text": json.dumps(final_envelope), "tool_calls": [], "metrics": {}},
+    ])
+    executed = []
+    statuses = []
+    chunks = []
+    agent = OllamaAgent(
+        client,
+        lambda name, args: executed.append((name, args)) or {
+            "exit_code": 0, "stdout": "src\\ntests", "stderr": "", "timed_out": False
+        },
+    )
+
+    result = agent.run(
+        "qwen3:8b",
+        [{"role": "user", "content": "Inspect the project directory."}],
+        [{"type": "function", "function": {
+            "name": "system.run_command",
+            "description": "Run PowerShell in the Python host.",
+            "parameters": {"type": "object"},
+        }}],
+        require_tool_call=True,
+        on_chunk=chunks.append,
+        on_tool_status=statuses.append,
+    )
+
+    assert executed == [(
+        "system.run_command", {"command": "Get-ChildItem", "cwd": "C:/workspace"}
+    )]
+    assert result["tool_count"] == 1
+    assert result["agent_status"] == "done"
+    assert result["text"] == "The project contains the expected source files."
+    assert chunks == ["The project contains the expected source files."]
+    assert any("I am checking the project directory." in value for value in statuses)
+    tool_message = next(item for item in result["messages"] if item.get("role") == "tool")
+    assert '"ok":true' in tool_message["content"]
+    assert client.calls[1]["messages"][-1]["role"] == "tool"
+
+
+def test_agent_reports_nonzero_power_shell_exit_code_as_failed_action():
+    import json
+    from transcriber.assistant.agent_protocol import PROTOCOL_ID
+
+    request = {
+        "protocol": PROTOCOL_ID, "status": "continue",
+        "response": "Running the test command.",
+        "action": {"name": "system.run_command", "arguments": {"command": "pytest"}},
+        "done": False,
+    }
+    final = {
+        "protocol": PROTOCOL_ID, "status": "done",
+        "response": "The test command failed with exit code 1.",
+        "action": None, "done": True,
+    }
+    results = []
+    client = FakeOllamaClient([
+        {"text": json.dumps(request), "tool_calls": [], "metrics": {}},
+        {"text": json.dumps(final), "tool_calls": [], "metrics": {}},
+    ])
+    agent = OllamaAgent(
+        client,
+        lambda _name, _args: {"exit_code": 1, "stdout": "", "stderr": "test failure"},
+    )
+
+    result = agent.run(
+        "qwen3:8b",
+        [{"role": "user", "content": "Run the tests."}],
+        [{"type": "function", "function": {"name": "system.run_command"}}],
+        require_tool_call=True,
+        on_tool_result=results.append,
+    )
+
+    assert results and results[0]["ok"] is False
+    assert '"ok":false' in next(
+        item["content"] for item in result["messages"] if item.get("role") == "tool"
+    )
+    assert result["text"] == "The test command failed with exit code 1."
+
+
+def test_agent_stops_after_structured_action_is_denied():
+    import json
+    from transcriber.assistant.agent_protocol import PROTOCOL_ID
+
+    request = {
+        "protocol": PROTOCOL_ID, "status": "continue",
+        "response": "Requesting permission to run the command.",
+        "action": {"name": "system.run_command", "arguments": {"command": "Remove-Item x"}},
+        "done": False,
+    }
+    client = FakeOllamaClient([
+        {"text": json.dumps(request), "tool_calls": [], "metrics": {}},
+        {"text": "This must not be requested.", "tool_calls": [], "metrics": {}},
+    ])
+    executions = []
+
+    def deny(name, args):
+        executions.append((name, args))
+        raise PermissionDenied("approval denied")
+
+    result = OllamaAgent(client, deny).run(
+        "qwen3:8b",
+        [{"role": "user", "content": "Run a command."}],
+        [{"type": "function", "function": {"name": "system.run_command"}}],
+        require_tool_call=True,
+    )
+
+    assert len(client.calls) == 1
+    assert len(executions) == 1
+    assert result["permission_denied"] is True
+
+
+def test_action_request_recognizes_common_persian_execution_phrases():
+    assert OllamaAgent.is_action_request("میخوام این پوشه رو بررسی کنی")
+    assert OllamaAgent.is_action_request("لطفاً این دستور رو اجرا کن")
+    assert OllamaAgent.is_action_request("می‌خوام برنامه رو باز کنی")
+    assert not OllamaAgent.is_action_request("چگونه می‌توانم PowerShell را باز کنم؟")
