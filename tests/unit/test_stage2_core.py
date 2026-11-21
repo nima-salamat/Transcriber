@@ -557,7 +557,6 @@ def test_command_execution_is_never_run_when_gui_approval_is_denied():
         registry.execute("system.run_command", {"command": "Get-Location"})
     assert approvals == ["system.run_command"]
     assert calls == []
-
 def test_main_window_cancellable_command_adapter_forwards_arguments_and_event():
     from transcriber.ui.main_window import MainWindow
 
@@ -566,16 +565,33 @@ def test_main_window_cancellable_command_adapter_forwards_arguments_and_event():
     received = {}
 
     class FakeWindow:
+        _run_agent_command_action_cancellable = (
+            MainWindow._run_agent_command_action_cancellable
+        )
+
         def _agent_run_command(self, actual_arguments, *, cancel_event=None):
             received["arguments"] = actual_arguments
             received["cancel_event"] = cancel_event
             return {"exit_code": 0}
 
-    result = MainWindow._run_agent_command_action_cancellable(
-        FakeWindow(), arguments, cancel_event
+    window = FakeWindow()
+    registry = ActionRegistry(
+        permissions={AgentPermission.COMMAND_EXECUTION},
+        approval=lambda _spec, _args: True,
     )
+    registry.register(ActionSpec(
+        "system.run_command",
+        "Run a command with explicit approval.",
+        AgentPermission.COMMAND_EXECUTION,
+        lambda _args: pytest.fail("The non-cancellable handler must not run."),
+        required=("command",),
+        requires_approval=True,
+        background=True,
+        cancellation_handler=window._run_agent_command_action_cancellable,
+    ))
 
-    assert result == {"exit_code": 0}
+    assert registry.execute(
+        "system.run_command", arguments, cancellation=cancel_event
+    ) == {"exit_code": 0}
     assert received["arguments"] is arguments
     assert received["cancel_event"] is cancel_event
-
