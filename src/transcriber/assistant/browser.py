@@ -11,8 +11,8 @@ import shutil
 import socket
 import subprocess
 import sys
-import time
 import threading
+import time
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import quote, urlparse

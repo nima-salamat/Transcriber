@@ -4,11 +4,13 @@ from __future__ import annotations
 import json
 import os
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import QTimer
 
 from transcriber.assistant.ollama_client import (
-    OllamaCancellation, OllamaCancelled, OllamaClient, OllamaError,
+    OllamaCancellation,
+    OllamaCancelled,
+    OllamaClient,
+    OllamaError,
 )
 from transcriber.assistant.prompt_library import AGENT_EXECUTION_CONTRACT
 from transcriber.opencode.acp_client import OpenCodeACPClient
@@ -1331,7 +1333,6 @@ class AssistantProviderMixin:
             self._set_inline_agent_status("Working")
             self._finish_assistant_stream("Working")
             title = str(update.get("title") or update.get("toolCallId") or "Workspace tool")
-            event_id = str(update.get("toolCallId") or title)
             self._opencode_turn_tool_calls = getattr(self, "_opencode_turn_tool_calls", 0) + 1
             payload_text = json.dumps(update, ensure_ascii=False, default=str).casefold()
             if any(marker in payload_text for marker in (
@@ -1346,14 +1347,6 @@ class AssistantProviderMixin:
             self._finish_assistant_stream("Working")
             raw_status = str(update.get("status") or "running")
             normalized = raw_status.casefold()
-            status = (
-                "completed" if normalized in {"completed", "complete", "done", "success"}
-                else "failed" if normalized in {"failed", "error"}
-                else "cancelled" if normalized in {"cancelled", "canceled"}
-                else "awaiting_approval" if "approval" in normalized or "permission" in normalized
-                else "pending" if normalized in {"pending", "queued"}
-                else "running"
-            )
             title = str(update.get("title") or update.get("toolCallId") or "Workspace tool")
             event_id = str(update.get("toolCallId") or title)
             payload_text = json.dumps(update, ensure_ascii=False, default=str).casefold()

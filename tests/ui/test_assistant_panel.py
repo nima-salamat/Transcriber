@@ -10,11 +10,11 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QThreadPool, Qt
+from PySide6.QtCore import Qt, QThreadPool
 from PySide6.QtWidgets import QApplication, QTextBrowser
 
-from transcriber.ui.components.assistant_panel import AssistantPanel
 from transcriber.ui.components.assistant.message_widget import MessageWidget
+from transcriber.ui.components.assistant_panel import AssistantPanel
 
 
 def test_assistant_panel_is_a_conversation_surface(qtbot, tmp_path):

@@ -7,8 +7,8 @@ arbitrary attribute paths, shell commands, Python expressions or Qt widgets.
 from __future__ import annotations
 
 import threading
-from concurrent.futures import CancelledError
 from collections.abc import Callable
+from concurrent.futures import CancelledError
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -115,7 +115,8 @@ class ActionRegistry:
         if spec.destructive or spec.requires_approval:
             if self.approval is None:
                 raise PermissionDenied("This operation requires explicit user approval")
-            approval_callback = lambda payload: self.approval(payload[0], payload[1])
+            def approval_callback(payload):
+                return self.approval(payload[0], payload[1])
             if cancel_event is None:
                 approved = self.approval_dispatcher(approval_callback, (spec, args))
             else:

@@ -16,11 +16,11 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
-
 
 class OperationState(StrEnum):
     QUEUED = "queued"

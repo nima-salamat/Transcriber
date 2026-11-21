@@ -17,7 +17,6 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlparse
 from urllib.request import Request, urlopen
 
-
 _NAME = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 _SAFE_RESOURCE_DIRS = {"scripts", "references", "assets"}
 _TEXT_SUFFIXES = {

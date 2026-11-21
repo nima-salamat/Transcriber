@@ -7,7 +7,6 @@ import re
 import tempfile
 from pathlib import Path
 
-
 AGENT_EXECUTION_CONTRACT = """## Required agent execution protocol
 
 Treat every request as a task with an explicit control decision after each result:

@@ -701,7 +701,7 @@ class OllamaAgent:
                     )
                     for skipped_call in calls[call_index + 1:]:
                         skipped_name = str(
-                            ((skipped_call.get("function") or {}).get("name") or "unknown")
+                            (skipped_call.get("function") or {}).get("name") or "unknown"
                         )
                         working.append({
                             "role": "tool",

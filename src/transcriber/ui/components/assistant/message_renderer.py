@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QImage, QTextCursor, QTextDocument, QTextOption
 from PySide6.QtWidgets import QFrame, QSizePolicy, QTextBrowser, QTextEdit
-from PySide6.QtCore import QTimer
 
 
 def _safe_markdown(source: str) -> str:

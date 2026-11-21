@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
 _MAX_SESSIONS = 100
 _MAX_VISIBLE_MESSAGES = 400
 _MAX_PROVIDER_MESSAGES = 300

@@ -301,7 +301,7 @@ def test_chat_preserves_assistant_thinking_in_follow_up_history(monkeypatch):
     monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
     history = [
         {"role": "assistant", "content": "", "thinking": "I will inspect the action."},
-        {"role": "tool", "tool_name": "browser.search", "content": "{\\"ok\\":true}"},
+        {"role": "tool", "tool_name": "browser.search", "content": json.dumps({"ok": True})},
         {"role": "user", "content": "Continue"},
     ]
 

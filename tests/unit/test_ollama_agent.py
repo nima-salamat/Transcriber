@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from transcriber.assistant.agent_protocol import PROTOCOL_ID
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.ollama_agent import OllamaAgent
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
@@ -390,9 +393,6 @@ def test_agent_forwards_live_thinking_chunks_and_supported_level_to_ollama():
     assert result["text"] == "The answer is 42."
 
 def test_agent_executes_structured_host_action_then_returns_final_response():
-    import json
-    from transcriber.assistant.agent_protocol import PROTOCOL_ID
-
     action_envelope = {
         "protocol": PROTOCOL_ID,
         "status": "continue",
@@ -452,9 +452,6 @@ def test_agent_executes_structured_host_action_then_returns_final_response():
 
 
 def test_agent_reports_nonzero_power_shell_exit_code_as_failed_action():
-    import json
-    from transcriber.assistant.agent_protocol import PROTOCOL_ID
-
     request = {
         "protocol": PROTOCOL_ID, "status": "continue",
         "response": "Running the test command.",
@@ -492,9 +489,6 @@ def test_agent_reports_nonzero_power_shell_exit_code_as_failed_action():
 
 
 def test_agent_stops_after_structured_action_is_denied():
-    import json
-    from transcriber.assistant.agent_protocol import PROTOCOL_ID
-
     request = {
         "protocol": PROTOCOL_ID, "status": "continue",
         "response": "Requesting permission to run the command.",

@@ -8,8 +8,16 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QEasingCurve, QObject, QPropertyAnimation, Qt, QTimer, Signal
-from PySide6.QtGui import QKeySequence, QPalette, QShortcut, QTextCursor, QTextDocument
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QObject,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+    Signal,
+)
+from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -23,7 +31,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QStackedWidget,
@@ -34,19 +41,18 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.assistant.chat_sessions import ChatSessionStore
-from transcriber.assistant.ollama_client import OllamaCancellation, OllamaClient, OllamaError
+from transcriber.assistant.ollama_client import OllamaClient
 from transcriber.assistant.prompt_library import PromptLibrary
 from transcriber.assistant.skills import AgentSkillManager
 from transcriber.opencode.acp_client import OpenCodeACPClient
-from transcriber.ui.components.prompt_library_dialog import PromptLibraryDialog
-from transcriber.ui.components.assistant.sessions import AssistantSessionMixin
-from transcriber.ui.components.assistant.providers import AssistantProviderMixin
-from transcriber.ui.components.assistant.voice import AssistantVoiceMixin
-from transcriber.ui.components.assistant.conversation import AssistantConversationMixin
 from transcriber.ui.components.assistant.composer import MessageComposer
+from transcriber.ui.components.assistant.conversation import AssistantConversationMixin
 from transcriber.ui.components.assistant.conversation_view import ConversationView
 from transcriber.ui.components.assistant.header import ConversationHeader
+from transcriber.ui.components.assistant.providers import AssistantProviderMixin
+from transcriber.ui.components.assistant.sessions import AssistantSessionMixin
 from transcriber.ui.components.assistant.sidebar import AssistantSidebar
+from transcriber.ui.components.assistant.voice import AssistantVoiceMixin
 from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.workers import FunctionWorker
 
