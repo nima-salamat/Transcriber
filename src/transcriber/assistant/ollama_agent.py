@@ -12,6 +12,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from transcriber.assistant.agent_protocol import parse_agent_decision
 from transcriber.assistant.ollama_client import OllamaCancelled
 
 _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -322,6 +323,22 @@ class OllamaAgent:
         return encoded[:24_000]
 
     @staticmethod
+    def _action_result_ok(value: Any) -> bool:
+        """Interpret host execution results, especially PowerShell exit codes."""
+        if not isinstance(value, dict):
+            return True
+        if value.get("ok") is False or value.get("timed_out") is True:
+            return False
+        if value.get("cancelled") is True:
+            return False
+        if "exit_code" in value:
+            try:
+                return int(value["exit_code"]) == 0
+            except (TypeError, ValueError):
+                return False
+        return True
+
+    @staticmethod
     def is_action_request(prompt: str) -> bool:
         """Return True for clear requests to perform an action, not explain one."""
         value = " ".join(str(prompt or "").casefold().split())
@@ -339,7 +356,18 @@ class OllamaAgent:
             "نصب کن", "ایجاد کن", "ویرایش کن", "حذف کن", "منتقل کن", "کپی کن",
             "بفرست", "شروع کن", "متوقف کن",
         )
-        return any(cue in value for cue in cues)
+        if any(cue in value for cue in cues):
+            return True
+        # Explicit Persian action verbs, without treating explanatory questions as actions.
+        persian_action = (
+            r"(?:لطفا|لطفاً)?\s*(?:برام|برای من)?\s*(?:باز کن|اجرا کن|ران کن|"
+            r"بررسی کن|جستجو کن|سرچ کن|پیدا کن|نصب کن|دانلود کن|ایجاد کن|"
+            r"ویرایش کن|حذف کن|منتقل کن|کپی کن|تغییر بده|راه‌اندازی کن|متوقف کن)",
+            r"(?:میخوام|می‌خوام|می خواهم|میخواهم).{0,50}(?:انجام بدی|انجام بدهی|"
+            r"بررسی کنی|اجرا کنی|باز کنی|بسازی|تغییر بدی|درست کنی|فیکس کنی)",
+            r"(?:دستور|کامند|فرمان).{0,40}(?:اجرا|ران|انجام)",
+        )
+        return any(re.search(pattern, value) for pattern in persian_action)
 
     @staticmethod
     def is_browser_search_request(prompt: str) -> bool:
@@ -435,7 +463,9 @@ class OllamaAgent:
         tool_rounds = 0
         recovery_attempts = 0
         fallback_attempted = False
-        buffer_until_tool_decision = bool(require_tool_call or fallback_tool_call)
+        # Buffer Agent turns until the host-control envelope/native tool call is
+        # classified, so raw JSON never flashes in the conversation.
+        buffer_until_tool_decision = bool(tools or require_tool_call or fallback_tool_call)
         available_names = {
             str((item.get("function") or {}).get("name") or "")
             for item in tools if isinstance(item, dict)
