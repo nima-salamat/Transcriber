@@ -267,8 +267,8 @@ class OllamaAgent:
         client,
         action_executor: Callable[[str, dict[str, Any]], Any],
         *,
-        max_rounds: int = 10,
-        max_tool_calls: int = 16,
+        max_rounds: int = 12,
+        max_tool_calls: int = 24,
     ):
         self.client = client
         self.action_executor = action_executor
