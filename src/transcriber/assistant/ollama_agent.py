@@ -365,15 +365,15 @@ class OllamaAgent:
         # Explicit command-line requests, including Persian phrasing that does not
         # necessarily begin with the action verb.
         command_action = (
-            r"\\b(?:run|execute|issue)\\s+(?:this\\s+)?(?:a\\s+)?(?:powershell|terminal|shell|command|script)\\b",
-            r"\\b(?:use|open)\\s+(?:powershell|terminal|cmd|shell)\\s+(?:to|and)\\s+\\w+",
-            r"\\b(?:via|using|in)\\s+(?:powershell|terminal|cmd|shell)\\b.{0,100}\\b(?:run|execute|check|list|show|build|test|install)\\b",
+            r"\b(?:run|execute|issue)\s+(?:this\s+)?(?:a\s+)?(?:powershell|terminal|shell|command|script)\b",
+            r"\b(?:use|open)\s+(?:powershell|terminal|cmd|shell)\s+(?:to|and)\s+\w+",
+            r"\b(?:via|using|in)\s+(?:powershell|terminal|cmd|shell)\b.{0,100}\b(?:run|execute|check|list|show|build|test|install)\b",
         )
         if any(re.search(pattern, value) for pattern in command_action):
             return True
         # Explicit Persian action verbs, without treating explanatory questions as actions.
         persian_action = (
-            r"(?:لطفا|لطفاً)?\\s*(?:برام|برای من)?\\s*(?:باز کن|اجرا کن|ران کن|"
+            r"(?:لطفا|لطفاً)?\s*(?:برام|برای من)?\s*(?:باز کن|اجرا کن|ران کن|"
             r"بررسی کن|جستجو کن|سرچ کن|پیدا کن|نصب کن|دانلود کن|ایجاد کن|"
             r"ویرایش کن|حذف کن|منتقل کن|کپی کن|تغییر بده|راه‌اندازی کن|متوقف کن)",
             r"(?:میخوام|می‌خوام|می خواهم|میخواهم).{0,80}(?:انجام بدی|انجام بدهی|"
