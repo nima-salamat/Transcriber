@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 
 import pytest
 
@@ -195,6 +196,42 @@ def test_cancellation_closes_an_attached_response():
 
     assert token.cancelled
     assert response.closed
+def test_cancellation_shuts_down_the_underlying_stream_socket():
+    class FakeSocket:
+        def __init__(self):
+            self.shutdown_modes = []
+
+        def shutdown(self, how):
+            self.shutdown_modes.append(how)
+
+    class FakeRaw:
+        def __init__(self, sock):
+            self._sock = sock
+
+    class FakeBuffer:
+        def __init__(self, raw):
+            self.raw = raw
+
+    class FakeResponse:
+        def __init__(self, sock):
+            self.fp = FakeBuffer(FakeRaw(sock))
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    sock = FakeSocket()
+    response = FakeResponse(sock)
+    token = OllamaCancellation()
+    token.attach(response)
+
+    token.cancel()
+
+    assert token.cancelled
+    assert sock.shutdown_modes == [socket.SHUT_RDWR]
+    assert response.closed
+
+
 def test_chat_reports_server_error(monkeypatch):
     def fake_urlopen(request, timeout):
         return FakeResponse(b'{"error":"model not found"}\n')
