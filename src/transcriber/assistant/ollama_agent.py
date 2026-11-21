@@ -185,7 +185,7 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "parameters": {"type": "object", "properties": {}},
     },
     "system.run_command": {
-        "description": "Run a custom PowerShell command as the current Windows user. Every command requires explicit user approval; no elevation is allowed. Output and runtime are bounded.",
+        "description": "Request the Transcriber Python host to run a PowerShell command as the current Windows user. Python validates, requests approval and executes it; the model never runs shell commands. No elevation; output and runtime are bounded.",
         "parameters": {"type": "object", "properties": {
             "command": {"type": "string", "description": "PowerShell command or script"},
             "cwd": {"type": "string", "description": "Optional existing working directory"},
