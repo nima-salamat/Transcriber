@@ -60,8 +60,11 @@ class AssistantProviderMixin:
         if not actions:
             return (
                 "No Transcriber host actions are enabled. This does not describe or "
-                "enable unrelated OpenCode provider tools. In particular, do not use a "
-                "provider-native terminal to bypass Transcriber's Command execution setting."
+                "enable unrelated OpenCode provider tools. PowerShell is unavailable "
+                "through this Agent because Command execution is not enabled or Agent "
+                "mode is off. Tell the user to enable 'Run PowerShell commands' in "
+                "Assistant settings. Do not use a provider-native terminal/shell to "
+                "bypass that setting."
             )
         rows = []
         for item in actions:
