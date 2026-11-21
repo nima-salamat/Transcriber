@@ -577,3 +577,33 @@ def test_power_shell_tool_exposure_tracks_the_user_command_execution_permission(
     assert "general-purpose powershell" in command_tool["description"].casefold()
     assert "browser" in command_tool["description"].casefold()
     assert registry.describe(include_disabled=False)[0]["requires_approval"] is True
+
+
+
+def test_agent_announces_each_model_generation_round_after_tool_results():
+    call = _call("system.run_command", {"command": "Get-Location"})
+    client = FakeOllamaClient([
+        {"text": "", "tool_calls": [call], "metrics": {}},
+        {"text": "The working directory is ready.", "tool_calls": [], "metrics": {}},
+    ])
+    events = []
+
+    agent = OllamaAgent(
+        client,
+        lambda name, arguments: events.append(("tool", name, arguments))
+        or {"exit_code": 0, "stdout": "C:\\workspace"},
+    )
+    result = agent.run(
+        "qwen3:8b",
+        [{"role": "user", "content": "Inspect the current directory."}],
+        [{"type": "function", "function": {"name": "system.run_command"}}],
+        on_round_start=lambda number: events.append(("round", number)),
+    )
+
+    assert events == [
+        ("round", 1),
+        ("tool", "system.run_command", {"command": "Get-Location"}),
+        ("round", 2),
+    ]
+    assert result["text"] == "The working directory is ready."
+    assert result["tool_count"] == 1
