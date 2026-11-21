@@ -48,7 +48,12 @@ from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.browser import WindowsBrowserController
 from transcriber.assistant.operations import OperationManager
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
-from transcriber.assistant.powershell import build_powershell_script
+from transcriber.assistant.powershell import (
+    MAX_COMMAND_LENGTH,
+    MAX_TIMEOUT_SECONDS,
+    build_powershell_script,
+    requires_destructive_permission,
+)
 from transcriber.audio.decoder import validate_audio_file
 from transcriber.audio.waveform import build_waveform
 from transcriber.editor.commands import CommandHistory
@@ -1587,28 +1592,16 @@ class MainWindow(QMainWindow):
         if sys.platform != "win32":
             raise RuntimeError("Custom command execution is currently supported on Windows only.")
         command = str(args.get("command") or "").strip()
-        if not command or len(command) > 6000 or "\x00" in command:
-            raise ValueError("Enter a PowerShell command between 1 and 6,000 characters.")
-        hard_blocked = (
-            r"(?i)\b(format|diskpart|clear-disk|initialize-disk|remove-partition|set-partition|bcdedit|shutdown|restart-computer|stop-computer)\b",
-            r"(?i)\breg(?:\.exe)?\s+delete\b",
-            r"(?is)start-process\b.*?-verb\s+runas",
-            r"(?is)(?:invoke-webrequest|iwr)\b.*?(?:invoke-expression|\biex\b)|(?:invoke-expression|\biex\b).*?(?:invoke-webrequest|iwr)\b",
-        )
-        if any(re.search(pattern, command) for pattern in hard_blocked):
-            raise PermissionDenied(
-                "This command matches a blocked system-administration or download-and-execute pattern."
+        if not command or len(command) > MAX_COMMAND_LENGTH or "\x00" in command:
+            raise ValueError(
+                f"Enter a PowerShell command between 1 and {MAX_COMMAND_LENGTH:,} characters."
             )
-        destructive = (
-            r"(?i)\b(remove-item|remove-file|remove-directory|del|erase|rmdir|set-content|out-file|"
-            r"move-item|copy-item|rename-item|new-item|install-module|winget\s+install|"
-            r"choco\s+install|pip\s+install|npm\s+install)\b"
-        )
-        if re.search(destructive, command) and (
+        if requires_destructive_permission(command) and (
             AgentPermission.DESTRUCTIVE_ACTIONS not in self.action_registry.permissions
         ):
             raise PermissionDenied(
-                "This command may modify or delete data. Enable Destructive actions in Settings first."
+                "This PowerShell script contains a recognized destructive or system-changing operation. "
+                "Enable Destructive actions in Assistant settings first."
             )
         powershell = shutil.which("pwsh.exe") or shutil.which("powershell.exe")
         if not powershell:
@@ -1625,7 +1618,7 @@ class MainWindow(QMainWindow):
             timeout = int(args.get("timeout_seconds", 30))
         except (TypeError, ValueError):
             timeout = 30
-        timeout = max(1, min(timeout, 120))
+        timeout = max(1, min(timeout, MAX_TIMEOUT_SECONDS))
         script = build_powershell_script(command)
         command_line = [
             powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script
@@ -1690,10 +1683,10 @@ class MainWindow(QMainWindow):
         if spec.name == "system.run_command":
             command = str(args.get("command") or "").strip()
             visible_command = command if len(command) <= 1800 else command[:1800] + "\n… (see Details for the full command)"
-            dialog.setText("Allow the AI Assistant to run this PowerShell command?")
+            dialog.setText("Allow the AI Assistant to run this PowerShell command or script?")
             dialog.setInformativeText(
                 visible_command
-                + "\n\nPowerShell will run as your current Windows user, without administrator elevation."
+                + "\n\nPowerShell starts as your current Windows user. A command that launches an elevated child process may show the normal Windows UAC prompt. Known destructive/system-changing commands also require the Destructive actions permission."
             )
         else:
             dialog.setText(f"Allow the Agent to run {spec.name}?")
