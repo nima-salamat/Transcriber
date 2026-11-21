@@ -766,3 +766,93 @@ def test_opencode_prompt_context_exposes_general_powershell_only_when_permission
     assert "PowerShell is unavailable" in disabled_context
     assert "Run PowerShell commands" in disabled_context
     assert "bypass" in disabled_context
+
+
+
+def test_ollama_next_generation_round_shows_thinking_before_any_new_tokens(
+    qtbot, tmp_path
+):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+
+    panel._begin_assistant_stream("Thinking")
+    panel._finish_assistant_stream("Working")
+    panel.signals.ollama_round_started.emit(2)
+
+    widget = panel.conversation_view._widgets[-1]
+    assert widget.role == "assistant"
+    assert widget._status == "Thinking"
+    assert widget._streaming is True
+    assert widget.thinking_toggle.text() == "Thinking"
+
+    panel.signals.ollama_thinking.emit("Reviewing the command result.")
+    panel.signals.ollama_chunk.emit("The next step is complete.")
+
+    assert panel.conversation_view._widgets[-1] is widget
+    assert widget.thinking_body.toPlainText() == "Reviewing the command result."
+    assert widget.body.toPlainText() == "The next step is complete."
+
+
+def test_opencode_tool_completion_starts_the_next_thinking_card_immediately(
+    qtbot, tmp_path
+):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+    panel._agent_turn_active = True
+
+    panel._begin_assistant_stream("Thinking")
+    panel._on_notification({
+        "params": {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tool-1",
+                "title": "Run PowerShell",
+            }
+        }
+    })
+    panel._on_notification({
+        "params": {
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tool-1",
+                "title": "Run PowerShell",
+                "status": "completed",
+            }
+        }
+    })
+
+    widget = panel.conversation_view._widgets[-1]
+    assert widget.role == "assistant"
+    assert widget._status == "Thinking"
+    assert widget._streaming is True
+
+    panel._on_notification({
+        "params": {
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "content": {"type": "text", "text": "Inspecting the result."},
+            }
+        }
+    })
+    panel._on_notification({
+        "params": {
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "The next step is complete."},
+            }
+        }
+    })
+
+    assert panel.conversation_view._widgets[-1] is widget
+    assert widget.thinking_body.toPlainText() == "Inspecting the result."
+    assert widget.body.toPlainText() == "The next step is complete."
