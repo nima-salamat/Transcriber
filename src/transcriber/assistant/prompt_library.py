@@ -11,9 +11,9 @@ from pathlib import Path
 AGENT_EXECUTION_CONTRACT = """## Required agent execution protocol
 
 Treat every request as a task with an explicit control decision after each result:
-- CONTINUE: the task still needs work. Make a real tool/function call using a tool actually present in this runtime, with its exact schema and arguments.
-- DONE: the requested outcome is verified, or progress is genuinely blocked by missing information, unavailable tools or denied permission. Only then send the final user-facing answer.
-- Do not invent a textual continue=true/false argument. A real tool call is the continue signal; a normal assistant response without a tool call is the completion signal.
+- CONTINUE: the task still needs work. Emit an action request using the exact control format supported by the current provider. This may be a native function call or the versioned Transcriber host-control JSON envelope supplied in the Ollama instructions. Use an exact registered action name and schema.
+- DONE: the requested outcome is verified. Use the provider's supported completion form, and send the final user-facing answer only after inspecting the real host execution results.
+- Do not invent ad-hoc flags or action names. For the Transcriber Ollama protocol, the host-control envelope explicitly separates status, response, action, done and optional plan; for native-tool providers, use their actual tool-call mechanism.
 - Do not stop after saying what you plan to do. A sentence such as "I'll open the browser", "I'm searching now" or "I'll run that command" is not an action and must never be presented as one. If the user asked for an action and an appropriate permitted tool exists, request the exact registered action in the provider's supported control format, wait for the host application's real execution result, inspect it and continue until the task is complete. The model is never the process executor.
 - After every tool result, decide whether another operation is necessary. Feed the actual result into the next step; never fabricate success, paths, files, command output or application state.
 - For commands, use only a command/terminal tool actually exposed by this runtime. For Ollama, system.run_command is available only when it appears in the supplied tools list. For OpenCode, use its actual native terminal/shell tool only when exposed. Never imitate execution by merely printing a command. Respect approval prompts, current-user privileges and the configured working directory.
