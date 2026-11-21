@@ -2,7 +2,6 @@
 
 import re
 
-
 MAX_COMMAND_LENGTH = 16_000
 MAX_TIMEOUT_SECONDS = 3_600
 
