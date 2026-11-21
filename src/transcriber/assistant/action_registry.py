@@ -58,7 +58,12 @@ class ActionRegistry:
         trusted_permissions: set[AgentPermission] | frozenset[AgentPermission] | None = None,
     ):
         self.permissions = set(DEFAULT_PERMISSIONS if permissions is None else permissions)
-        self.trusted_permissions = set(trusted_permissions or ())
+        # Only Browser control may be configured as a persistent trust grant.
+        # Shell, desktop and destructive operations always require confirmation.
+        self.trusted_permissions = {
+            permission for permission in (trusted_permissions or ())
+            if permission == AgentPermission.BROWSER_CONTROL
+        }
         self.dispatcher = dispatcher or _direct_dispatch
         self.approval_dispatcher = approval_dispatcher or self.dispatcher
         self.approval = approval
@@ -78,9 +83,12 @@ class ActionRegistry:
         for item in values:
             row = item.public_schema()
             row["enabled"] = item.permission in self.permissions
+            browser_is_trusted = (
+                item.permission == AgentPermission.BROWSER_CONTROL
+                and AgentPermission.BROWSER_CONTROL in self.trusted_permissions
+            )
             row["requires_approval"] = bool(
-                item.destructive
-                or (item.requires_approval and item.permission not in self.trusted_permissions)
+                item.destructive or (item.requires_approval and not browser_is_trusted)
             )
             if include_disabled or row["enabled"]:
                 result.append(row)
@@ -121,9 +129,11 @@ class ActionRegistry:
         # Destructive actions always require an individual approval. For other
         # actions, the user may persistently trust a capability such as browser
         # control from Assistant settings.
-        approval_required = spec.destructive or (
-            spec.requires_approval and spec.permission not in self.trusted_permissions
+        browser_is_trusted = (
+            spec.permission == AgentPermission.BROWSER_CONTROL
+            and AgentPermission.BROWSER_CONTROL in self.trusted_permissions
         )
+        approval_required = spec.destructive or (spec.requires_approval and not browser_is_trusted)
         if approval_required:
             if self.approval is None:
                 raise PermissionDenied("This operation requires explicit user approval")
@@ -163,7 +173,11 @@ class ActionRegistry:
             self.permissions.discard(permission)
 
     def set_trusted_permission(self, permission: AgentPermission, enabled: bool) -> None:
-        """Persistently trust a permission category for non-destructive actions."""
+        """Persistently trust browser interactions; never bypass shell/destructive prompts."""
+        if permission != AgentPermission.BROWSER_CONTROL:
+            if enabled:
+                raise ValueError("Persistent trust is available only for browser control.")
+            return
         if enabled:
             self.trusted_permissions.add(permission)
         else:
