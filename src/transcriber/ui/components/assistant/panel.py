@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 
 from transcriber.assistant.chat_sessions import ChatSessionStore
 from transcriber.assistant.ollama_client import OllamaClient
-from transcriber.assistant.permissions import AgentPermission, DEFAULT_PERMISSIONS
+from transcriber.assistant.permissions import DEFAULT_PERMISSIONS, AgentPermission
 from transcriber.assistant.prompt_library import PromptLibrary
 from transcriber.assistant.skills import AgentSkillManager
 from transcriber.opencode.acp_client import OpenCodeACPClient
