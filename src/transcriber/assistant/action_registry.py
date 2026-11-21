@@ -55,8 +55,10 @@ class ActionRegistry:
         dispatcher: Callable[[Callable, dict[str, Any]], Any] | None = None,
         approval: Callable[[ActionSpec, dict[str, Any]], bool] | None = None,
         approval_dispatcher: Callable[[Callable, dict[str, Any]], Any] | None = None,
+        trusted_permissions: set[AgentPermission] | frozenset[AgentPermission] | None = None,
     ):
         self.permissions = set(DEFAULT_PERMISSIONS if permissions is None else permissions)
+        self.trusted_permissions = set(trusted_permissions or ())
         self.dispatcher = dispatcher or _direct_dispatch
         self.approval_dispatcher = approval_dispatcher or self.dispatcher
         self.approval = approval
@@ -76,6 +78,10 @@ class ActionRegistry:
         for item in values:
             row = item.public_schema()
             row["enabled"] = item.permission in self.permissions
+            row["requires_approval"] = bool(
+                item.destructive
+                or (item.requires_approval and item.permission not in self.trusted_permissions)
+            )
             if include_disabled or row["enabled"]:
                 result.append(row)
         return result
@@ -112,7 +118,13 @@ class ActionRegistry:
             raise ValueError(f"Missing required arguments: {', '.join(missing)}")
         if spec.destructive and AgentPermission.DESTRUCTIVE_ACTIONS not in self.permissions:
             raise PermissionDenied("Destructive Agent permission is disabled")
-        if spec.destructive or spec.requires_approval:
+        # Destructive actions always require an individual approval. For other
+        # actions, the user may persistently trust a capability such as browser
+        # control from Assistant settings.
+        approval_required = spec.destructive or (
+            spec.requires_approval and spec.permission not in self.trusted_permissions
+        )
+        if approval_required:
             if self.approval is None:
                 raise PermissionDenied("This operation requires explicit user approval")
             def approval_callback(payload):
@@ -149,3 +161,10 @@ class ActionRegistry:
             self.permissions.add(permission)
         else:
             self.permissions.discard(permission)
+
+    def set_trusted_permission(self, permission: AgentPermission, enabled: bool) -> None:
+        """Persistently trust a permission category for non-destructive actions."""
+        if enabled:
+            self.trusted_permissions.add(permission)
+        else:
+            self.trusted_permissions.discard(permission)
