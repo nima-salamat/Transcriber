@@ -643,6 +643,7 @@ def test_conversation_messages_expand_a_little_on_wide_desktops(qtbot):
     assert all(widget.maximumWidth() == 1120 for widget in view._widgets)
     assert all(widget.width() <= view.scroll_area.viewport().width() for widget in view._widgets)
 
+
 def test_agent_permissions_and_remembered_browser_approval_are_persistent(qtbot, tmp_path):
     from transcriber.assistant.action_registry import ActionRegistry
     from transcriber.assistant.permissions import AgentPermission
@@ -670,6 +671,9 @@ def test_agent_permissions_and_remembered_browser_approval_are_persistent(qtbot,
     panel.agent_trust_browser_check.setChecked(True)
     assert settings_store.settings.agent_trusted_permissions == ["browser_control"]
     assert AgentPermission.BROWSER_CONTROL in registry.trusted_permissions
+    reloaded_settings = SettingsStore(tmp_path / "settings.json")
+    reloaded_settings.load()
+    assert reloaded_settings.settings.agent_trusted_permissions == ["browser_control"]
 
     browser_permission.setChecked(False)
     assert "browser_control" not in settings_store.settings.agent_permissions
