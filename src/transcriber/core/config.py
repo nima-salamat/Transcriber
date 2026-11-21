@@ -51,6 +51,10 @@ class AppSettings:
     # Incremented by validate() after one-time permission migrations. Keeping
     # it persisted allows users to intentionally disable shell access later.
     agent_permissions_version: int = 1
+    # Capability groups that may skip per-action confirmations. Kept deliberately
+    # narrow: browser interactions can be trusted, but shell and destructive
+    # actions always retain explicit confirmation.
+    agent_trusted_permissions: list[str] = field(default_factory=list)
     wake_phrase: str = "transcriber"
     wake_model_directory: str | None = None
     wake_enabled: bool = False
@@ -180,6 +184,16 @@ class AppSettings:
             str(value) for value in raw_permissions if str(value) in valid_permissions
         ))
         self.agent_permissions_version = permission_version
+        raw_trusted = (
+            self.agent_trusted_permissions
+            if isinstance(self.agent_trusted_permissions, list) else []
+        )
+        # Persistent auto-approval is intentionally restricted to browser
+        # interactions. PowerShell, desktop and destructive actions continue
+        # to ask for confirmation even when their capability is enabled.
+        self.agent_trusted_permissions = list(dict.fromkeys(
+            str(value) for value in raw_trusted if str(value) == "browser_control"
+        ))
         self.wake_model_directory = str(self.wake_model_directory) if self.wake_model_directory else None
         self.local_only = as_bool(self.local_only, True)
         self.cloud_consent = as_bool(self.cloud_consent, False)
