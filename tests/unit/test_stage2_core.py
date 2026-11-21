@@ -435,7 +435,9 @@ def test_settings_agent_permissions_are_validated_and_default_safe(tmp_path):
 
     store = SettingsStore(tmp_path / "settings.json")
     store.load()
-    assert set(store.settings.agent_permissions) == {"read_only", "edit_content"}
+    assert set(store.settings.agent_permissions) == {
+        "read_only", "edit_content", "command_execution"
+    }
     store.update(agent_permissions=["read_only", "not-a-permission", "destructive_actions"])
     assert store.settings.agent_permissions == ["read_only", "destructive_actions"]
 
@@ -468,3 +470,53 @@ def test_packaged_mcp_entrypoint_does_not_import_qt(monkeypatch):
     assert app_entry.main() == 17
     assert called == ["mcp"]
     assert attempted_qt_imports == []
+
+
+
+def test_command_execution_permission_always_requires_gui_approval_callback():
+    from transcriber.assistant.permissions import DEFAULT_PERMISSIONS
+
+    calls = []
+    approvals = []
+    registry = ActionRegistry(
+        permissions=set(DEFAULT_PERMISSIONS),
+        approval=lambda spec, args: approvals.append((spec.name, args["command"])) or True,
+    )
+    registry.register(ActionSpec(
+        "system.run_command",
+        "Run PowerShell after explicit user approval.",
+        AgentPermission.COMMAND_EXECUTION,
+        lambda args: calls.append(args["command"]) or {"exit_code": 0},
+        required=("command",),
+        requires_approval=True,
+        background=True,
+    ))
+
+    assert registry.execute("system.run_command", {"command": "Get-Location"}) == {
+        "exit_code": 0
+    }
+    assert approvals == [("system.run_command", "Get-Location")]
+    assert calls == ["Get-Location"]
+
+
+def test_command_execution_is_never_run_when_gui_approval_is_denied():
+    calls = []
+    approvals = []
+    registry = ActionRegistry(
+        permissions={AgentPermission.READ_ONLY, AgentPermission.COMMAND_EXECUTION},
+        approval=lambda spec, args: approvals.append(spec.name) or False,
+    )
+    registry.register(ActionSpec(
+        "system.run_command",
+        "Run PowerShell after explicit user approval.",
+        AgentPermission.COMMAND_EXECUTION,
+        lambda args: calls.append(args),
+        required=("command",),
+        requires_approval=True,
+        background=True,
+    ))
+
+    with pytest.raises(PermissionDenied, match="user denied"):
+        registry.execute("system.run_command", {"command": "Get-Location"})
+    assert approvals == ["system.run_command"]
+    assert calls == []

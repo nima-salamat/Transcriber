@@ -46,7 +46,7 @@ class AppSettings:
     opencode_project_directory: str | None = None
     opencode_session_id: str | None = None
     agent_permissions: list[str] = field(default_factory=lambda: [
-        "read_only", "edit_content"
+        "read_only", "edit_content", "command_execution"
     ])
     wake_phrase: str = "transcriber"
     wake_model_directory: str | None = None
@@ -151,17 +151,21 @@ class AppSettings:
         raw_permissions = (
             self.agent_permissions
             if isinstance(self.agent_permissions, list)
-            else ["read_only", "edit_content"]
+            else ["read_only", "edit_content", "command_execution"]
         )
-        # Previous releases silently enabled desktop, browser and shell access
-        # on first run. Treat that exact legacy default as implicit, not as
-        # an explicit user grant, and migrate it to the least-privilege set.
+        # Desktop and browser automation remain opt-in. PowerShell is exposed
+        # by default only because every individual command has a mandatory
+        # foreground confirmation dialog in MainWindow._approve_agent_action.
+        # Migrate both the pre-hardening defaults and the temporary minimal
+        # defaults so existing installs do not get stuck before that dialog.
         legacy_implicit = {
             "read_only", "edit_content", "desktop_control",
             "browser_control", "command_execution",
         }
-        if len(raw_permissions) == len(legacy_implicit) and set(raw_permissions) == legacy_implicit:
-            raw_permissions = ["read_only", "edit_content"]
+        if set(raw_permissions) == legacy_implicit:
+            raw_permissions = ["read_only", "edit_content", "command_execution"]
+        elif set(raw_permissions) == {"read_only", "edit_content"}:
+            raw_permissions = ["read_only", "edit_content", "command_execution"]
         self.agent_permissions = list(dict.fromkeys(
             str(value) for value in raw_permissions if str(value) in valid_permissions
         ))

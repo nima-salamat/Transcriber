@@ -21,6 +21,10 @@ class AgentPermission(StrEnum):
 DEFAULT_PERMISSIONS = frozenset({
     AgentPermission.READ_ONLY,
     AgentPermission.EDIT_CONTENT,
+    # Command execution is a usable capability, never silent authorization:
+    # system.run_command is marked requires_approval and opens a GUI prompt
+    # for every invocation before PowerShell is launched.
+    AgentPermission.COMMAND_EXECUTION,
 })
 
 
