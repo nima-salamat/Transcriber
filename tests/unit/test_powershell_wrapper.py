@@ -1,4 +1,7 @@
-from transcriber.assistant.powershell import (\n    build_powershell_script,\n    requires_destructive_permission,\n)
+from transcriber.assistant.powershell import (
+    build_powershell_script,
+    requires_destructive_permission,
+)
 
 
 def test_powershell_wrapper_propagates_native_exit_code_and_catches_errors():
