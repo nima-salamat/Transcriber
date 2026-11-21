@@ -913,7 +913,6 @@ class AssistantProviderMixin:
         agent_enabled = bool(self.agent_mode_check.isChecked() and self._action_registry is not None)
         tools = OllamaAgent.tools_for_registry(self._action_registry) if agent_enabled else []
         tool_names = [item["function"]["name"] for item in tools]
-        browser_search_request = OllamaAgent.is_browser_search_request(prompt)
         # A read-only browser fallback may help when that exact tool is enabled,
         # but a missing browser permission must never suppress other tool families.
         fallback_tool_call = OllamaAgent.infer_browser_search_tool(prompt, tool_names)
@@ -1190,7 +1189,6 @@ class AssistantProviderMixin:
             action_names = [str(item.get("name") or "") for item in action_rows]
         except Exception:
             action_names = []
-        browser_search_request = OllamaAgent.is_browser_search_request(prompt)
         # This fallback is optional and browser-specific. Its absence must not
         # prevent OpenCode from using its separately exposed native tools.
         browser_fallback = OllamaAgent.infer_browser_search_tool(prompt, action_names)
