@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from transcriber.assistant.agent_protocol import PROTOCOL_ID
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
+from transcriber.assistant.agent_protocol import PROTOCOL_ID
 from transcriber.assistant.ollama_agent import OllamaAgent
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
 

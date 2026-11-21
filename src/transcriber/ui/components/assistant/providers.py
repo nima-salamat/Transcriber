@@ -1348,7 +1348,6 @@ class AssistantProviderMixin:
             raw_status = str(update.get("status") or "running")
             normalized = raw_status.casefold()
             title = str(update.get("title") or update.get("toolCallId") or "Workspace tool")
-            event_id = str(update.get("toolCallId") or title)
             payload_text = json.dumps(update, ensure_ascii=False, default=str).casefold()
             is_execution_tool = any(marker in payload_text for marker in (
                 "app_execute_action", "app.execute_action", "browser.search",

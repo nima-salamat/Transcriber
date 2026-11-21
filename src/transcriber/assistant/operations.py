@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
+
 class OperationState(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
