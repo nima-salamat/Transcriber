@@ -9,6 +9,7 @@ import pytest
 
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.permissions import AgentPermission, PermissionDenied
+from transcriber.core.config import SettingsStore
 from transcriber.assistant.voice_controller import VoiceAgentController, VoiceState
 from transcriber.audio.processing import build_filter_chain, process_audio
 from transcriber.audio.waveform import build_waveform
@@ -431,8 +432,6 @@ def test_agent_destructive_action_requires_permission_and_user_approval():
 
 
 def test_settings_agent_permissions_are_validated_and_default_safe(tmp_path):
-    from transcriber.core.config import SettingsStore
-
     store = SettingsStore(tmp_path / "settings.json")
     store.load()
     assert set(store.settings.agent_permissions) == {
