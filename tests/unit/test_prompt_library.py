@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from transcriber.assistant.prompt_library import (
-    LEGACY_DEFAULT_PROMPTS,
     LEGACY_DEFAULT_PROMPT_VERSIONS,
+    LEGACY_DEFAULT_PROMPTS,
     PromptLibrary,
 )
 
