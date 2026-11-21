@@ -423,6 +423,12 @@ def test_agent_execution_contract_explains_continue_and_async_completion():
     assert "app_get_operation_status" in AGENT_EXECUTION_CONTRACT
     assert "queued" in AGENT_EXECUTION_CONTRACT
     assert "completed" in AGENT_EXECUTION_CONTRACT
+    assert "general-purpose PowerShell" in AGENT_EXECUTION_CONTRACT
+    assert "system.run_command" in AGENT_EXECUTION_CONTRACT
+    assert "Ollama" in AGENT_EXECUTION_CONTRACT
+    assert "OpenCode" in AGENT_EXECUTION_CONTRACT
+    assert "Destructive actions" in AGENT_EXECUTION_CONTRACT
+    assert "never use a separate shell to evade" in AGENT_EXECUTION_CONTRACT
 
 
 def test_consecutive_helper_events_share_one_collapsed_details_card(qtbot):
@@ -719,3 +725,44 @@ def test_opencode_stop_bypasses_a_saturated_shared_worker_pool(qtbot, tmp_path):
     assert not panel.stop_button.isEnabled()
     assert panel.activity_label.text() == "Stopping…"
 
+
+
+
+def test_opencode_prompt_context_exposes_general_powershell_only_when_permission_is_enabled(
+    qtbot, tmp_path
+):
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    panel = AssistantPanel(
+        SimpleNamespace(config=tmp_path, models=tmp_path),
+        QThreadPool(),
+    )
+    qtbot.addWidget(panel)
+
+    class Registry:
+        enabled = True
+
+        def describe(self, *, include_disabled=False):
+            return [{
+                "name": "system.run_command",
+                "description": "Run PowerShell.",
+                "required": ["command"],
+                "permission": "command_execution",
+                "requires_approval": True,
+                "destructive": False,
+                "enabled": self.enabled,
+            }]
+
+    registry = Registry()
+    panel._action_registry = registry
+    enabled_context = panel._mcp_action_context()
+    assert "system.run_command" in enabled_context
+    assert "general-purpose PowerShell" in enabled_context
+    assert "app_execute_action" in enabled_context
+    assert "timeout_seconds" in enabled_context
+
+    registry.enabled = False
+    disabled_context = panel._mcp_action_context()
+    assert "PowerShell is unavailable" in disabled_context
+    assert "Run PowerShell commands" in disabled_context
+    assert "bypass" in disabled_context
