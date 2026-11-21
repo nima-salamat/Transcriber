@@ -185,11 +185,11 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "parameters": {"type": "object", "properties": {}},
     },
     "system.run_command": {
-        "description": "Run a custom PowerShell command for local Windows, filesystem, repository, development, build, test, package or process tasks. The Python host validates it, requests the required approval and executes it as the current Windows user; the model never runs shell commands. No elevation; output and runtime are bounded.",
+        "description": "General-purpose PowerShell executor for any valid command or script that the current Windows account can run: inspect or modify files, folders and processes; work with repositories; run programs, builds, tests and package managers; diagnose or configure Windows; and perform other command-line tasks. This is not a browser tool or a fixed preset list. The Python host shows the full command and requires user approval before execution. Known destructive/system-changing operations additionally require the Destructive actions permission. PowerShell starts as the current user; normal Windows UAC may appear if a script explicitly launches an elevated child process. Runtime is bounded to one hour and output is capped.",
         "parameters": {"type": "object", "properties": {
-            "command": {"type": "string", "description": "PowerShell command or script"},
-            "cwd": {"type": "string", "description": "Optional existing working directory"},
-            "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 120},
+            "command": {"type": "string", "minLength": 1, "maxLength": 16000, "description": "Any valid PowerShell command or multi-line script. Prefer a complete script for related steps and inspect its real output."},
+            "cwd": {"type": "string", "description": "Optional existing working directory for the command"},
+            "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600, "description": "Execution timeout in seconds; choose a realistic value for builds, tests or downloads."},
         }, "required": ["command"]},
     },
     "agent.skills_search": {
@@ -267,8 +267,8 @@ class OllamaAgent:
         client,
         action_executor: Callable[[str, dict[str, Any]], Any],
         *,
-        max_rounds: int = 6,
-        max_tool_calls: int = 8,
+        max_rounds: int = 10,
+        max_tool_calls: int = 16,
     ):
         self.client = client
         self.action_executor = action_executor
