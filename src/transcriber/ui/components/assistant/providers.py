@@ -121,6 +121,14 @@ class AssistantProviderMixin:
         )
         return context
 
+    def _on_ollama_round_started(self, round_number: int):
+        """Show the next model-thinking stage before waiting for its first token."""
+        if getattr(self, "_shutting_down", False) or getattr(self, "_stop_requested", False):
+            return
+        self._begin_assistant_stream("Thinking")
+        model = str(getattr(self, "_ollama_model", "") or "Ollama")
+        self.activity_label.setText(f"Thinking · {model}")
+
     def _on_ollama_tool_result(self, result):
         """Show tool results inline rather than in a detached activity panel."""
         if not isinstance(result, dict):
@@ -1166,6 +1174,7 @@ class AssistantProviderMixin:
                 fallback_tool_call=fallback_tool_call,
                 on_chunk=emit,
                 on_thinking=self.signals.ollama_thinking.emit,
+                on_round_start=self.signals.ollama_round_started.emit,
                 on_tool_status=self.signals.ollama_tool_status.emit,
                 on_tool_result=self.signals.ollama_tool_result.emit,
             )
@@ -1438,6 +1447,7 @@ class AssistantProviderMixin:
             if thought:
                 self._append_thinking_chunk(thought)
             else:
+                self._begin_assistant_stream("Thinking")
                 self._set_inline_agent_status("Thinking")
         elif kind == "tool_call":
             self._set_inline_agent_status("Working")
@@ -1501,16 +1511,23 @@ class AssistantProviderMixin:
             }.get(normalized, "Working")
             self.activity_label.setText(f"{friendly} · {title}")
             self._set_inline_agent_status(f"{friendly} · {title}")
+            if normalized in {"completed", "complete", "success", "succeeded", "done"}:
+                self._begin_assistant_stream("Thinking")
+                self.activity_label.setText("Thinking · OpenCode")
         elif kind == "current_mode_update":
             mode = str(update.get("currentMode") or "default")
+            if self._streaming_index is None:
+                self._begin_assistant_stream("Thinking")
             self.activity_label.setText(f"Working · {mode}")
-            self._set_inline_agent_status(f"Working · {mode}")
+            self._set_inline_agent_status("Thinking")
         elif kind == "available_commands_update":
             self._set_inline_agent_status("Loaded · Agent tools")
         elif kind in {"session_info_update", "state_update"}:
             self._set_inline_agent_status("Working")
         elif kind == "plan_update":
-            self._set_inline_agent_status("Planning")
+            if self._streaming_index is None:
+                self._begin_assistant_stream("Thinking")
+            self._set_inline_agent_status("Thinking")
         elif kind in {"terminal_update", "terminal_output_chunk", "tool_call_content_chunk"}:
             self._set_inline_agent_status("Working")
 
