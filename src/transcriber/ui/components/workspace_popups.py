@@ -124,6 +124,8 @@ class GlobalSearchPopup(QFrame):
             return
         if self._query.strip() and self._query.strip() not in self._recent:
             self._recent.append(self._query.strip())
+        if self._query.strip() and result.get("kind") == "transcript":
+            result = {**result, "search_query": self._query.strip()}
         self.hide()
         self.result_activated.emit(result)
 

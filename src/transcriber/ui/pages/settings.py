@@ -117,6 +117,7 @@ class SettingsPage(QWidget):
         self.engine.addItem("Faster-Whisper (offline)", "faster-whisper")
         self.engine.addItem("Vosk / Kaldi (offline)", "vosk")
         self.engine.addItem("Google Cloud Speech-to-Text V2 (online)", "google-cloud")
+        self.engine.addItem("Google Web Speech (experimental · no login)", "google-web")
         self.engine.setCurrentIndex(max(0, self.engine.findData(current.default_engine)))
         self.engine.currentIndexChanged.connect(lambda: self._save(default_engine=self.engine.currentData()))
         self.device = QComboBox()
@@ -353,12 +354,18 @@ class SettingsPage(QWidget):
         self.local_only = QCheckBox("Keep recognition local; do not use a cloud engine")
         self.local_only.setChecked(current.local_only)
         self.local_only.toggled.connect(lambda value: self._save(local_only=value))
-        self.cloud_consent = QCheckBox("I understand that cloud recognition sends audio to Google for processing")
+        self.cloud_consent = QCheckBox("I understand that online recognition sends audio to Google for processing")
         self.cloud_consent.setChecked(current.cloud_consent)
         self.cloud_consent.toggled.connect(lambda value: self._save(cloud_consent=value))
         privacy_form.addRow("Local-only mode", self.local_only)
         privacy_form.addRow("Cloud consent", self.cloud_consent)
-        note = QLabel("Telemetry is not implemented. The cloud adapter is never selected automatically and requires consent.")
+        note = QLabel(
+            "Google Cloud Speech-to-Text V2 is the supported API and requires a Google Cloud project, "
+            "billing configuration and Application Default Credentials. Google Web Speech is a separate "
+            "unofficial compatibility endpoint: it uses a shared public Chromium key, needs no account or "
+            "Cloud project, has no reliability or quota guarantee, and may be disabled by Google at any time. "
+            "Both online engines send audio to Google; use the experimental endpoint only for short, non-sensitive audio."
+        )
         note.setWordWrap(True)
         note.setObjectName("Muted")
         privacy_form.addRow("Privacy", note)

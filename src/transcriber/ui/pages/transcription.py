@@ -7,7 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QTextCursor
+from PySide6.QtGui import QColor, QPalette, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSpinBox,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -107,6 +108,15 @@ class TranscriptionPage(QWidget):
         self.engine_combo.addItem("Faster-Whisper · Local", "faster-whisper")
         self.engine_combo.addItem("Vosk / Kaldi · Offline", "vosk")
         self.engine_combo.addItem("Google Cloud STT V2 · Online", "google-cloud")
+        self.engine_combo.addItem(
+            "Google Web Speech · Experimental (no login)", "google-web"
+        )
+        self.engine_combo.setItemData(
+            self.engine_combo.findData("google-web"),
+            "Legacy Chromium-compatible Google endpoint. Shared key, no login, no guarantee; "
+            "audio is sent to Google and requires the Cloud consent switch.",
+            Qt.ToolTipRole,
+        )
         self.engine_combo.setCurrentIndex(max(0, self.engine_combo.findData(self.settings_store.settings.default_engine)))
         self.engine_combo.currentIndexChanged.connect(self._update_engine_controls)
         self.open_button.setToolTip("Import an audio file or a video that contains an audio track.")
@@ -237,7 +247,13 @@ class TranscriptionPage(QWidget):
         self.editor.setPlaceholderText("Your transcript will appear here. You can edit it at any time.")
         self.editor.setTabChangesFocus(True)
         self.editor.setUndoRedoEnabled(False)
+        self._search_highlight_timer = QTimer(self)
+        self._search_highlight_timer.setSingleShot(True)
+        self._search_highlight_timer.setInterval(1800)
+        self._search_highlight_timer.timeout.connect(self._clear_search_highlight)
+        self._search_highlight_range: tuple[int, int] | None = None
         self.editor.textChanged.connect(self._schedule_autosave)
+        self.editor.textChanged.connect(self._clear_search_highlight)
         editor_layout.addWidget(self.editor, 1)
         footer = QHBoxLayout()
         self.word_count = QLabel("0 words · 0 characters")
@@ -330,30 +346,40 @@ class TranscriptionPage(QWidget):
 
     def _update_engine_controls(self, *_args):
         engine_id = self.engine_combo.currentData()
-        cloud_selected = engine_id == "google-cloud"
+        google_cloud_selected = engine_id == "google-cloud"
+        google_web_selected = engine_id == "google-web"
+        online_selected = google_cloud_selected or google_web_selected
         vosk_selected = engine_id == "vosk"
         if hasattr(self, "model_combo"):
             self.refresh_models()
-        self.model_combo.setEnabled(not cloud_selected)
+        self.model_combo.setEnabled(not online_selected)
         if hasattr(self, "default_model_button"):
-            self.default_model_button.setVisible(not cloud_selected and not vosk_selected)
+            self.default_model_button.setVisible(not online_selected and not vosk_selected)
             self._update_default_model_control()
-        self.beam_spin.setEnabled(not cloud_selected and not vosk_selected)
-        self.vad_check.setEnabled(not cloud_selected and not vosk_selected)
-        self.task_combo.setEnabled(not cloud_selected and not vosk_selected)
-        self.initial_prompt.setEnabled(not cloud_selected and not vosk_selected)
-        if (cloud_selected or vosk_selected) and self.task_combo.currentData() != "transcribe":
+        self.beam_spin.setEnabled(not online_selected and not vosk_selected)
+        self.vad_check.setEnabled(not online_selected and not vosk_selected)
+        self.task_combo.setEnabled(not online_selected and not vosk_selected)
+        self.initial_prompt.setEnabled(not online_selected and not vosk_selected)
+        self.word_timestamps.setEnabled(not google_web_selected)
+        if (online_selected or vosk_selected) and self.task_combo.currentData() != "transcribe":
             self.task_combo.setCurrentIndex(self.task_combo.findData("transcribe"))
         if hasattr(self, "start_button"):
             self.start_button.setText(
-                "Send audio to Google Cloud" if cloud_selected
+                "Send audio to Google Cloud" if google_cloud_selected
+                else "Send audio to Google Web Speech" if google_web_selected
                 else "Start Vosk transcription" if vosk_selected
                 else "Start offline transcription"
             )
         self.engine_privacy_hint.setText(
-            "Online processing: audio is sent to Google Cloud Speech-to-Text V2. A project ID, "
-            "Application Default Credentials and explicit Cloud consent are required. Choose a specific language."
-            if cloud_selected else
+            "Supported online processing: audio is sent to Google Cloud Speech-to-Text V2. "
+            "A project ID, Application Default Credentials and explicit Cloud consent are required. "
+            "Choose a specific language."
+            if google_cloud_selected else
+            "Experimental compatibility mode: audio is sent to Google's legacy Web Speech endpoint "
+            "over HTTPS using a shared public Chromium key. No account or Cloud project is needed, "
+            "but Google may rate-limit or disable the endpoint at any time. It provides chunk-level "
+            "timing only. Use only for short, non-sensitive audio and choose a specific language."
+            if google_web_selected else
             "Local processing: Vosk / Kaldi runs offline using the selected Vosk model. No audio is uploaded."
             if vosk_selected else
             "Local processing: Faster-Whisper runs on this device. Audio is not uploaded by this engine."
@@ -374,6 +400,11 @@ class TranscriptionPage(QWidget):
         )
         self.model_combo.blockSignals(True)
         self.model_combo.clear()
+        if selected_engine in {"google-cloud", "google-web"}:
+            self.model_combo.addItem("Managed by Google · no local model required", None)
+            self.model_combo.blockSignals(False)
+            self._update_default_model_control()
+            return
         installed = self.model_manager.installed(include_sizes=False)
         target_runtime = "vosk" if selected_engine == "vosk" else "faster-whisper"
         models = sorted(
@@ -435,7 +466,7 @@ class TranscriptionPage(QWidget):
             else self.settings_store.settings.default_model
         )
         is_default = bool(selected and selected == configured_default)
-        cloud_selected = selected_engine == "google-cloud"
+        cloud_selected = selected_engine in {"google-cloud", "google-web"}
         vosk_selected = selected_engine == "vosk"
         self.default_model_button.setVisible(not cloud_selected and not vosk_selected)
         self.default_model_button.setText("★  Default model" if is_default else "Set as default")
@@ -541,29 +572,31 @@ class TranscriptionPage(QWidget):
         engine_id = self.engine_combo.currentData()
         repo_id = self.model_combo.currentData()
         configured = self.settings_store.settings
-        cloud_selected = engine_id == "google-cloud"
+        google_cloud_selected = engine_id == "google-cloud"
+        google_web_selected = engine_id == "google-web"
+        online_selected = google_cloud_selected or google_web_selected
         vosk_selected = engine_id == "vosk"
-        if not cloud_selected and not repo_id:
+        if not online_selected and not repo_id:
             QMessageBox.information(
                 self, "Model required",
                 "Install a compatible Vosk or Faster-Whisper model for the selected engine in Model Library first.",
             )
             return
-        if cloud_selected:
+        if online_selected:
             if configured.local_only or not configured.cloud_consent:
                 QMessageBox.warning(
-                    self, "Cloud recognition is disabled",
-                    "Audio will be sent to Google Cloud. Disable Local-only mode and explicitly grant Cloud consent in Settings before starting this job.",
+                    self, "Online recognition is disabled",
+                    "This engine sends the selected audio to Google. Disable Local-only mode and explicitly grant online audio consent in Settings before starting this job.",
                 )
                 return
             if self.language_combo.currentData() == "auto":
                 QMessageBox.information(
-                    self, "Choose a Cloud language",
-                    "Google Cloud Speech-to-Text V2 requires an explicit language for this workflow. Choose a language instead of Auto detect.",
+                    self, "Choose a language",
+                    "Google's online recognition endpoints require an explicit language. Choose a language instead of Auto detect.",
                 )
                 return
         language = None if self.language_combo.currentData() == "auto" else self.language_combo.currentData()
-        if cloud_selected:
+        if google_cloud_selected:
             language = {
                 "en": "en-US", "fa": "fa-IR", "de": "de-DE", "fr": "fr-FR",
                 "es": "es-ES", "ar": "ar-SA", "ru": "ru-RU", "zh": "cmn-Hans-CN",
@@ -571,14 +604,14 @@ class TranscriptionPage(QWidget):
             }.get(language, language)
         options = TranscriptionOptions(
             language=language,
-            task="transcribe" if cloud_selected or vosk_selected else self.task_combo.currentData(),
+            task="transcribe" if online_selected or vosk_selected else self.task_combo.currentData(),
             beam_size=self.beam_spin.value(),
             vad_filter=self.vad_check.isChecked(),
             word_timestamps=self.word_timestamps.isChecked(),
-            initial_prompt=None if cloud_selected or vosk_selected else self.initial_prompt.text().strip() or None,
+            initial_prompt=None if online_selected or vosk_selected else self.initial_prompt.text().strip() or None,
         )
         changes = {"word_timestamps": self.word_timestamps.isChecked()}
-        if not cloud_selected and not vosk_selected:
+        if not online_selected and not vosk_selected:
             # Picking a model for this one job must not silently change the
             # separately configured default model.
             changes.update(beam_size=self.beam_spin.value(), vad_filter=self.vad_check.isChecked())
@@ -591,10 +624,11 @@ class TranscriptionPage(QWidget):
         self.progress.setValue(0)
         self.progress.setVisible(True)
         self.progress_label.setText(
-            "Preparing local recognition engine…" if not cloud_selected
-            else "Preparing local audio chunks for Google Cloud…"
+            "Preparing local recognition engine…" if not online_selected
+            else "Preparing local audio chunks for Google Cloud…" if google_cloud_selected
+            else "Preparing audio chunks for Google Web Speech…"
         )
-        model_id = repo_id if not cloud_selected else None
+        model_id = repo_id if not online_selected else None
         worker = FunctionWorker(lambda emit: self._run_transcription(
             emit, configured, engine_id, repo_id, audio_path, options, cancel_event, model_id
         ))
@@ -616,15 +650,19 @@ class TranscriptionPage(QWidget):
                 emit((0.0, f"Video contains {media_info.audio_stream_count} audio tracks · using the first track"))
             else:
                 emit((0.0, "Reading the video's audio track for transcription…"))
-        if engine_id == "google-cloud":
+        if engine_id in {"google-cloud", "google-web"}:
             self.model_manager.unload_active()
-            from transcriber.engines.cloud import GoogleCloudEngine
-            engine = GoogleCloudEngine(
-                consent_granted=True,
-                project_id=configured.google_cloud_project or None,
-                location=configured.google_cloud_location,
-                model=configured.google_cloud_model,
-            )
+            if engine_id == "google-cloud":
+                from transcriber.engines.cloud import GoogleCloudEngine
+                engine = GoogleCloudEngine(
+                    consent_granted=True,
+                    project_id=configured.google_cloud_project or None,
+                    location=configured.google_cloud_location,
+                    model=configured.google_cloud_model,
+                )
+            else:
+                from transcriber.engines.google_web import GoogleWebSpeechEngine
+                engine = GoogleWebSpeechEngine(consent_granted=True)
         else:
             engine = self.model_manager.get_engine(repo_id, configured)
         service = TranscriptionService(engine, self.history)
@@ -636,7 +674,7 @@ class TranscriptionPage(QWidget):
             )
             return engine, result
         finally:
-            if engine_id == "google-cloud":
+            if engine_id in {"google-cloud", "google-web"}:
                 engine.unload()
 
     def cancel_transcription(self):
@@ -644,7 +682,7 @@ class TranscriptionPage(QWidget):
             self.cancel_event.set()
             message = (
                 "Cancellation requested · waiting for the current Google request"
-                if self._job_engine_id == "google-cloud"
+                if self._job_engine_id in {"google-cloud", "google-web"}
                 else "Cancelling…"
             )
             self.progress_label.setText(message)
@@ -967,14 +1005,73 @@ class TranscriptionPage(QWidget):
             self.export_button.setEnabled(not self.is_busy and bool(text.strip()))
 
     def find_next(self):
-        query = self.search_input.text()
+        query = self.search_input.text().strip()
         if not query:
-            return
-        if not self.editor.find(query):
+            self._clear_search_highlight()
+            return False
+        found = self.editor.find(query)
+        if not found:
             cursor = self.editor.textCursor()
             cursor.movePosition(QTextCursor.MoveOperation.Start)
             self.editor.setTextCursor(cursor)
-            self.editor.find(query)
+            found = self.editor.find(query)
+        if not found:
+            self._clear_search_highlight()
+            self.status_message.emit(f"No matches found for “{query}”")
+            return False
+        self.editor.ensureCursorVisible()
+        self._show_search_highlight(self.editor.textCursor())
+        return True
+
+    def find_text(self, query: str) -> bool:
+        """Navigate to the first match, used by the global transcript search."""
+        value = str(query or "").strip()
+        if not value:
+            return False
+        self.search_input.setText(value)
+        cursor = self.editor.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.Start)
+        self.editor.setTextCursor(cursor)
+        return self.find_next()
+
+    def _show_search_highlight(self, cursor: QTextCursor):
+        self._search_highlight_timer.stop()
+        if not cursor.hasSelection():
+            self._clear_search_highlight()
+            return
+        selection = QTextEdit.ExtraSelection()
+        selection.cursor = QTextCursor(cursor)
+        self._search_highlight_range = (cursor.selectionStart(), cursor.selectionEnd())
+        formatting = QTextCharFormat()
+        accent = QColor(self.editor.palette().color(QPalette.ColorRole.Highlight))
+        accent.setAlpha(135)
+        formatting.setBackground(accent)
+        formatting.setForeground(
+            self.editor.palette().color(QPalette.ColorRole.HighlightedText)
+        )
+        selection.format = formatting
+        self.editor.setExtraSelections([selection])
+        self._search_highlight_timer.start()
+
+    def _clear_search_highlight(self):
+        timer = getattr(self, "_search_highlight_timer", None)
+        if timer is not None:
+            timer.stop()
+        editor = getattr(self, "editor", None)
+        target_range = self._search_highlight_range
+        self._search_highlight_range = None
+        if editor is not None:
+            current = editor.textCursor()
+            if (
+                target_range is not None
+                and current.hasSelection()
+                and (current.selectionStart(), current.selectionEnd()) == target_range
+            ):
+                # The extra selection is transient; collapse only our own native
+                # text selection so the highlight disappears when its timer ends.
+                current.setPosition(current.selectionEnd())
+                editor.setTextCursor(current)
+            editor.setExtraSelections([])
 
     def replace_selected(self):
         cursor = self.editor.textCursor()

@@ -215,7 +215,7 @@ class AppSettings:
         self.cpu_threads = max(0, min(int(self.cpu_threads), 256))
         self.beam_size = max(1, min(int(self.beam_size), 20))
         self.download_concurrency = max(1, min(int(self.download_concurrency), 4))
-        if self.default_engine not in {"faster-whisper", "google-cloud", "vosk"}:
+        if self.default_engine not in {"faster-whisper", "google-cloud", "google-web", "vosk"}:
             self.default_engine = "faster-whisper"
 
 

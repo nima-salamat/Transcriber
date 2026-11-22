@@ -15,7 +15,7 @@ from concurrent.futures import CancelledError, Future
 from pathlib import Path
 from threading import Event
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QThread, QThreadPool, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, QPointF, QSize, Qt, QThread, QThreadPool, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QAction,
     QDesktopServices,
@@ -23,9 +23,13 @@ from PySide6.QtGui import (
     QDropEvent,
     QKeySequence,
     QShortcut,
+    QWheelEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractItemView,
+    QAbstractSpinBox,
+    QComboBox,
     QDockWidget,
     QFrame,
     QHBoxLayout,
@@ -35,6 +39,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
@@ -194,6 +199,7 @@ class MainWindow(QMainWindow):
             dispatcher=self.dispatcher, approval=self._approve_agent_action,
         )
         self._waveform_generation = 0
+        self._pending_global_search: tuple[str, str] | None = None
         self._shutdown_started = False
         self._shutdown_complete = False
         self._active_agent_approval: QMessageBox | None = None
@@ -207,6 +213,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(760, 500)
         self.setAcceptDrops(True)
         self._build_ui()
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
         self._connect_pages()
         self._register_agent_actions()
         self.assistant_panel.set_agent_runtime(self.action_registry)
@@ -891,7 +900,11 @@ class MainWindow(QMainWindow):
             return
         kind = result.get("kind")
         if kind == "transcript":
-            self.open_transcript(str(result["id"]))
+            transcript_id = str(result["id"])
+            query = str(result.get("search_query") or "").strip()
+            self._pending_global_search = (transcript_id, query) if query else None
+            if not self.open_transcript(transcript_id):
+                self._pending_global_search = None
         elif kind == "page":
             self.navigate(str(result["id"]))
         elif kind == "command":
@@ -918,6 +931,60 @@ class MainWindow(QMainWindow):
             popup.reposition()
 
     def eventFilter(self, watched, event):
+        # A wheel over a numeric control or dropdown must not change its value;
+        # the user's gesture should remain a page-scroll gesture.
+        if (
+            event.type() == QEvent.Type.Wheel
+            and isinstance(watched, QWidget)
+            and watched.window() is self
+        ):
+            ancestors = []
+            current = watched
+            while current is not None:
+                ancestors.append(current)
+                current = current.parentWidget()
+
+            # A combo's popup list is a separate interaction surface and remains
+            # scrollable/selectable; only the closed control itself is guarded.
+            inside_popup_list = any(
+                isinstance(widget, QAbstractItemView) for widget in ancestors
+            )
+            guarded_control = (
+                not inside_popup_list
+                and any(
+                    isinstance(widget, (QAbstractSpinBox, QComboBox, QSlider))
+                    for widget in ancestors
+                )
+            )
+            if guarded_control:
+                # Forward the same wheel gesture to the nearest scroll viewport.
+                # The input control never sees it, so its value cannot change,
+                # while a surrounding settings/page scroll area still moves.
+                scroll_area = next(
+                    (widget for widget in ancestors if isinstance(widget, QScrollArea)),
+                    None,
+                )
+                if scroll_area is not None:
+                    viewport = scroll_area.viewport()
+                    global_position = event.globalPosition()
+                    local_position = QPointF(
+                        viewport.mapFromGlobal(global_position.toPoint())
+                    )
+                    forwarded = QWheelEvent(
+                        local_position,
+                        global_position,
+                        event.pixelDelta(),
+                        event.angleDelta(),
+                        event.buttons(),
+                        event.modifiers(),
+                        event.phase(),
+                        event.inverted(),
+                        event.source(),
+                    )
+                    QApplication.sendEvent(viewport, forwarded)
+                event.accept()
+                return True
+
         popup = getattr(self, "global_search_popup", None)
         if watched is self.global_search and popup is not None and popup.isVisible():
             if event.type() == QEvent.Type.KeyPress:
@@ -1837,6 +1904,14 @@ class MainWindow(QMainWindow):
         if source_path and Path(source_path).is_file():
             self._load_waveform(source_path)
 
+        # Opening a history result is asynchronous. Apply its search only after
+        # the matching transcript has actually been loaded into the editor.
+        pending = self._pending_global_search
+        if pending and pending[0] == str(self.transcription_page.transcript_id or ""):
+            self._pending_global_search = None
+            query = pending[1]
+            QTimer.singleShot(80, lambda value=query: self.transcription_page.find_text(value))
+
     def _sync_editor_document(self, document):
         text = document.text
         self.transcription_page._loading_text = True
@@ -2089,6 +2164,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self._shutdown_complete:
+            app = QApplication.instance()
+            if app is not None:
+                app.removeEventFilter(self)
             super().closeEvent(event)
             return
         if self._shutdown_started:

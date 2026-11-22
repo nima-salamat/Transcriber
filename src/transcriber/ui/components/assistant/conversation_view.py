@@ -1,7 +1,8 @@
 """Incremental conversation renderer with stable streaming cards and scroll anchoring."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -86,15 +87,62 @@ class ConversationView(QFrame):
         self._stream_scroll_timer = QTimer(self)
         self._stream_scroll_timer.setSingleShot(True)
         self._stream_scroll_timer.setInterval(75)
-        self._stream_scroll_timer.timeout.connect(self._scroll_to_latest_now)
+        self._stream_scroll_timer.timeout.connect(self.scroll_to_latest)
         self._follow_stream = True
+        self._scroll_generation = 0
+        self._programmatic_scroll = False
+        scrollbar = self.scroll_area.verticalScrollBar()
+        scrollbar.sliderPressed.connect(self._begin_manual_scroll)
+        scrollbar.sliderMoved.connect(self._sync_follow_state_from_scrollbar)
+        scrollbar.sliderReleased.connect(self._sync_follow_state_from_scrollbar)
+        scrollbar.actionTriggered.connect(self._begin_manual_scroll)
+        scrollbar.actionTriggered.connect(
+            lambda _action: QTimer.singleShot(0, self._sync_follow_state_from_scrollbar)
+        )
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
 
     def toPlainText(self) -> str:
         return "\n\n".join(str(item.get("text") or "") for item in self._messages)
 
     def _is_near_bottom(self) -> bool:
         bar = self.scroll_area.verticalScrollBar()
-        return bar.maximum() - bar.value() <= 72
+        return bar.maximum() - bar.value() <= 4
+
+    def _begin_manual_scroll(self):
+        self._stream_scroll_timer.stop()
+        self._scroll_generation += 1
+        self._follow_stream = False
+
+    def _sync_follow_state_from_scrollbar(self, *_args):
+        if self._programmatic_scroll:
+            return
+        self._follow_stream = self._is_near_bottom()
+        self.jump_button.setVisible(bool(self._messages) and not self._follow_stream)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.Wheel and isinstance(watched, QWidget):
+            scroll_area = self.scroll_area
+            inside = watched is scroll_area or scroll_area.isAncestorOf(watched)
+            if inside:
+                bar = scroll_area.verticalScrollBar()
+                angle = event.angleDelta().y()
+                delta = angle if angle else event.pixelDelta().y()
+                at_top = bar.value() <= bar.minimum()
+                at_bottom = bar.value() >= bar.maximum()
+                # Do not let wheel input at the boundary bubble to an outer
+                # scroll area. That propagation is perceived as a jump or bounce.
+                if (delta < 0 and at_bottom) or (delta > 0 and at_top):
+                    event.accept()
+                    return True
+                self._stream_scroll_timer.stop()
+                self._scroll_generation += 1
+                # Disable auto-follow immediately; a resize/layout event can
+                # occur before the scrollbar has applied this wheel delta.
+                self._follow_stream = False
+                QTimer.singleShot(0, self._sync_follow_state_from_scrollbar)
+        return super().eventFilter(watched, event)
 
     @staticmethod
     def _group_helper_messages(messages: list[dict]) -> list[dict]:
@@ -330,14 +378,19 @@ class ConversationView(QFrame):
 
     def scroll_to_latest(self):
         self._stream_scroll_timer.stop()
-        self._scroll_to_latest_now_queued()
+        self._scroll_generation += 1
+        generation = self._scroll_generation
+        QTimer.singleShot(0, lambda current=generation: self._scroll_to_latest_now(current))
 
-    def _scroll_to_latest_now_queued(self):
-        QTimer.singleShot(0, self._scroll_to_latest_now)
-
-    def _scroll_to_latest_now(self):
+    def _scroll_to_latest_now(self, generation: int | None = None):
+        if generation is not None and generation != self._scroll_generation:
+            return
         bar = self.scroll_area.verticalScrollBar()
-        bar.setValue(bar.maximum())
+        self._programmatic_scroll = True
+        try:
+            bar.setValue(bar.maximum())
+        finally:
+            self._programmatic_scroll = False
         self.jump_button.hide()
         self._follow_stream = True
 
@@ -368,5 +421,5 @@ class ConversationView(QFrame):
             widget.body.refresh_document_size()
         # Let the scroll area's viewport finish its layout before measuring it.
         QTimer.singleShot(0, self._update_message_widths)
-        if self._is_near_bottom():
+        if self._follow_stream:
             self.scroll_to_latest()

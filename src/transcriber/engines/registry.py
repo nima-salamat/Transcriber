@@ -5,6 +5,7 @@ from pathlib import Path
 from transcriber.core.errors import EngineUnavailableError
 from transcriber.engines.cloud import GoogleCloudEngine
 from transcriber.engines.faster_whisper import FasterWhisperEngine
+from transcriber.engines.google_web import GoogleWebSpeechEngine
 
 
 class EngineRegistry:
@@ -25,4 +26,6 @@ class EngineRegistry:
                 location=getattr(settings, "google_cloud_location", "eu"),
                 model=getattr(settings, "google_cloud_model", "chirp_3"),
             )
+        if engine_id == "google-web":
+            return GoogleWebSpeechEngine(consent_granted=cloud_consent)
         raise EngineUnavailableError(f"Unsupported transcription engine: {engine_id}")
