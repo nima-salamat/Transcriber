@@ -54,14 +54,8 @@ class HomePage(QWidget):
 
         metrics = QHBoxLayout()
         metrics.setSpacing(10)
-        self.transcript_count = QLabel("—")
-        self.model_count = QLabel("—")
-        transcript_metric, _ = metric_card("Saved transcripts")
-        # Keep the live labels owned by this page so asynchronous refreshes
-        # update the same compact metric widgets.
-        transcript_metric.layout().addWidget(self.transcript_count)
-        model_metric, _ = metric_card("Installed local models")
-        model_metric.layout().addWidget(self.model_count)
+        transcript_metric, self.transcript_count = metric_card("Saved transcripts")
+        model_metric, self.model_count = metric_card("Installed local models")
         metrics.addWidget(transcript_metric, 1)
         metrics.addWidget(model_metric, 1)
         metrics.addStretch(2)
