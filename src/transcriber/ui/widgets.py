@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from transcriber.ui.design.tokens import SPACING
+
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -32,12 +34,7 @@ def page_header(title: str, subtitle: str = "") -> QWidget:
 
     outer = QHBoxLayout(widget)
     outer.setContentsMargins(0, 0, 0, 8)
-    outer.setSpacing(12)
-
-    accent = QFrame(widget)
-    accent.setObjectName("PageHeaderAccent")
-    accent.setFixedSize(3, 38 if subtitle else 30)
-    outer.addWidget(accent, 0, Qt.AlignmentFlag.AlignVCenter)
+    outer.setSpacing(0)
 
     copy = QWidget(widget)
     copy.setObjectName("PageHeaderCopy")
@@ -90,8 +87,8 @@ def labelled_value(label: str, value: str) -> QWidget:
 
 def add_card_content(card: Card, *widgets) -> QVBoxLayout:
     layout = QVBoxLayout(card)
-    layout.setContentsMargins(18, 16, 18, 16)
-    layout.setSpacing(12)
+    layout.setContentsMargins(*(SPACING["lg"] for _ in range(4)))
+    layout.setSpacing(SPACING["md"])
     for widget in widgets:
         layout.addWidget(widget)
     return layout
@@ -101,7 +98,7 @@ def section_row(title: str, action: QWidget | None = None) -> QWidget:
     row = QWidget()
     layout = QHBoxLayout(row)
     layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(10)
+    layout.setSpacing(SPACING["sm"])
     label = QLabel(title)
     label.setObjectName("SectionTitle")
     layout.addWidget(label)
