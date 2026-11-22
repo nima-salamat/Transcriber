@@ -38,6 +38,13 @@ if (-not (Test-Path $Executable)) {
     throw "The build finished without producing $Executable"
 }
 
+# Faster-Whisper resolves Silero VAD relative to its own package directory.
+# Do not create an installer that would fail as soon as VAD is used.
+$VadAsset = Join-Path $RepositoryRoot "dist\Transcriber\_internal\faster_whisper\assets\silero_vad_v6.onnx"
+if (-not (Test-Path -LiteralPath $VadAsset -PathType Leaf)) {
+    throw "The packaged Faster-Whisper VAD asset is missing: $VadAsset. Check Transcriber.spec and rebuild before distributing this application."
+}
+
 $ProgramFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
 $KnownIsccPaths = @(
     (Join-Path $ProgramFilesX86 "Inno Setup 6\ISCC.exe"),
@@ -71,4 +78,5 @@ if ((Get-Item $Installer).Length -lt 10MB) {
 
 Write-Host "Windows application build complete."
 Write-Host "Application: $Executable"
+Write-Host "VAD asset:   $VadAsset"
 Write-Host "Installer:   $Installer"
