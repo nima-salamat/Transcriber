@@ -1,0 +1,74 @@
+[CmdletBinding()]
+param(
+    [switch]$WithCuda
+)
+
+$ErrorActionPreference = "Stop"
+$RepositoryRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $RepositoryRoot
+
+if ($env:OS -ne "Windows_NT") {
+    throw "This packaging script must be run on Windows."
+}
+
+$Version = python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+if ($LASTEXITCODE -ne 0 -or -not $Version) {
+    throw "Could not read the application version from pyproject.toml."
+}
+
+$Extras = "packaging,asr,voice,documents,agent"
+if ($WithCuda) {
+    $Extras += ",gpu"
+}
+
+Write-Host "Installing Transcriber $Version build dependencies..."
+python -m pip install --upgrade ".[$Extras]"
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not install the Transcriber build dependencies."
+}
+
+Write-Host "Building the windowed Transcriber application..."
+python -m PyInstaller --noconfirm --clean .\Transcriber.spec
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller failed to build Transcriber."
+}
+
+$Executable = Join-Path $RepositoryRoot "dist\Transcriber\Transcriber.exe"
+if (-not (Test-Path $Executable)) {
+    throw "The build finished without producing $Executable"
+}
+
+$ProgramFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
+$KnownIsccPaths = @(
+    (Join-Path $ProgramFilesX86 "Inno Setup 6\ISCC.exe"),
+    (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+)
+$IsccCommand = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
+$Iscc = if ($IsccCommand) { $IsccCommand.Source } else {
+    $KnownIsccPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $Iscc) {
+    throw "Inno Setup 6 was not found. Install Inno Setup 6 and make ISCC.exe available, then rebuild."
+}
+
+$ReleaseDirectory = Join-Path $RepositoryRoot "release"
+New-Item -ItemType Directory -Force -Path $ReleaseDirectory | Out-Null
+
+Write-Host "Creating the per-user Windows installer..."
+$InstallerScript = Join-Path $RepositoryRoot "installer\windows\Transcriber.iss"
+& $Iscc "/DAppVersion=$Version" $InstallerScript
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup failed to create the Transcriber installer."
+}
+
+$Installer = Join-Path $ReleaseDirectory "Transcriber-Setup-$Version-x64.exe"
+if (-not (Test-Path $Installer)) {
+    throw "The installer build finished without producing $Installer"
+}
+if ((Get-Item $Installer).Length -lt 10MB) {
+    throw "The installer is unexpectedly small; refusing to publish it."
+}
+
+Write-Host "Windows application build complete."
+Write-Host "Application: $Executable"
+Write-Host "Installer:   $Installer"

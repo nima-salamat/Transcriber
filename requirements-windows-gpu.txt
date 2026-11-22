@@ -1,0 +1,4 @@
+# Windows x64: Faster-Whisper + CUDA 12/cuBLAS + cuDNN 9 + local Vosk voice input.
+# Run from the repository root in the Python environment used by Transcriber.
+-r requirements.txt
+-e .[asr,gpu,voice]

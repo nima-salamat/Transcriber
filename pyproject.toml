@@ -1,0 +1,92 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transcriber-desktop"
+version = "0.1.0"
+description = "A local-first desktop audio transcription application built with PySide6 and Faster-Whisper"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Transcriber contributors" }]
+keywords = ["speech-recognition", "transcription", "whisper", "offline", "pyside6"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: X11 Applications :: Qt",
+  "Environment :: Win32 (MS Windows)",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+  "PySide6>=6.7,<7",
+  "platformdirs>=4,<5",
+  "huggingface-hub>=0.27,<2",
+  "tqdm>=4.66,<5",
+]
+
+[project.optional-dependencies]
+# Faster-Whisper 1.2.1 passes metadata_errors to av.open; PyAV 19 removed it.
+asr = ["faster-whisper>=1.1,<2", "av>=11,<19"]
+# Optional Windows CUDA runtime. These wheels are large, so GPU support is opt-in.
+# NVRTC and nvJitLink are installed explicitly because cuBLAS may resolve them lazily.
+gpu = [
+  "nvidia-cublas-cu12>=12.9,<13; sys_platform == 'win32'",
+  "nvidia-cuda-runtime-cu12>=12.9,<13; sys_platform == 'win32'",
+  "nvidia-cuda-nvrtc-cu12>=12.9,<13; sys_platform == 'win32'",
+  "nvidia-nvjitlink-cu12>=12.9,<13; sys_platform == 'win32'",
+  "nvidia-cudnn-cu12>=9,<10; sys_platform == 'win32'",
+]
+cloud = ["google-cloud-speech>=2.27,<3"]
+voice = ["sounddevice>=0.5,<1", "vosk>=0.3.45,<1", "av>=11,<19"]
+agent = ["mcp>=2,<3", "playwright>=1.50,<2"]
+documents = [
+  "python-docx>=1.1,<2",
+  "reportlab>=4,<5",
+  "arabic-reshaper>=3,<4",
+  "python-bidi>=0.6,<1",
+]
+dev = [
+  "pytest>=8,<10",
+  "pytest-qt>=4.4,<5",
+  "ruff>=0.11,<1",
+]
+packaging = ["pyinstaller>=6.10,<7"]
+
+[project.gui-scripts]
+# Windows installs receive a pythonw-style launcher (no console window).
+transcriber = "transcriber.__main__:main"
+
+[project.scripts]
+# The MCP server is a stdio process and must keep its console streams.
+transcriber-mcp = "transcriber.mcp_server:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+transcriber = ["assets/icons/*.svg", "assets/icons/LICENSE.txt"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

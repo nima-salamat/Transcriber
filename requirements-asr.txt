@@ -1,0 +1,4 @@
+# Local CPU/GPU speech recognition dependencies.
+# Run from the repository root in the Python environment used by Transcriber.
+-r requirements.txt
+-e .[asr]
