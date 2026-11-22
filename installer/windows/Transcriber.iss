@@ -27,7 +27,7 @@ WizardResizable=no
 SetupLogging=yes
 CloseApplications=yes
 RestartApplications=no
-VersionInfoVersion={#AppVersion}
+VersionInfoVersion={#AppVersion}.0
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
 

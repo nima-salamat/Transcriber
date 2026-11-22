@@ -132,7 +132,7 @@ def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
 
     panel._voice_conversation_mode = False
     panel._sync_voice_orb()
-    assert "Voice" in panel.voice_chat_button.text()
+    assert panel.voice_chat_button.text() == "Start voice"
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
 
@@ -222,9 +222,9 @@ def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
     panel.settings_button.click()
     assert panel.page_stack.currentWidget() is panel.settings_page
     assert panel.settings_section_stack.isAncestorOf(panel.provider_combo)
-    assert panel.settings_content.isAncestorOf(panel.voice_panel)
-    assert panel.settings_content.isAncestorOf(panel.project_card)
-    assert panel.settings_content.isAncestorOf(panel.prompt_library_button)
+    assert panel.settings_section_stack.isAncestorOf(panel.voice_panel)
+    assert panel.settings_section_stack.isAncestorOf(panel.project_card)
+    assert panel.settings_section_stack.isAncestorOf(panel.prompt_library_button)
 
     panel.settings_back_button.click()
     assert panel.page_stack.currentWidget() is panel.conversation_page
@@ -245,7 +245,7 @@ def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path)
     assert panel.project_card.isHidden() is True
     assert panel.connect_button.text() == "Connect"
     assert panel.voice_chat_button.objectName() == "AssistantVoiceButton"
-    assert "Voice" in panel.voice_chat_button.text()
+    assert panel.voice_chat_button.text() == "Start voice"
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
 
