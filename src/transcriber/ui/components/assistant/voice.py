@@ -336,6 +336,10 @@ class AssistantVoiceMixin:
             return
         display = str(message or "Voice chat is active")
         self.voice_live_status.setText(display)
+        if stage in {"stopped", "cancelled"}:
+            self.voice_live_status.hide()
+        else:
+            self.voice_live_status.show()
         self.voice_state_label.setText(display)
         stage_labels = {
             "connecting": "Connecting",

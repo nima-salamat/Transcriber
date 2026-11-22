@@ -36,6 +36,9 @@ def test_assistant_panel_is_a_conversation_surface(qtbot, tmp_path):
     assert panel.wake_model_combo.count() == 1
     assert panel.wake_model_combo.itemText(0) == "Select a Vosk wake-word model…"
 
+    panel._agent_turn_active = True
+    panel._opencode_turn_requires_tool = False
+    panel._opencode_turn_action_called = False
     panel._append_message("user", "Summarize the open transcript")
     panel._on_notification({
         "params": {
@@ -122,7 +125,7 @@ def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
     panel = AssistantPanel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
-    assert panel.voice_chat_button.text() == "Start voice"
+    assert panel.voice_chat_button.text() == ""
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
     panel._voice_conversation_mode = True
@@ -145,12 +148,28 @@ def test_agent_runtime_controls_the_agent_tools_toggle(qtbot, tmp_path):
     qtbot.addWidget(panel)
 
     assert not panel.agent_mode_check.isEnabled()
-    registry = SimpleNamespace(
-        describe=lambda **_kwargs: [],
-        permissions=set(),
-        set_permission=lambda *_args: None,
-        set_trusted_permission=lambda *_args: None,
-    )
+    class Registry:
+        def __init__(self):
+            self.permissions = set()
+            self.trusted_permissions = set()
+
+        @staticmethod
+        def describe(**_kwargs):
+            return []
+
+        def set_permission(self, permission, enabled):
+            if enabled:
+                self.permissions.add(permission)
+            else:
+                self.permissions.discard(permission)
+
+        def set_trusted_permission(self, permission, enabled):
+            if enabled:
+                self.trusted_permissions.add(permission)
+            else:
+                self.trusted_permissions.discard(permission)
+
+    registry = Registry()
     panel.set_agent_runtime(registry)
     assert not panel.agent_mode_check.isEnabled()
     assert panel.agent_mode_check.isChecked()
@@ -216,12 +235,11 @@ def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
     assert panel.page_stack.currentWidget() is panel.conversation_page
     assert panel.settings_button.toolTip() == "Assistant settings"
     assert panel.settings_button is panel.sidebar.settings_button
-    assert not panel.conversation_page.isAncestorOf(panel.provider_combo)
+    assert panel.conversation_page.isAncestorOf(panel.provider_combo)
     assert not panel.conversation_page.isAncestorOf(panel.prompt_library_button)
 
     panel.settings_button.click()
     assert panel.page_stack.currentWidget() is panel.settings_page
-    assert panel.settings_section_stack.isAncestorOf(panel.provider_combo)
     assert panel.settings_section_stack.isAncestorOf(panel.voice_panel)
     assert panel.settings_section_stack.isAncestorOf(panel.project_card)
     assert panel.settings_section_stack.isAncestorOf(panel.prompt_library_button)
@@ -278,10 +296,11 @@ def test_voice_lifecycle_status_is_visible_on_the_conversation_page(qtbot, tmp_p
 
     assert panel.page_stack.currentWidget() is panel.conversation_page
     assert panel.settings_section_stack.isAncestorOf(panel.voice_panel)
-    assert not panel.voice_live_status.isHidden()
+    assert panel.voice_live_status.isHidden()
 
     panel.voice_agent = SimpleNamespace(mode="command")
     panel._on_voice_state("Wake word detected")
+    assert not panel.voice_live_status.isHidden()
     panel._on_voice_state("Listening for your command…")
     assert "Listening for your command" in panel.voice_live_status.text()
 
