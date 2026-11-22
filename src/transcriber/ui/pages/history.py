@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QLabel
 )
 
 from transcriber.ui.widgets import Card, page_header, primary_button
