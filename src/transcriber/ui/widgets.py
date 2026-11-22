@@ -15,8 +15,6 @@ from PySide6.QtWidgets import (
 
 from transcriber.ui.design.tokens import SPACING
 
-
-
 class Card(QFrame):
     """Theme-aware surface used consistently across page workspaces."""
 
@@ -25,7 +23,6 @@ class Card(QFrame):
         self.setObjectName("Card")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMinimumWidth(0)
-
 
 def page_header(title: str, subtitle: str = "") -> QWidget:
     """A compact page heading with one shared visual hierarchy."""
@@ -62,13 +59,11 @@ def page_header(title: str, subtitle: str = "") -> QWidget:
     outer.addWidget(copy, 1)
     return widget
 
-
 def primary_button(label: str, parent=None) -> QPushButton:
     button = QPushButton(label, parent)
     button.setObjectName("Primary")
     button.setCursor(Qt.CursorShape.PointingHandCursor)
     return button
-
 
 def labelled_value(label: str, value: str) -> QWidget:
     widget = QWidget()
@@ -85,7 +80,6 @@ def labelled_value(label: str, value: str) -> QWidget:
     layout.addWidget(bottom)
     return widget
 
-
 def add_card_content(card: Card, *widgets) -> QVBoxLayout:
     layout = QVBoxLayout(card)
     layout.setContentsMargins(*(SPACING["lg"] for _ in range(4)))
@@ -93,7 +87,6 @@ def add_card_content(card: Card, *widgets) -> QVBoxLayout:
     for widget in widgets:
         layout.addWidget(widget)
     return layout
-
 
 def section_row(title: str, action: QWidget | None = None) -> QWidget:
     row = QWidget()
@@ -107,7 +100,6 @@ def section_row(title: str, action: QWidget | None = None) -> QWidget:
     if action is not None:
         layout.addWidget(action)
     return row
-
 
 def section_header(title: str, subtitle: str = "", action: QWidget | None = None) -> QWidget:
     """A compact section heading with optional context and one trailing action."""
@@ -139,7 +131,6 @@ def section_header(title: str, subtitle: str = "", action: QWidget | None = None
         row.addWidget(action, 0, Qt.AlignmentFlag.AlignVCenter)
     return widget
 
-
 def empty_state(title: str, description: str = "", action: QWidget | None = None) -> QFrame:
     """A reusable, task-oriented empty state rather than a centered placeholder label."""
     frame = QFrame()
@@ -167,7 +158,6 @@ def empty_state(title: str, description: str = "", action: QWidget | None = None
         layout.addWidget(action, 0, Qt.AlignmentFlag.AlignHCenter)
     return frame
 
-
 def status_pill(text: str, state: str = "neutral", parent=None) -> QLabel:
     """Create a compact, accessible label whose state is rendered by the theme."""
     label = QLabel(str(text), parent)
@@ -176,7 +166,6 @@ def status_pill(text: str, state: str = "neutral", parent=None) -> QLabel:
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     return label
-
 
 def metric_card(caption: str, value: str = "—", detail: str = "") -> tuple[Card, QLabel]:
     """A compact metric surface; returns the card and its live value label."""

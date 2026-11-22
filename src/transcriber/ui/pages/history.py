@@ -25,8 +25,6 @@ from transcriber.ui.widgets import (
 )
 from transcriber.ui.workers import FunctionWorker
 
-
-
 class HistoryPage(QWidget):
     open_transcript = Signal(str)
     status_message = Signal(str)
