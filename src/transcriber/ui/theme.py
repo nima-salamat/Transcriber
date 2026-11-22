@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from transcriber.ui.design.tokens import get_tokens
+from transcriber.ui.design.tokens import RADII, TYPOGRAPHY, get_tokens
 
 
 def stylesheet(theme: str) -> str:
@@ -10,8 +10,8 @@ def stylesheet(theme: str) -> str:
     return f"""
     QWidget {{
         color: {c['text']};
-        font-family: 'Segoe UI', 'Noto Sans', sans-serif;
-        font-size: 13px;
+        font-family: {TYPOGRAPHY['family']};
+        font-size: {TYPOGRAPHY['body']}px;
         outline: none;
     }}
     QMainWindow, QDialog {{ background: {c['window']}; }}
@@ -22,7 +22,7 @@ def stylesheet(theme: str) -> str:
         border-right: 1px solid {c['border']};
     }}
     QFrame#TopBar {{
-        background: {c['surface']};
+        background: {c['window']};
         border: 0;
         border-bottom: 1px solid {c['border']};
     }}
@@ -73,8 +73,8 @@ def stylesheet(theme: str) -> str:
     }}
     QLabel#ToolbarPageTitle {{
         color: {c['text']};
-        font-size: 16px;
-        font-weight: 700;
+        font-size: 18px;
+        font-weight: 600;
     }}
     QFrame#PageHeaderAccent {{
         background: {c['accent']};
@@ -206,17 +206,17 @@ def stylesheet(theme: str) -> str:
         font-weight: 750;
     }}
     QPushButton#AudioPlayPrimary {{
-        background: {c['accent']};
-        color: white;
-        border: 1px solid {c['accent']};
+        background: {c['primary']};
+        color: {c['on_primary']};
+        border: 1px solid {c['primary']};
         border-radius: 13px;
         padding: 8px 20px;
         min-width: 56px;
         min-height: 48px;
     }}
     QPushButton#AudioPlayPrimary:hover {{
-        background: {c['accent_hover']};
-        border-color: {c['accent_hover']};
+        background: {c['primary_hover']};
+        border-color: {c['primary_hover']};
     }}
     QPushButton#AudioPlayPrimary:disabled {{
         background: {c['surface_2']};
@@ -266,9 +266,9 @@ def stylesheet(theme: str) -> str:
         max-height: 34px;
     }}
     QPushButton#RecordingItemPlayButton:hover {{
-        background: {c['accent']};
-        border-color: {c['accent']};
-        color: white;
+        background: {c['surface_hover']};
+        border-color: {c['border_hover']};
+        color: {c['text']};
     }}
     QPushButton#RecordingItemPlayButton:disabled {{
         color: {c['muted']};
@@ -284,11 +284,11 @@ def stylesheet(theme: str) -> str:
     QFrame#Card {{
         background: {c['surface']};
         border: 1px solid {c['border']};
-        border-radius: 15px;
+        border-radius: {RADII['xl']}px;
     }}
     QLabel#Muted {{ color: {c['muted']}; }}
-    QLabel#PageTitle {{ color: {c['text']}; font-size: 25px; font-weight: 750; }}
-    QLabel#SectionTitle {{ font-size: 16px; font-weight: 650; }}
+    QLabel#PageTitle {{ color: {c['text']}; font-size: {TYPOGRAPHY['heading']}px; font-weight: 600; }}
+    QLabel#SectionTitle {{ font-size: {TYPOGRAPHY['section']}px; font-weight: 600; }}
     QLabel#AssistantTitle {{ font-size: 17px; font-weight: 700; }}
     QLabel#AssistantEyebrow {{ color: {c['muted']}; font-size: 10px; font-weight: 750; letter-spacing: 1px; }}
     QLabel#AssistantProject {{ font-size: 12px; font-weight: 600; }}
@@ -504,15 +504,15 @@ def stylesheet(theme: str) -> str:
         border: 0;
     }}
     QPushButton#AssistantModelConnectButton {{
-        background: {c['accent']};
-        color: white;
+        background: {c['primary']};
+        color: {c['on_primary']};
         border: 0;
         border-radius: 9px;
         padding: 7px 14px;
         font-weight: 700;
     }}
     QPushButton#AssistantModelConnectButton:hover {{
-        background: {c['accent_hover']};
+        background: {c['primary_hover']};
     }}
     QPushButton#AssistantModelConnectButton:disabled {{
         background: {c['surface_2']};
@@ -561,8 +561,8 @@ def stylesheet(theme: str) -> str:
         font-weight: 650;
     }}
     QPushButton#AssistantSendButton {{
-        background: {c['accent']};
-        color: white;
+        background: {c['primary']};
+        color: {c['on_primary']};
         border: 0;
         border-radius: 21px;
         min-width: 42px;
@@ -571,7 +571,7 @@ def stylesheet(theme: str) -> str:
         max-height: 42px;
         padding: 0;
     }}
-    QPushButton#AssistantSendButton:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#AssistantSendButton:hover {{ background: {c['primary_hover']}; }}
     QPushButton#AssistantSendButton:disabled {{
         background: {c['surface_2']};
         color: {c['muted']};
@@ -648,8 +648,8 @@ def stylesheet(theme: str) -> str:
     QPushButton {{
         background: {c['surface_2']};
         border: 1px solid {c['border']};
-        border-radius: 9px;
-        padding: 9px 14px;
+        border-radius: {RADII['md']}px;
+        padding: 7px 12px;
         min-height: 18px;
     }}
     QPushButton:hover {{ border-color: {c['accent']}; background: {c['surface_hover']}; }}
@@ -657,12 +657,12 @@ def stylesheet(theme: str) -> str:
     QPushButton:focus {{ border: 2px solid {c['focus']}; }}
     QPushButton:disabled {{ color: {c['muted']}; background: {c['surface']}; border-color: {c['border']}; }}
     QPushButton#Primary {{
-        background: {c['accent']};
-        color: white;
+        background: {c['primary']};
+        color: {c['on_primary']};
         border: 0;
         font-weight: 700;
     }}
-    QPushButton#Primary:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#Primary:hover {{ background: {c['primary_hover']}; }}
     QPushButton#CommandPaletteButton {{
         background: {c['surface_2']};
         color: {c['text']};
@@ -677,16 +677,16 @@ def stylesheet(theme: str) -> str:
         border-color: {c['accent']};
     }}
     QPushButton#HomePrimaryAction {{
-        background: {c['accent']};
-        color: white;
-        border: 1px solid {c['accent']};
+        background: {c['primary']};
+        color: {c['on_primary']};
+        border: 1px solid {c['primary']};
         border-radius: 12px;
         padding: 0 12px;
         font-weight: 700;
     }}
     QPushButton#HomePrimaryAction:hover {{
-        background: {c['accent_hover']};
-        border-color: {c['accent_hover']};
+        background: {c['primary_hover']};
+        border-color: {c['primary_hover']};
     }}
     QPushButton#HomeSecondaryAction {{
         background: {c['surface_2']};
@@ -729,9 +729,9 @@ def stylesheet(theme: str) -> str:
     }}
     QPushButton#Nav {{
         text-align: left;
-        padding: 9px 12px;
+        padding: 8px 12px;
         border: 1px solid transparent;
-        border-left: 3px solid transparent;
+        border-left: 0;
         border-radius: 9px;
         background: transparent;
         color: {c['muted']};
@@ -739,10 +739,10 @@ def stylesheet(theme: str) -> str:
     }}
     QPushButton#Nav:checked {{
         background: {c['surface_2']};
-        border-color: {c['border']};
-        border-left-color: {c['accent']};
+        border-color: {c['border_hover']};
+        border-left-color: transparent;
         color: {c['text']};
-        font-weight: 700;
+        font-weight: 600;
     }}
     QPushButton#Nav:hover {{
         background: {c['surface_hover']};
@@ -766,7 +766,7 @@ def stylesheet(theme: str) -> str:
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
         background: {c['input']};
         border: 1px solid {c['border']};
-        border-radius: 9px;
+        border-radius: {RADII['md']}px;
         padding: 8px 10px;
         selection-background-color: {c['accent']};
     }}
@@ -810,16 +810,16 @@ def stylesheet(theme: str) -> str:
         padding: 3px;
     }}
     QListWidget::item, QTreeWidget::item {{
-        background: {c['surface']};
-        border: 1px solid {c['border']};
-        border-radius: 10px;
-        padding: 11px 12px;
-        margin: 3px 1px;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: {RADII['md']}px;
+        padding: 8px 10px;
+        margin: 1px 0;
     }}
     QListWidget::item:hover, QTreeWidget::item:hover {{ background: {c['surface_hover']}; }}
     QListWidget::item:selected, QTreeWidget::item:selected {{
-        background: {c['surface_2']};
-        border-color: {c['accent']};
+        background: {c['surface_hover']};
+        border-color: {c['border_hover']};
         color: {c['text']};
     }}
     QStatusBar {{
@@ -1260,14 +1260,14 @@ def stylesheet(theme: str) -> str:
         padding-left: 1px;
     }}
     QPushButton#TranscriptionChooseMedia {{
-        background: {c['accent']};
-        color: white;
+        background: {c['primary']};
+        color: {c['on_primary']};
         border: 0;
         border-radius: 10px;
         padding: 9px 16px;
         font-weight: 750;
     }}
-    QPushButton#TranscriptionChooseMedia:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#TranscriptionChooseMedia:hover {{ background: {c['primary_hover']}; }}
     QLabel#TranscriptionFileName {{
         color: {c['muted']};
         background: {c['surface_2']};
@@ -1318,15 +1318,15 @@ def stylesheet(theme: str) -> str:
         font-size: 10px;
     }}
     QPushButton#TranscriptionPlayButton {{
-        background: {c['accent']};
-        color: white;
+        background: {c['primary']};
+        color: {c['on_primary']};
         border: 0;
         border-radius: 21px;
         font-size: 16px;
         font-weight: 750;
         padding: 0;
     }}
-    QPushButton#TranscriptionPlayButton:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#TranscriptionPlayButton:hover {{ background: {c['primary_hover']}; }}
     QPushButton#TranscriptionPlayButton:disabled {{
         background: {c['surface_2']};
         color: {c['muted']};
@@ -1355,14 +1355,14 @@ def stylesheet(theme: str) -> str:
     }}
     QPlainTextEdit#TranscriptionEditor:focus {{ border-color: {c['focus']}; }}
     QPushButton#TranscriptionExportSubtitles {{
-        background: {c['accent']};
-        color: white;
+        background: {c['primary']};
+        color: {c['on_primary']};
         border: 0;
         border-radius: 9px;
         padding: 9px 14px;
         font-weight: 700;
     }}
-    QPushButton#TranscriptionExportSubtitles:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#TranscriptionExportSubtitles:hover {{ background: {c['primary_hover']}; }}
     QFrame#TranscriptionActionBar {{
         background: {c['surface']};
         border: 1px solid {c['border']};
@@ -1393,14 +1393,14 @@ def stylesheet(theme: str) -> str:
         font-weight: 650;
     }}
     QPushButton#TranscriptionStart {{
-        background: {c['accent']};
-        color: white;
+        background: {c['primary']};
+        color: {c['on_primary']};
         border: 0;
         border-radius: 10px;
         padding: 9px 17px;
         font-weight: 750;
     }}
-    QPushButton#TranscriptionStart:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#TranscriptionStart:hover {{ background: {c['primary_hover']}; }}
     QPushButton#TranscriptionStart:disabled {{
         background: {c['surface_2']};
         color: {c['muted']};
@@ -1449,14 +1449,14 @@ def stylesheet(theme: str) -> str:
         background: {c['surface_hover']};
     }}
     QPushButton#SubtitleExportButton {{
-        background: {c['accent']};
-        color: white;
+        background: {c['primary']};
+        color: {c['on_primary']};
         border: 0;
         border-radius: 9px;
         padding: 8px 14px;
         font-weight: 750;
     }}
-    QPushButton#SubtitleExportButton:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#SubtitleExportButton:hover {{ background: {c['primary_hover']}; }}
     QFrame#SubtitleTimingTool {{
         background: {c['surface_2']};
         border: 1px solid {c['border']};
@@ -1693,13 +1693,13 @@ def stylesheet(theme: str) -> str:
         font-weight: 700;
     }}
     QPushButton#TranscriptionPlayButton {{
-        background: {c['accent']};
-        color: white;
+        background: {c['primary']};
+        color: {c['on_primary']};
         border: 0;
         border-radius: 18px;
         padding: 0;
     }}
-    QPushButton#TranscriptionPlayButton:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#TranscriptionPlayButton:hover {{ background: {c['primary_hover']}; }}
     QPushButton#TranscriptionPlayButton:disabled {{
         background: {c['surface_hover']};
         color: {c['muted']};
