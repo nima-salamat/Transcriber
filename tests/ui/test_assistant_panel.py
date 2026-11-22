@@ -237,7 +237,11 @@ def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
     assert panel.page_stack.currentWidget() is panel.conversation_page
     assert panel.settings_button.toolTip() == "Assistant settings"
     assert panel.settings_button is panel.sidebar.settings_button
-    assert panel.conversation_page.isAncestorOf(panel.provider_combo)
+    # The picker popup is a Qt.Popup window; its owner is the model picker,
+    # itself embedded in the conversation composer/page.
+    assert panel.conversation_page.isAncestorOf(panel.composer)
+    assert panel.model_picker.popup.parentWidget() is panel.model_picker
+    assert panel.provider_combo.parentWidget() is panel.model_picker.popup
     assert not panel.conversation_page.isAncestorOf(panel.prompt_library_button)
 
     panel.settings_button.click()
