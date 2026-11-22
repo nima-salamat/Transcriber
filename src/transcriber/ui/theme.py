@@ -1525,6 +1525,8 @@ def stylesheet(theme: str) -> str:
         font-size: 13px;
         font-weight: 800;
     }}
+    QLabel#SubtitleReportMark[state="warning"] {{ color: {c['warning']}; }}
+    QLabel#SubtitleReportMark[state="success"] {{ color: {c['success']}; }}
     QLabel#SubtitleValidationReport {{
         color: {c['muted']};
         font-size: 11px;

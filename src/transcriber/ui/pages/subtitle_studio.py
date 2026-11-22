@@ -106,6 +106,13 @@ class SubtitleStudioPage(QWidget):
         self.add_button = QPushButton("＋  Add cue")
         self.add_button.setObjectName("SubtitleToolButton")
         self.add_button.clicked.connect(self.add_cue)
+        actions_row.addWidget(self.import_button)
+        actions_row.addWidget(self.add_button)
+        actions_row.addStretch(1)
+        actions_layout.addLayout(actions_row)
+
+        action_footer = QHBoxLayout()
+        action_footer.setSpacing(8)
         self.delete_button = QPushButton("Delete selected")
         self.delete_button.setObjectName("SubtitleDeleteButton")
         self.delete_button.clicked.connect(self.delete_selected)
@@ -115,13 +122,11 @@ class SubtitleStudioPage(QWidget):
         self.export_button = primary_button("Export subtitles…")
         self.export_button.setObjectName("SubtitleExportButton")
         self.export_button.clicked.connect(self.export_file)
-        actions_row.addWidget(self.import_button)
-        actions_row.addWidget(self.add_button)
-        actions_row.addWidget(self.delete_button)
-        actions_row.addStretch(1)
-        actions_row.addWidget(self.validate_button)
-        actions_row.addWidget(self.export_button)
-        actions_layout.addLayout(actions_row)
+        action_footer.addWidget(self.delete_button)
+        action_footer.addStretch(1)
+        action_footer.addWidget(self.validate_button)
+        action_footer.addWidget(self.export_button)
+        actions_layout.addLayout(action_footer)
         page.addWidget(actions_card)
 
         timing_card = Card()
@@ -321,6 +326,9 @@ class SubtitleStudioPage(QWidget):
         self.report.setProperty("state", "")
         self.report.style().unpolish(self.report)
         self.report.style().polish(self.report)
+        self.report_mark.setProperty("state", "")
+        self.report_mark.style().unpolish(self.report_mark)
+        self.report_mark.style().polish(self.report_mark)
         self.report_mark.setText("•")
         self.report.setText(
             f"{len(self.segments)} cues · {word_total} words · "
@@ -401,6 +409,9 @@ class SubtitleStudioPage(QWidget):
             self.report.setProperty("state", "success")
             self.report.style().unpolish(self.report)
             self.report.style().polish(self.report)
+            self.report_mark.setProperty("state", "success")
+            self.report_mark.style().unpolish(self.report_mark)
+            self.report_mark.style().polish(self.report_mark)
             self.report_mark.setText("✓")
             self.report.setText(
                 "Validation passed · No timing, overlap or reading-speed warnings were found."
@@ -423,6 +434,9 @@ class SubtitleStudioPage(QWidget):
         self.report.setProperty("state", "warning")
         self.report.style().unpolish(self.report)
         self.report.style().polish(self.report)
+        self.report_mark.setProperty("state", "warning")
+        self.report_mark.style().unpolish(self.report_mark)
+        self.report_mark.style().polish(self.report_mark)
         self.report_mark.setText("!")
         self.report.setText(
             f"{len(issues)} validation issue(s) · {summary}\n" + "\n".join(lines)
