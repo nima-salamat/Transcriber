@@ -2246,4 +2246,47 @@ def stylesheet(theme: str) -> str:
         font-size: 12px;
     }}
 
+
+    QLabel#CleanupSourceName {{
+        color: {c['text']};
+        font-size: 13px;
+        font-weight: 650;
+    }}
+    QFrame#CleanupOutputPanel {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QLabel#CleanupSafetyNote {{
+        color: {c['success']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 11px;
+        font-size: 11px;
+    }}
+    QLabel#CleanupResult {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 12px;
+    }}
+    QPushButton#CleanupRenderButton {{
+        min-height: 40px;
+        font-weight: 650;
+    }}
+
+
+    QFrame#RecorderConsole {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QFrame#RecordingOptionsCard {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+
     """
