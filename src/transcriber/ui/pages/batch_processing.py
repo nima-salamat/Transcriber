@@ -236,6 +236,22 @@ class BatchProcessingPage(QWidget):
         if self._import_feedback:
             summary += f" · {self._import_feedback}"
         self.summary.setText(summary)
+        if self._running and self._paused:
+            state_text, state = "Paused after current file", "warning"
+        elif self._running:
+            state_text, state = "Processing queue", "info"
+        elif failed:
+            state_text, state = "Needs attention", "danger"
+        elif complete and complete == len(self.queue):
+            state_text, state = "All files completed", "success"
+        elif has_items:
+            state_text, state = "Queue ready", "neutral"
+        else:
+            state_text, state = "Waiting for files", "neutral"
+        self.queue_state.setText(state_text)
+        self.queue_state.setProperty("state", state)
+        self.queue_state.style().unpolish(self.queue_state)
+        self.queue_state.style().polish(self.queue_state)
         self._update_action_state()
 
     def _update_action_state(self, *_args):
