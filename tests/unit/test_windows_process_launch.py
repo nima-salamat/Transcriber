@@ -36,3 +36,15 @@ def test_pyinstaller_spec_builds_without_a_console_window() -> None:
 
     assert 'name="Transcriber"' in spec
     assert "console=False" in spec
+
+
+
+def test_inno_setup_builds_a_per_user_installer_with_shortcuts() -> None:
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "installer" / "windows" / "Transcriber.iss").read_text(encoding="utf-8")
+
+    assert "PrivilegesRequired=lowest" in script
+    assert r"DefaultDirName={localappdata}\Programs\Transcriber" in script
+    assert "Transcriber-Setup-{#AppVersion}-x64" in script
+    assert "[Tasks]" in script and "desktopicon" in script
+    assert "[Icons]" in script and "{autoprograms}" in script
