@@ -140,3 +140,24 @@ Do not rewrite the domain architecture to solve a visual consistency problem. Ma
 
 - [Introducing the Codex app — OpenAI](https://openai.com/index/introducing-the-codex-app/)
 - [Codex desktop design observations](https://codex-design.beacon.host/) — third-party reference, used for visual direction only.
+
+
+## Page composition patterns
+
+Every page should follow the same interaction grammar, while keeping a layout that matches its actual job. Reusing a color palette is not considered a page redesign.
+
+| Page archetype | Composition | Interaction priorities |
+|---|---|---|
+| Workspace overview | Compact title/actions row, small metrics, Recent Work canvas and tool shortcuts | Start a task quickly; resume work with one clear action |
+| Library / history | Search and filters above a quiet selectable list; selection details and actions in a separate inspector | Selection first, contextual actions second; never bury the selected item's metadata under the list |
+| Capture / playback | Large audio canvas with timeline and transport; device and post-save options in a secondary rail | Audio stays visually dominant; controls retain stable positions across recording states |
+| Processing / batch | Source or queue on the left, processing controls/status on the right, one obvious primary operation | Make destructive risk, progress, cancellation and retry state explicit |
+| Transcript / subtitle editing | Editing table or text surface as the main canvas; selected segment/cue details and timing tools in an inspector | Keep editing and navigation central; move infrequent actions away from the editing surface |
+| Settings | Persistent category navigation next to a scrollable section canvas | Keep categories visible while scrolling; command-palette search should target the same section IDs |
+| AI Assistant | Conversation canvas with compact composer and contextual session/provider controls | Keep the conversation primary; avoid permanent stacks of settings cards |
+
+## Page-specific implementation direction
+
+The current UI pass has started applying these patterns: Home uses compact metrics and recent-work/tools columns; History has a list plus transcript inspector; Recording pairs the recorder canvas with capture setup; Audio Cleanup separates source, processing chain and output; Batch uses a queue plus status rail; Transcript Editor and Subtitle Studio have selection/timing inspectors; Settings uses persistent category navigation; Audio Library uses flat selectable media rows with a waveform player. Model discovery uses a two-level search/filter toolbar.
+
+These are first structural passes, not a claim that every spacing or responsive state has been visually validated. Continue page-by-page and preserve existing service/domain behavior while improving composition.
