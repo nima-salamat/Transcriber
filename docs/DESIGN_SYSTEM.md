@@ -100,7 +100,7 @@ Use medium weights instead of bold-heavy labels. Use tabular numerals for timers
 - Keep destructive transcript operations, recording stop/discard and model removal visually distinct from ordinary navigation.
 
 ### AI Assistant
-- Treat the conversation as the canvas. Keep controls in a compact composer and settings in a separate surface.
+- Treat the conversation as the canvas. Keep controls in a compact composer and settings in a separate surface. The current modular Assistant already follows this chat-first structure; preserve its separate sidebar, conversation view, provider controls and composer rather than flattening them into the general page template.
 - Keep model/provider selection, local/cloud status, permissions and voice input discoverable without filling the conversation with permanent panels.
 - Preserve distinct and accessible Send and Stop controls.
 
@@ -122,9 +122,9 @@ The main UI maintainability issue is concentration of unrelated responsibilities
 | Module | Approx. lines | Next responsibility boundary |
 |---|---:|---|
 | `ui/main_window.py` | 2,250 | Keep shell/navigation here; extract workspace construction, dock coordination and lifecycle/agent wiring into focused collaborators |
-| `ui/theme.py` | 2,136 | Keep the public `stylesheet(theme)` entry point; split shell, controls, assistant, audio, transcription and subtitle rules into composable modules |
-| `ui/pages/models.py` | 1,728 | Separate discovery/search, installed models and download tasks into focused page components; all its component styling now uses shared QSS and semantic Qt properties |
-| `ui/pages/settings.py` | 916 | Compose settings from focused section widgets with shared field/section helpers |
+| `ui/theme.py` | 2,437 | Keep the public `stylesheet(theme)` entry point; split shell, controls, assistant, audio, transcription and subtitle rules into composable modules |
+| `ui/pages/models.py` | 1,741 | Separate discovery/search, installed models and download tasks into focused page components; all its component styling now uses shared QSS and semantic Qt properties |
+| `ui/pages/settings.py` | 963 | Compose settings from focused section widgets with shared field/section helpers |
 
 Recommended order:
 
@@ -158,6 +158,6 @@ Every page should follow the same interaction grammar, while keeping a layout th
 
 ## Page-specific implementation direction
 
-The current UI pass has started applying these patterns: Home uses compact metrics and recent-work/tools columns; History has a list plus transcript inspector; Recording pairs the recorder canvas with capture setup; Audio Cleanup separates source, processing chain and output; Batch uses a queue plus status rail; Transcript Editor and Subtitle Studio have selection/timing inspectors; Settings uses persistent category navigation; Audio Library uses flat selectable media rows with a waveform player. Model discovery uses a two-level search/filter toolbar.
+The current UI pass has started applying these patterns: Home uses compact metrics and recent-work/tools columns; History has a list plus transcript inspector; Recording pairs the recorder canvas with capture setup; Audio Cleanup separates source, processing chain and output; Batch uses a queue plus status rail; Transcript Editor and Subtitle Studio have selection/timing inspectors; Settings uses persistent category navigation; Audio Library uses flat selectable media rows with a waveform player. Model discovery uses a two-level search/filter toolbar. New Transcription keeps its core model/language controls visible and progressively discloses advanced tuning.
 
 These are first structural passes, not a claim that every spacing or responsive state has been visually validated. Continue page-by-page and preserve existing service/domain behavior while improving composition.
