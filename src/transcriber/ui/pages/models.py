@@ -31,7 +31,6 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.models.hub_client import CURATED_MODELS
-from transcriber.ui.design.tokens import get_tokens
 from transcriber.ui.widgets import Card, page_header, primary_button
 from transcriber.ui.workers import FunctionWorker
 
@@ -46,26 +45,6 @@ def _human_size(value: int | None) -> str:
             return f"{amount:.1f} {unit}"
         amount /= 1024
     return "Unknown"
-
-
-def _rgba(color: str, alpha: float = 0.12) -> str:
-    """Turn a design-token hex color into a subtle Qt stylesheet tint."""
-    value = str(color).lstrip("#")
-    if len(value) != 6:
-        return f"rgba(128, 144, 164, {alpha:.2f})"
-    red, green, blue = (int(value[index:index + 2], 16) for index in (0, 2, 4))
-    return f"rgba({red}, {green}, {blue}, {alpha:.2f})"
-
-
-def _card_frame_stylesheet(
-    object_name: str, tokens: dict[str, str], accent_color: str, radius: int = 12,
-) -> str:
-    """Build a balanced QSS rule for an accent-edged model-library card."""
-    return (
-        f"QFrame#{object_name} {{ "
-        f"background: {tokens['surface']}; border: 1px solid {tokens['border']}; "
-        f"border-left: 4px solid {accent_color}; border-radius: {int(radius)}px; }}"
-    )
 
 
 def _installed_runtime_key(model: dict | str) -> str:
@@ -906,7 +885,6 @@ class ModelLibraryPage(QWidget):
             "pausing", "stopping", "cancelling",
         }
         resumable_states = {"paused", "stopped"}
-        tokens = get_tokens(self.settings_store.settings.theme).colors
         state_counts = {
             "active": 0, "recoverable": 0, "failed": 0,
             "installed": 0, "cancelled": 0,
@@ -956,12 +934,12 @@ class ModelLibraryPage(QWidget):
             else:
                 filter_state = state
 
-            state_color = (
-                tokens["success"] if state in {"installed", "completed"}
-                else tokens["danger"] if state == "failed"
-                else tokens["warning"] if state in {"paused", "stopped", "pausing", "stopping"}
-                else tokens["accent"] if state in active_states
-                else tokens["muted"]
+            state_tone = (
+                "success" if state in {"installed", "completed"}
+                else "danger" if state == "failed"
+                else "warning" if state in {"paused", "stopped", "pausing", "stopping"}
+                else "info" if state in active_states
+                else "neutral"
             )
             model_title = str(metadata.get("model_name") or repo_id)
             revision = str(job.get("revision") or "revision unavailable")
@@ -979,9 +957,7 @@ class ModelLibraryPage(QWidget):
             row.setFrameShape(QFrame.NoFrame)
             row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             row.setFixedHeight(252)
-            row.setStyleSheet(
-                _card_frame_stylesheet("DownloadTaskCard", tokens, state_color, 12)
-            )
+            row.setProperty("state", state_tone)
             row_layout = QVBoxLayout(row)
             row_layout.setContentsMargins(16, 13, 16, 13)
             row_layout.setSpacing(9)
@@ -989,19 +965,13 @@ class ModelLibraryPage(QWidget):
             heading = QHBoxLayout()
             heading.setSpacing(8)
             title = QLabel(model_title)
-            title.setStyleSheet(
-                f"font-size: 13px; font-weight: 700; color: {tokens['text']};"
-            )
+            title.setObjectName("ModelTaskTitle")
             title.setWordWrap(True)
             title.setTextInteractionFlags(Qt.TextSelectableByMouse)
             heading.addWidget(title, 1)
 
             runtime_badge = QLabel("Vosk / Kaldi" if runtime == "vosk" else "Faster-Whisper")
-            runtime_badge.setStyleSheet(
-                f"font-size: 9px; font-weight: 750; color: {tokens['accent']}; "
-                f"background: {_rgba(tokens['accent'], 0.10)}; "
-                "border: 1px solid transparent; border-radius: 7px; padding: 4px 7px;"
-            )
+            runtime_badge.setObjectName("ModelRuntimeBadge")
             heading.addWidget(runtime_badge, 0, Qt.AlignTop)
 
             state_text = {
@@ -1014,32 +984,21 @@ class ModelLibraryPage(QWidget):
                 "completed": "COMPLETED", "cancelled": "CANCELLED",
             }.get(state, state.replace("_", " ").upper())
             state_badge = QLabel(state_text)
-            state_badge.setStyleSheet(
-                f"font-size: 9px; font-weight: 800; color: {state_color}; "
-                f"background: {_rgba(state_color, 0.12)}; "
-                f"border: 1px solid {_rgba(state_color, 0.28)}; "
-                "border-radius: 7px; padding: 4px 8px;"
-            )
+            state_badge.setObjectName("ModelTaskStateBadge")
+            state_badge.setProperty("state", state_tone)
             heading.addWidget(state_badge, 0, Qt.AlignTop)
             row_layout.addLayout(heading)
 
             meta_label = QLabel(detail)
-            meta_label.setStyleSheet(
-                f"font-size: 11px; color: {tokens['muted']};"
-            )
+            meta_label.setObjectName("ModelTaskMeta")
             meta_label.setWordWrap(True)
             row_layout.addWidget(meta_label)
 
             transfer_row = QHBoxLayout()
             transfer_caption = QLabel("TRANSFER")
-            transfer_caption.setStyleSheet(
-                f"font-size: 9px; font-weight: 750; letter-spacing: 0.7px; "
-                f"color: {tokens['muted']};"
-            )
+            transfer_caption.setObjectName("ModelTransferCaption")
             transfer_value = QLabel(size_line)
-            transfer_value.setStyleSheet(
-                f"font-size: 11px; font-weight: 650; color: {tokens['text']};"
-            )
+            transfer_value.setObjectName("ModelTransferValue")
             transfer_row.addWidget(transfer_caption)
             transfer_row.addStretch(1)
             transfer_row.addWidget(transfer_value)
@@ -1049,11 +1008,7 @@ class ModelLibraryPage(QWidget):
             progress.setObjectName("DownloadTaskProgress")
             progress.setTextVisible(False)
             progress.setFixedHeight(7)
-            progress.setStyleSheet(
-                f"QProgressBar {{ background: {tokens['surface_2']}; border: 0; "
-                "border-radius: 4px; } "
-                f"QProgressBar::chunk {{ background: {state_color}; border-radius: 4px; }}"
-            )
+            progress.setProperty("state", state_tone)
             if total_bytes and total_bytes > 0:
                 progress.setRange(0, 100)
                 progress.setValue(percent or 0)
@@ -1070,15 +1025,11 @@ class ModelLibraryPage(QWidget):
                 error_label.setMaximumHeight(36)
                 error_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
                 error_label.setToolTip(str(job["error"]))
-                error_label.setStyleSheet(
-                    f"color: {tokens['danger']}; background: {_rgba(tokens['danger'], 0.08)}; "
-                    f"border: 1px solid {_rgba(tokens['danger'], 0.18)}; "
-                    "border-radius: 7px; padding: 7px 9px; font-size: 11px;"
-                )
+                error_label.setObjectName("ModelErrorNotice")
                 row_layout.addWidget(error_label)
 
             revision_label = QLabel(f"Revision · {revision[:16]}{'…' if len(revision) > 16 else ''}")
-            revision_label.setStyleSheet(f"font-size: 10px; color: {tokens['muted']};")
+            revision_label.setObjectName("ModelRevision")
             revision_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
             row_layout.addWidget(revision_label)
 
@@ -1090,32 +1041,8 @@ class ModelLibraryPage(QWidget):
                 button = QPushButton(label)
                 button.setCursor(Qt.PointingHandCursor)
                 button.setFixedHeight(28)
-                if role == "primary":
-                    button.setStyleSheet(
-                        f"QPushButton {{ background: {tokens['accent']}; color: white; "
-                        "border: 0; border-radius: 7px; padding: 4px 11px; font-weight: 650; } "
-                        f"QPushButton:hover {{ background: {tokens['accent_hover']}; }}"
-                    )
-                elif role == "danger":
-                    button.setStyleSheet(
-                        f"QPushButton {{ background: {_rgba(tokens['danger'], 0.08)}; "
-                        f"color: {tokens['danger']}; border: 1px solid {_rgba(tokens['danger'], 0.28)}; "
-                        "border-radius: 7px; padding: 4px 10px; font-weight: 600; } "
-                        f"QPushButton:hover {{ background: {_rgba(tokens['danger'], 0.16)}; }}"
-                    )
-                elif role == "warning":
-                    button.setStyleSheet(
-                        f"QPushButton {{ background: {_rgba(tokens['warning'], 0.10)}; "
-                        f"color: {tokens['warning']}; border: 1px solid {_rgba(tokens['warning'], 0.25)}; "
-                        "border-radius: 7px; padding: 4px 10px; font-weight: 600; }}"
-                    )
-                else:
-                    button.setStyleSheet(
-                        f"QPushButton {{ background: {tokens['surface_2']}; "
-                        f"color: {tokens['text']}; border: 1px solid {tokens['border']}; "
-                        "border-radius: 7px; padding: 4px 10px; font-weight: 600; } "
-                        f"QPushButton:hover {{ border-color: {tokens['accent']}; }}"
-                    )
+                button.setObjectName("ModelTaskActionButton")
+                button.setProperty("variant", role)
                 return button
 
             if state in {"queued", "inspecting", "downloading"}:
@@ -1157,11 +1084,11 @@ class ModelLibraryPage(QWidget):
                 actions.addWidget(restart)
             elif state in {"pausing", "stopping", "cancelling"}:
                 pending = QLabel("Applying request…")
-                pending.setStyleSheet(f"font-size: 11px; color: {tokens['muted']};")
+                pending.setObjectName("ModelPendingAction")
                 actions.addWidget(pending)
             elif state in {"validating", "installing"}:
                 pending = QLabel("Verifying and registering model…")
-                pending.setStyleSheet(f"font-size: 11px; color: {tokens['muted']};")
+                pending.setObjectName("ModelPendingAction")
                 actions.addWidget(pending)
 
             if state not in active_states and task_id:
@@ -1570,7 +1497,6 @@ class ModelLibraryPage(QWidget):
             self.installed_cards.addWidget(empty, 0, 0, 1, 2)
             return
 
-        tokens = get_tokens(self.settings_store.settings.theme).colors
         default_model = self.settings_store.settings.default_model
         wake_model_directory = str(self.settings_store.settings.wake_model_directory or "")
         for index, model in enumerate(installed):
@@ -1586,20 +1512,12 @@ class ModelLibraryPage(QWidget):
                 "ready": "READY",
                 "repair": "NEEDS REPAIR",
             }[state]
-            state_color = (
-                tokens["success"] if state == "active"
-                else tokens["accent"] if state == "ready"
-                else tokens["warning"]
-            )
-
             card = QFrame()
             card.setObjectName("InstalledModelCard")
             card.setMinimumWidth(300)
             card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             card.setFixedHeight(360)
-            card.setStyleSheet(
-                _card_frame_stylesheet("InstalledModelCard", tokens, state_color, 13)
-            )
+            card.setProperty("state", state)
             layout = QVBoxLayout(card)
             layout.setContentsMargins(17, 15, 17, 14)
             layout.setSpacing(10)
@@ -1607,29 +1525,19 @@ class ModelLibraryPage(QWidget):
             top = QHBoxLayout()
             top.setSpacing(8)
             title = QLabel(repo_id)
-            title.setStyleSheet(
-                f"font-size: 13px; font-weight: 750; color: {tokens['text']};"
-            )
+            title.setObjectName("ModelInstalledTitle")
             title.setWordWrap(True)
             title.setTextInteractionFlags(Qt.TextSelectableByMouse)
             top.addWidget(title, 1)
 
             state_badge = QLabel(state_text)
-            state_badge.setStyleSheet(
-                f"font-size: 9px; font-weight: 800; color: {state_color}; "
-                f"background: {_rgba(state_color, 0.12)}; "
-                f"border: 1px solid {_rgba(state_color, 0.28)}; "
-                "border-radius: 7px; padding: 4px 8px;"
-            )
+            state_badge.setObjectName("ModelInstalledStateBadge")
+            state_badge.setProperty("state", state)
             top.addWidget(state_badge, 0, Qt.AlignTop)
             layout.addLayout(top)
 
             runtime_badge = QLabel(runtime_name)
-            runtime_badge.setStyleSheet(
-                f"font-size: 9px; font-weight: 750; color: {tokens['accent']}; "
-                f"background: {_rgba(tokens['accent'], 0.10)}; "
-                "border-radius: 6px; padding: 4px 7px;"
-            )
+            runtime_badge.setObjectName("ModelRuntimeBadge")
             layout.addWidget(runtime_badge, 0, Qt.AlignLeft)
 
             revision = str(model.get("revision") or "Unknown")
@@ -1652,16 +1560,11 @@ class ModelLibraryPage(QWidget):
                     f"Revision: {revision[:16]}{'…' if len(revision) > 16 else ''}"
                 )
             info_panel = QFrame()
-            info_panel.setStyleSheet(
-                f"QFrame {{ background: {tokens['surface_2']}; "
-                f"border: 1px solid {tokens['border']}; border-radius: 8px; }}"
-            )
+            info_panel.setObjectName("ModelInstalledInfoPanel")
             info_layout = QVBoxLayout(info_panel)
             info_layout.setContentsMargins(10, 8, 10, 8)
             info_label = QLabel(info_text)
-            info_label.setStyleSheet(
-                f"font-size: 11px; color: {tokens['text']}; border: 0; background: transparent;"
-            )
+            info_label.setObjectName("ModelInstalledInfoLabel")
             info_label.setWordWrap(True)
             info_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
             info_layout.addWidget(info_label)
@@ -1669,24 +1572,14 @@ class ModelLibraryPage(QWidget):
 
             if not is_vosk and repo_id == default_model:
                 default_label = QLabel("★  DEFAULT FOR FASTER-WHISPER TRANSCRIPTIONS")
-                default_label.setStyleSheet(
-                    f"font-size: 9px; font-weight: 750; color: {tokens['accent']}; "
-                    f"background: {_rgba(tokens['accent'], 0.09)}; "
-                    "border-radius: 6px; padding: 5px 8px;"
-                )
+                default_label.setObjectName("ModelDefaultBadge")
                 layout.addWidget(default_label)
 
             path_caption = QLabel("MODEL LOCATION")
-            path_caption.setStyleSheet(
-                f"font-size: 9px; font-weight: 750; letter-spacing: 0.7px; color: {tokens['muted']};"
-            )
+            path_caption.setObjectName("ModelPathCaption")
             layout.addWidget(path_caption)
             path_label = QLabel(str(model["path"]))
-            path_label.setStyleSheet(
-                f"font-size: 10px; color: {tokens['muted']}; "
-                f"background: {_rgba(tokens['surface_2'], 0.72)}; "
-                f"border: 1px solid {tokens['border']}; border-radius: 7px; padding: 7px 8px;"
-            )
+            path_label.setObjectName("ModelPathLabel")
             path_label.setWordWrap(True)
             path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
             path_label.setToolTip(str(model["path"]))
@@ -1697,12 +1590,8 @@ class ModelLibraryPage(QWidget):
                 ("Model structure validated and ready to use." if compatible
                  else "The local model structure needs attention.")
             )
-            compatibility_color = tokens["success"] if compatible else tokens["warning"]
-            compatibility.setStyleSheet(
-                f"font-size: 10px; color: {compatibility_color}; "
-                f"background: {_rgba(compatibility_color, 0.08)}; "
-                "border-radius: 6px; padding: 6px 8px;"
-            )
+            compatibility.setObjectName("ModelInstalledCompatibility")
+            compatibility.setProperty("state", "compatible" if compatible else "warning")
             compatibility.setWordWrap(True)
             layout.addWidget(compatibility)
 
@@ -1710,26 +1599,8 @@ class ModelLibraryPage(QWidget):
                 button = QPushButton(label)
                 button.setCursor(Qt.PointingHandCursor)
                 button.setFixedHeight(29)
-                if role == "primary":
-                    button.setStyleSheet(
-                        f"QPushButton {{ background: {tokens['accent']}; color: white; "
-                        "border: 0; border-radius: 7px; padding: 4px 12px; font-weight: 650; } "
-                        f"QPushButton:hover {{ background: {tokens['accent_hover']}; }}"
-                    )
-                elif role == "danger":
-                    button.setStyleSheet(
-                        f"QPushButton {{ background: {_rgba(tokens['danger'], 0.08)}; "
-                        f"color: {tokens['danger']}; border: 1px solid {_rgba(tokens['danger'], 0.28)}; "
-                        "border-radius: 7px; padding: 4px 10px; font-weight: 600; } "
-                        f"QPushButton:hover {{ background: {_rgba(tokens['danger'], 0.16)}; }}"
-                    )
-                else:
-                    button.setStyleSheet(
-                        f"QPushButton {{ background: {tokens['surface_2']}; color: {tokens['text']}; "
-                        f"border: 1px solid {tokens['border']}; border-radius: 7px; "
-                        "padding: 4px 10px; font-weight: 600; } "
-                        f"QPushButton:hover {{ border-color: {tokens['accent']}; }}"
-                    )
+                button.setObjectName("ModelInstalledActionButton")
+                button.setProperty("variant", role)
                 return button
 
             utility_actions = QHBoxLayout()
