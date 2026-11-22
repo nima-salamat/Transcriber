@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.audio.processing import build_filter_chain, process_audio
-from transcriber.ui.widgets import Card, page_header, primary_button
+from transcriber.ui.widgets import Card, page_header, primary_button, section_header, status_pill
 from transcriber.ui.workers import FunctionWorker
 
 
@@ -37,75 +37,129 @@ class AudioCleanupPage(QWidget):
         self._cancel_event = None
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(2, 2, 10, 12)
-        root.setSpacing(12)
+        root.setContentsMargins(20, 18, 20, 18)
+        root.setSpacing(15)
         root.addWidget(page_header(
-            "Audio Cleanup",
-            "Apply reversible processing to a new output file. The source recording is never overwritten.",
+            "Audio cleanup",
+            "Build a processing chain and render a new file. Your source recording is never overwritten.",
         ))
 
-        file_card = Card()
-        file_layout = QHBoxLayout(file_card)
+        workspace = QHBoxLayout()
+        workspace.setSpacing(14)
+
+        left_column = QVBoxLayout()
+        left_column.setSpacing(12)
+        source_panel = Card()
+        source_panel.setObjectName("WorkspacePanel")
+        source_layout = QVBoxLayout(source_panel)
+        source_layout.setContentsMargins(16, 14, 16, 14)
+        source_layout.setSpacing(10)
+        source_layout.addWidget(section_header(
+            "Source media",
+            "Choose the recording that will pass through the processing chain.",
+        ))
+        source_row = QHBoxLayout()
         self.source_label = QLabel("No source media selected")
-        self.source_label.setObjectName("Muted")
+        self.source_label.setObjectName("CleanupSourceName")
         self.source_label.setWordWrap(True)
-        choose = QPushButton("Choose audio/video…")
+        choose = QPushButton("Choose file…")
         choose.clicked.connect(self.choose_source)
-        file_layout.addWidget(self.source_label, 1)
-        file_layout.addWidget(choose)
-        root.addWidget(file_card)
+        source_row.addWidget(self.source_label, 1)
+        source_row.addWidget(choose)
+        source_layout.addLayout(source_row)
+        self.source_path_hint = QLabel("Audio and video files with an audio track are supported.")
+        self.source_path_hint.setObjectName("Muted")
+        self.source_path_hint.setWordWrap(True)
+        source_layout.addWidget(self.source_path_hint)
+        left_column.addWidget(source_panel)
 
         options = Card()
-        form = QFormLayout(options)
-        form.setContentsMargins(18, 16, 18, 16)
-        self.normalize = QCheckBox("Loudness normalization (EBU R128 target -16 LUFS)")
-        self.denoise = QCheckBox("FFmpeg spectral denoise (single-pass, no noise profile)")
-        self.silence = QCheckBox("Remove leading/trailing and detected internal silence")
+        options.setObjectName("WorkspacePanel")
+        options_layout = QVBoxLayout(options)
+        options_layout.setContentsMargins(16, 14, 16, 15)
+        options_layout.setSpacing(10)
+        options_layout.addWidget(section_header(
+            "Processing chain",
+            "Enable only the filters you need. You can combine several operations.",
+        ))
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(11)
+        self.normalize = QCheckBox("Loudness normalization")
+        self.normalize.setToolTip("EBU R128 target: -16 LUFS")
+        self.denoise = QCheckBox("Spectral noise reduction")
+        self.denoise.setToolTip("FFmpeg single-pass spectral denoise; no learned noise profile.")
+        self.silence = QCheckBox("Remove silence")
+        self.silence.setToolTip("Remove leading, trailing and detected internal silence.")
         self.highpass = QSpinBox()
         self.highpass.setRange(20, 1000)
         self.highpass.setValue(80)
+        self.highpass.setSuffix(" Hz")
         self.highpass_enabled = QCheckBox("Enable")
+        high_row = QHBoxLayout()
+        high_row.addWidget(self.highpass_enabled)
+        high_row.addWidget(self.highpass)
+        high_row.addStretch(1)
         self.lowpass = QSpinBox()
         self.lowpass.setRange(1000, 20000)
         self.lowpass.setValue(12000)
+        self.lowpass.setSuffix(" Hz")
         self.lowpass_enabled = QCheckBox("Enable")
+        low_row = QHBoxLayout()
+        low_row.addWidget(self.lowpass_enabled)
+        low_row.addWidget(self.lowpass)
+        low_row.addStretch(1)
         self.volume = QDoubleSpinBox()
         self.volume.setRange(-24, 24)
         self.volume.setDecimals(1)
         self.volume.setSuffix(" dB")
         self.volume.setSingleStep(1.0)
         self.volume.setValue(0)
-        high_row = QHBoxLayout()
-        high_row.addWidget(self.highpass_enabled)
-        high_row.addWidget(self.highpass)
-        high_row.addStretch(1)
-        low_row = QHBoxLayout()
-        low_row.addWidget(self.lowpass_enabled)
-        low_row.addWidget(self.lowpass)
-        low_row.addStretch(1)
         form.addRow("High-pass filter", high_row)
         form.addRow("Low-pass filter", low_row)
-        form.addRow("Volume adjustment", self.volume)
-        form.addRow("Normalize", self.normalize)
-        form.addRow("Noise reduction", self.denoise)
-        form.addRow("Silence removal", self.silence)
-        root.addWidget(options)
+        form.addRow("Output gain", self.volume)
+        form.addRow("Loudness", self.normalize)
+        form.addRow("Noise", self.denoise)
+        form.addRow("Silence", self.silence)
+        options_layout.addLayout(form)
+        left_column.addWidget(options, 1)
+        workspace.addLayout(left_column, 3)
 
-        controls = QHBoxLayout()
-        self.process_button = primary_button("Process to new file…")
+        output_panel = Card()
+        output_panel.setObjectName("CleanupOutputPanel")
+        output_layout = QVBoxLayout(output_panel)
+        output_layout.setContentsMargins(17, 16, 17, 16)
+        output_layout.setSpacing(12)
+        output_layout.addWidget(section_header(
+            "Output",
+            "Processing creates a separate audio file that can be opened in the transcriber.",
+        ))
+        self.output_status = status_pill("Ready", "neutral")
+        output_layout.addWidget(self.output_status, 0, Qt.AlignLeft)
+        output_note = QLabel(
+            "Original protected\nThe input file is never modified. Choose the destination and format when you render."
+        )
+        output_note.setObjectName("CleanupSafetyNote")
+        output_note.setWordWrap(True)
+        output_layout.addWidget(output_note)
+        self.result_label = QLabel("Choose a source file and enable one or more operations.")
+        self.result_label.setObjectName("CleanupResult")
+        self.result_label.setWordWrap(True)
+        self.result_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        output_layout.addWidget(self.result_label, 1)
+
+        self.process_button = primary_button("Render cleaned file…")
+        self.process_button.setObjectName("CleanupRenderButton")
+        self.process_button.setMinimumHeight(40)
         self.process_button.clicked.connect(self.process)
-        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button = QPushButton("Cancel processing")
         self.cancel_button.clicked.connect(self.cancel)
         self.cancel_button.setEnabled(False)
-        controls.addWidget(self.process_button)
-        controls.addWidget(self.cancel_button)
-        controls.addStretch(1)
-        root.addLayout(controls)
-        self.result_label = QLabel("Choose a source file and select one or more operations.")
-        self.result_label.setWordWrap(True)
-        self.result_label.setObjectName("Muted")
-        root.addWidget(self.result_label)
-        root.addStretch(1)
+        output_layout.addWidget(self.process_button)
+        output_layout.addWidget(self.cancel_button)
+        workspace.addWidget(output_panel, 2)
+        root.addLayout(workspace, 1)
 
     def choose_source(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -116,6 +170,11 @@ class AudioCleanupPage(QWidget):
             self.source = Path(path).resolve()
             self.source_label.setText(self.source.name)
             self.source_label.setToolTip(str(self.source))
+            self.source_path_hint.setText(str(self.source.parent))
+            self.output_status.setText("Source selected")
+            self.output_status.setProperty("state", "info")
+            self.output_status.style().unpolish(self.output_status)
+            self.output_status.style().polish(self.output_status)
 
     def process(self):
         if self._worker:
@@ -173,9 +232,17 @@ class AudioCleanupPage(QWidget):
     def _set_busy(self, busy):
         self.process_button.setEnabled(not busy)
         self.cancel_button.setEnabled(busy)
+        self.output_status.setText("Processing" if busy else "Ready")
+        self.output_status.setProperty("state", "info" if busy else "neutral")
+        self.output_status.style().unpolish(self.output_status)
+        self.output_status.style().polish(self.output_status)
 
     def _on_result(self, path):
-        self.result_label.setText(f"Created new audio file: {path}")
+        self.result_label.setText(f"Created new audio file:\n{path}")
+        self.output_status.setText("Completed")
+        self.output_status.setProperty("state", "success")
+        self.output_status.style().unpolish(self.output_status)
+        self.output_status.style().polish(self.output_status)
         self.open_cleaned_file.emit(str(path))
         self.status_message.emit(f"Audio cleanup completed: {Path(path).name}")
 
@@ -185,6 +252,10 @@ class AudioCleanupPage(QWidget):
             self.status_message.emit("Audio cleanup cancelled")
             return
         self.result_label.setText(f"Processing failed: {message}")
+        self.output_status.setText("Failed")
+        self.output_status.setProperty("state", "danger")
+        self.output_status.style().unpolish(self.output_status)
+        self.output_status.style().polish(self.output_status)
         self.status_message.emit(f"Audio cleanup failed: {message}")
 
     def _on_finished(self):
