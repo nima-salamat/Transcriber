@@ -28,17 +28,20 @@ from transcriber.ui.components.waveform import WaveformTimeline
 from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.widgets import Card, page_header, section_header
 
+
 def _record_button_enabled_for_state(state: str, has_usable_input: bool) -> bool:
     """Keep Start available after a discard event returns the recorder to idle."""
     return state in {"recording", "paused"} or (
         state in {"idle", "cancelled"} and bool(has_usable_input)
     )
 
+
 def _clock(seconds: float) -> str:
     value = max(0, int(float(seconds)))
     hours, remainder = divmod(value, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{hours:02}:{minutes:02}:{seconds:02}" if hours else f"{minutes:02}:{seconds:02}"
+
 
 class RecordingPage(QWidget):
     audio_ready = Signal(str)

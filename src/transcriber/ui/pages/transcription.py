@@ -54,6 +54,7 @@ from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.widgets import page_header, primary_button
 from transcriber.ui.workers import FunctionWorker
 
+
 class TranscriptionPage(QWidget):
     status_message = Signal(str)
     audio_changed = Signal(str)

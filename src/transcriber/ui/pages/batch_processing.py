@@ -39,6 +39,7 @@ from transcriber.ui.widgets import (
 )
 from transcriber.ui.workers import FunctionWorker
 
+
 class BatchProcessingPage(QWidget):
     status_message = Signal(str)
     open_transcript = Signal(str)

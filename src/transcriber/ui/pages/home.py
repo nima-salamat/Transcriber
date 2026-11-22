@@ -24,6 +24,7 @@ from transcriber.ui.widgets import (
 )
 from transcriber.ui.workers import FunctionWorker
 
+
 class HomePage(QWidget):
     navigate = Signal(str)
     open_transcript = Signal(str)
