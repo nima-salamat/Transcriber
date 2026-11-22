@@ -69,18 +69,35 @@ def test_assistant_panel_is_a_conversation_surface(qtbot, tmp_path):
     assert "Read transcript" in visible_text
 
 
-def test_assistant_surface_has_no_quick_prompts_or_redundant_global_header(qtbot, tmp_path):
+def test_assistant_surface_has_inline_prompt_suggestions_and_no_redundant_header(
+    qtbot, tmp_path
+):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
     panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
+    view = panel.conversation_view
     assert panel.root_layout.count() == 1
     assert panel.settings_button is panel.sidebar.settings_button
     assert not hasattr(panel, "QUICK_PROMPTS")
     assert not hasattr(panel, "suggestions_container")
-    assert not hasattr(panel.conversation_view, "prompt_grid")
+    assert view.prompt_grid.parentWidget() is view.empty_state
+    assert len(view.prompt_buttons) == 4
+    assert [button.accessibleName() for button in view.prompt_buttons] == [
+        "Summarize a transcript",
+        "Improve transcript quality",
+        "Create readable subtitles",
+        "Plan an audio workflow",
+    ]
+    assert view._empty_title.text() == "How can I help you today?"
+
+    selected = []
+    view.prompt_selected.connect(selected.append)
+    view.prompt_buttons[0].click()
+    assert len(selected) == 1
+    assert selected[0].startswith("Summarize the transcript I provide")
 
 
 
@@ -229,7 +246,8 @@ def test_ollama_stop_is_independent_of_opencode_connection(qtbot, tmp_path):
     assert panel.composer._busy is True
     assert panel.composer._stoppable is True
     assert panel.stop_button.isEnabled() is False
-    assert panel.stop_button.toolTip() == "Stop the current response"
+    assert panel.stop_button.toolTip() == "Stop the current operation"
+    assert panel.stop_button.accessibleName() == "Stop current operation"
     assert "Stop requested" in panel._messages[-1]["text"]
 
 def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
