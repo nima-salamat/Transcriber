@@ -49,12 +49,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "${{ steps.version.outputs.tag }}" --json tagName *> $null
-          if ($LASTEXITCODE -eq 0) {
-              "published=true" >> $env:GITHUB_OUTPUT
-              Write-Host "Release ${{ steps.version.outputs.tag }} already exists; not overwriting it."
-          } else {
-              "published=false" >> $env:GITHUB_OUTPUT
+          $ReleaseTags = gh release list --limit 1000 --json tagName | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) {
+              throw "Could not list GitHub Releases."
+          }
+          $Tag = "${{ steps.version.outputs.tag }}"
+          $AlreadyPublished = @($ReleaseTags | Where-Object { $_.tagName -eq $Tag }).Count -gt 0
+          "published=$($AlreadyPublished.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($AlreadyPublished) {
+              Write-Host "Release $Tag already exists; leaving it unchanged."
           }
 
       - name: Install Inno Setup 6
