@@ -28,7 +28,7 @@ def main() -> int:
         QMessageBox.critical(None, "Transcriber could not start", str(exc))
         return 1
     theme = services["settings"].settings.theme
-    app.setStyleSheet(stylesheet("light" if theme == "light" else "dark"))
+    app.setStyleSheet(stylesheet("dark" if theme == "dark" else "light"))
     try:
         window = MainWindow(
             services["paths"], services["settings"], services["history"],

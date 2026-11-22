@@ -1,7 +1,7 @@
 # Transcriber Design System
 
 **Status:** active visual and UI engineering direction  
-**Reference:** the focused, content-first desktop aesthetic of the ChatGPT Codex app. Transcriber keeps its own identity and workflows; this is not a pixel-for-pixel clone.
+**Reference:** the calm, bright, content-first desktop language of the ChatGPT Codex app, adapted into a friendlier Studio Light identity for audio work. Transcriber keeps its own identity and workflows; this is not a pixel-for-pixel clone.
 
 ## Design intent
 
@@ -10,8 +10,8 @@ Transcriber should feel like a native, calm desktop workspace for working with a
 ### Principles
 
 1. **Content first.** Keep the main canvas visually continuous. Use panels only when they represent a meaningful workspace boundary.
-2. **Neutral by default.** Dark and light themes use neutral grays, not blue-tinted surfaces. Primary actions use a high-contrast monochrome fill.
-3. **Color has a job.** Blue is reserved for focus, links, active controls and informational states. Green, amber and red communicate success, warning and destructive/error states.
+2. **Bright, not glaring.** Studio Light uses a softly tinted canvas, a pale periwinkle navigation surface and white work surfaces. Avoid pure-white page backgrounds and harsh black/white contrast.
+3. **A little optimism.** Periwinkle blue gives navigation, focus and primary actions a clear identity; a soft accent tint marks selected items. Green, amber and coral communicate success, warning and destructive/error states.
 4. **Space before borders.** Separate sections with alignment and spacing. Use thin, low-contrast separators only where structure needs them.
 5. **Dense, not cramped.** Use a four-pixel spacing grid and consistent control heights. Avoid oversized cards, excessive padding and decorative headings.
 6. **Native and keyboard-friendly.** Preserve Qt interaction conventions, system fonts, accessible names, visible focus, sensible tab order and keyboard shortcuts.
@@ -23,22 +23,23 @@ These are Transcriber's own palette values inspired by the reference direction. 
 
 | Semantic role | Dark | Light | Usage |
 |---|---:|---:|---|
-| Canvas / `window` | `#181818` | `#FFFFFF` | Main application background |
-| Sidebar / `surface` | `#212121` | `#F9F9F9` | Persistent application chrome |
-| Raised / `surface_raised` | `#282828` | `#F3F3F3` | Inputs, grouped controls and restrained panels |
-| Hover / `surface_hover` | `#303030` | `#EDEDED` | Hovered or pressed neutral surfaces |
-| Main text / `text` | `#F3F3F3` | `#1A1C1F` | Primary content |
-| Secondary text / `muted` | `#AFAFAF` | `#5D5D5D` | Descriptions, metadata and hints |
-| Border / `border` | `#393939` | `#DFDFDF` | Hairline separators |
-| Primary action / `primary` | `#FFFFFF` | `#1A1C1F` | Main actions |
-| Text on primary / `on_primary` | `#181818` | `#FFFFFF` | Text and icons inside primary actions |
-| Accent / `accent` | `#339CFF` | `#339CFF` | Links, selected controls, progress and information |
-| Focus / `focus` | `#339CFF` | `#0169CC` | Keyboard focus ring |
-| Success / `success` | `#40C977` | `#008635` | Completed and healthy states |
-| Warning / `warning` | `#FF8549` | `#E25507` | Caution and pending attention |
-| Danger / `danger` | `#FF6764` | `#BA2623` | Errors, destructive actions and recording stop |
+| Canvas / `window` | `#202432` | `#F6F7FC` | Main application background |
+| Main surface / `surface` | `#272D3B` | `#FFFFFF` | Cards and work surfaces |
+| Raised / `surface_raised` | `#303849` | `#EFF2FA` | Sidebar, inputs and grouped controls |
+| Hover / `surface_hover` | `#3A455A` | `#E7ECF8` | Hovered or pressed neutral surfaces |
+| Main text / `text` | `#F0F3FB` | `#242A3A` | Primary content |
+| Secondary text / `muted` | `#B1BBD0` | `#68738A` | Descriptions, metadata and hints |
+| Border / `border` | `#3D475C` | `#E0E5F0` | Hairline separators |
+| Primary action / `primary` | `#879AFF` | `#526DE5` | Main actions |
+| Text on primary / `on_primary` | `#202432` | `#FFFFFF` | Text and icons inside primary actions |
+| Accent / `accent` | `#A1B0FF` | `#526DE5` | Links, selected controls, progress and information |
+| Soft accent / `accent_soft` | `#374365` | `#E8ECFF` | Selected navigation and low-emphasis emphasis |
+| Focus / `focus` | `#A1B0FF` | `#7189F0` | Keyboard focus ring |
+| Success / `success` | `#73D2B2` | `#177A5D` | Completed and healthy states |
+| Warning / `warning` | `#F3BD75` | `#94601E` | Caution and pending attention |
+| Danger / `danger` | `#FF8393` | `#B83F56` | Errors, destructive actions and recording stop |
 
-**Important:** do not use `accent` as the background of ordinary primary buttons. Use `primary` and `on_primary`. Do not encode state using color alone; pair it with text or an icon.
+**Important:** use the semantic `primary` and `on_primary` tokens for the one main action in a workflow. Use `accent_soft` for selection, not as a decorative fill on every panel. Do not encode state using color alone; pair it with text or an icon.
 
 ## Typography
 
@@ -57,7 +58,7 @@ Use medium weights instead of bold-heavy labels. Use tabular numerals for timers
 ## Spacing and shape
 
 - Spacing scale: 4, 8, 12, 16, 24 and 32 px.
-- Corner radii: 4 px for small tags, 8 px for inputs and compact controls, 10 px for rows, 12 px for cards, and 16 px only for large grouped surfaces.
+- Corner radii: 4 px for small tags, 9 px for inputs and compact controls, 11 px for rows, 14 px for cards, and 18 px only for large grouped surfaces.
 - Prefer a one-pixel, low-contrast border over a strong outline. Do not add shadows to ordinary cards.
 - Standard navigation rows should remain around 36–40 px high. Icon-only controls should have a clear hit target and a tooltip/accessibility name.
 - Use consistent left alignment for page titles, section headings, tables and toolbars.
@@ -82,11 +83,11 @@ Use medium weights instead of bold-heavy labels. Use tabular numerals for timers
 - A card should not become visually louder than the content it contains.
 
 ### Buttons
-- **Primary:** one dominant action per page or workflow step; monochrome high contrast.
+- **Primary:** one dominant action per page or workflow step; use the periwinkle primary fill with white text.
 - **Secondary:** neutral background or transparent surface with a subtle border.
 - **Tertiary:** text or icon action with no permanent container.
 - **Destructive:** red is reserved for a destructive operation and should be paired with a clear label/confirmation.
-- Hover should usually adjust the neutral surface. Blue is for focus and information, not a universal hover color.
+- Hover should usually adjust the neutral surface and border. Keep the accent for selected, focused and actionable states rather than outlining every button blue.
 
 ### Inputs, lists and tables
 - Inputs share the same radius, border, padding and focus treatment.

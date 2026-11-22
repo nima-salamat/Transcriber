@@ -17,7 +17,7 @@ def stylesheet(theme: str) -> str:
     QMainWindow, QDialog {{ background: {c['window']}; }}
     QWidget#Root {{ background: {c['window']}; }}
     QFrame#Sidebar {{
-        background: {c['surface']};
+        background: {c['surface_2']};
         border: 0;
         border-right: 1px solid {c['border']};
     }}
@@ -663,7 +663,7 @@ def stylesheet(theme: str) -> str:
         padding: 7px 12px;
         min-height: 18px;
     }}
-    QPushButton:hover {{ border-color: {c['accent']}; background: {c['surface_hover']}; }}
+    QPushButton:hover {{ border-color: {c['border_hover']}; background: {c['surface_hover']}; }}
     QPushButton:pressed {{ background: {c['surface_hover']}; }}
     QPushButton:focus {{ border: 2px solid {c['focus']}; }}
     QPushButton:disabled {{ color: {c['muted']}; background: {c['surface']}; border-color: {c['border']}; }}
@@ -749,10 +749,10 @@ def stylesheet(theme: str) -> str:
         font-weight: 550;
     }}
     QPushButton#Nav:checked {{
-        background: {c['surface_2']};
-        border-color: {c['border_hover']};
+        background: {c['accent_soft']};
+        border-color: {c['accent_soft']};
         border-left-color: transparent;
-        color: {c['text']};
+        color: {c['accent']};
         font-weight: 600;
     }}
     QPushButton#Nav:hover {{

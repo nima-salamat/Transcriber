@@ -9,12 +9,12 @@ from transcriber.ui.theme import stylesheet
 class ThemeManager(QObject):
     changed = Signal(str)
 
-    def __init__(self, theme: str = "dark", parent=None):
+    def __init__(self, theme: str = "light", parent=None):
         super().__init__(parent)
-        self.theme = "light" if theme == "light" else "dark"
+        self.theme = "dark" if theme == "dark" else "light"
 
     def apply(self, theme: str) -> None:
-        normalized = "light" if theme == "light" else "dark"
+        normalized = "dark" if theme == "dark" else "light"
         self.theme = normalized
         app = QApplication.instance()
         if app:

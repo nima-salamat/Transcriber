@@ -2030,7 +2030,7 @@ class MainWindow(QMainWindow):
         self.thread_pool.setMaxThreadCount(max(2, min(8, downloads + 2)))
 
     def apply_theme(self, theme: str):
-        effective = "light" if theme == "light" else "dark"
+        effective = "dark" if theme == "dark" else "light"
         tokens = get_tokens(effective)
         QApplication.instance().setStyleSheet(stylesheet(effective))
         self.assistant_drawer_button.setIcon(

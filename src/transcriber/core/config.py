@@ -13,7 +13,8 @@ from typing import Any
 
 @dataclass(slots=True)
 class AppSettings:
-    theme: str = "dark"
+    theme: str = "light"
+    appearance_version: int = 1
     language: str = "system"
     default_engine: str = "faster-whisper"
     default_model: str = "Systran/faster-whisper-small"
@@ -207,7 +208,18 @@ class AppSettings:
         self.retain_source_audio = as_bool(self.retain_source_audio, True)
         self.word_timestamps = as_bool(self.word_timestamps, False)
         if self.theme not in {"dark", "light", "system"}:
-            self.theme = "dark"
+            self.theme = "light"
+        try:
+            self.appearance_version = max(0, int(self.appearance_version))
+        except (TypeError, ValueError):
+            self.appearance_version = 0
+        if self.appearance_version < 1:
+            # The previous default was a near-black, high-contrast theme. Move
+            # existing installs to the refreshed light workspace once; users
+            # can still choose Dark explicitly in Appearance afterwards.
+            if self.theme == "dark":
+                self.theme = "light"
+            self.appearance_version = 1
         if self.device not in {"auto", "cpu", "cuda"}:
             self.device = "auto"
         if self.compute_type not in {"default", "int8", "int8_float16", "float16", "float32"}:
@@ -246,6 +258,8 @@ class SettingsStore:
                     # fallbacks keep the current version and stay immutable.
                     if "agent_permissions_version" not in raw:
                         values["agent_permissions_version"] = 0
+                    if "appearance_version" not in raw:
+                        values["appearance_version"] = 0
                     self._settings = AppSettings(**values)
                 except (OSError, ValueError, TypeError):
                     # Keep the corrupt file intact so the user can inspect/recover it.
