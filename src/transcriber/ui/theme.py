@@ -16,14 +16,87 @@ def stylesheet(theme: str) -> str:
     }}
     QMainWindow, QDialog {{ background: {c['window']}; }}
     QWidget#Root {{ background: {c['window']}; }}
-    QFrame#Sidebar {{ background: {c['surface']}; border: 0; }}
+    QFrame#Sidebar {{
+        background: {c['surface']};
+        border: 0;
+        border-right: 1px solid {c['border']};
+    }}
+    QFrame#TopBar {{
+        background: {c['surface']};
+        border: 0;
+        border-bottom: 1px solid {c['border']};
+    }}
+    QLabel#SidebarMark {{
+        background: {c['accent']};
+        color: white;
+        border-radius: 10px;
+        font-size: 20px;
+        font-weight: 800;
+    }}
+    QLabel#SidebarBrand {{
+        color: {c['text']};
+        font-size: 17px;
+        font-weight: 750;
+    }}
+    QLabel#SidebarTagline {{
+        color: {c['muted']};
+        font-size: 9px;
+        font-weight: 650;
+        letter-spacing: 1px;
+        padding: 0 2px 5px 2px;
+    }}
+    QLabel#SidebarSectionLabel {{
+        color: {c['muted']};
+        font-size: 9px;
+        font-weight: 750;
+        letter-spacing: 1.1px;
+        padding: 9px 9px 4px 9px;
+    }}
+    QLabel#SidebarLocalStatus {{
+        color: {c['success']};
+        font-size: 10px;
+        font-weight: 750;
+        padding: 5px 3px 1px 3px;
+    }}
+    QLabel#SidebarVersion {{
+        color: {c['muted']};
+        font-size: 10px;
+        padding: 0 3px;
+    }}
+    QScrollArea#SidebarNavigationScroll {{
+        background: transparent;
+        border: 0;
+    }}
+    QScrollArea#SidebarNavigationScroll > QWidget > QWidget {{
+        background: transparent;
+    }}
+    QWidget#SidebarNavigationContent {{
+        background: transparent;
+    }}
+    QLabel#ToolbarPageTitle {{
+        color: {c['text']};
+        font-size: 16px;
+        font-weight: 700;
+    }}
+    QFrame#PageHeaderAccent {{
+        background: {c['accent']};
+        border: 0;
+        border-radius: 2px;
+    }}
+    QWidget#PageHeaderCopy {{
+        background: transparent;
+    }}
+    QLabel#PageDescription {{
+        color: {c['muted']};
+        font-size: 12px;
+    }}
     QFrame#Card {{
         background: {c['surface']};
         border: 1px solid {c['border']};
         border-radius: 15px;
     }}
     QLabel#Muted {{ color: {c['muted']}; }}
-    QLabel#PageTitle {{ font-size: 26px; font-weight: 700; }}
+    QLabel#PageTitle {{ color: {c['text']}; font-size: 25px; font-weight: 750; }}
     QLabel#SectionTitle {{ font-size: 16px; font-weight: 650; }}
     QLabel#AssistantTitle {{ font-size: 17px; font-weight: 700; }}
     QLabel#AssistantEyebrow {{ color: {c['muted']}; font-size: 10px; font-weight: 750; letter-spacing: 1px; }}
@@ -390,18 +463,40 @@ def stylesheet(theme: str) -> str:
     }}
     QPushButton#Nav {{
         text-align: left;
-        padding: 11px 13px;
-        border: 0;
+        padding: 9px 12px;
+        border: 1px solid transparent;
+        border-left: 3px solid transparent;
         border-radius: 9px;
         background: transparent;
         color: {c['muted']};
+        font-weight: 550;
     }}
     QPushButton#Nav:checked {{
         background: {c['surface_2']};
+        border-color: {c['border']};
+        border-left-color: {c['accent']};
         color: {c['text']};
         font-weight: 700;
     }}
-    QPushButton#Nav:hover {{ background: {c['surface_2']}; color: {c['text']}; }}
+    QPushButton#Nav:hover {{
+        background: {c['surface_hover']};
+        color: {c['text']};
+    }}
+    QPushButton#SidebarCollapseButton {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 9px;
+        padding: 7px 10px;
+        color: {c['muted']};
+        text-align: left;
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QPushButton#SidebarCollapseButton:hover {{
+        color: {c['text']};
+        border-color: {c['accent']};
+        background: {c['surface_hover']};
+    }}
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
         background: {c['input']};
         border: 1px solid {c['border']};
@@ -531,6 +626,15 @@ def stylesheet(theme: str) -> str:
         border: 1px solid {c['border']};
         border-radius: 10px;
         selection-background-color: {c['surface_hover']};
+    }}
+    QTableWidget::item {{
+        padding: 7px 8px;
+        border: 0;
+        border-bottom: 1px solid {c['border']};
+    }}
+    QTableWidget::item:selected {{
+        color: {c['text']};
+        background: {c['surface_hover']};
     }}
     QHeaderView::section {{
         background: {c['surface_2']};

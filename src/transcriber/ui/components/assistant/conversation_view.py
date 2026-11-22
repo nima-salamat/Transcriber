@@ -342,9 +342,9 @@ class ConversationView(QFrame):
         self._follow_stream = True
 
     def _responsive_message_max_width(self) -> int:
-        """Use a slightly wider message measure on roomy desktop chat surfaces."""
-        viewport_width = self.scroll_area.viewport().width()
-        return min(1120, max(960, int(viewport_width * 0.88)))
+        """Keep chat cards inside the viewport instead of forcing a desktop width."""
+        viewport_width = max(1, self.scroll_area.viewport().width())
+        return max(1, min(1120, int(viewport_width * 0.94)))
 
     def _update_message_widths(self):
         max_width = self._responsive_message_max_width()

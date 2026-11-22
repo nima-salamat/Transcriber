@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
@@ -147,6 +148,11 @@ class MainWindow(QMainWindow):
         ("cleanup", "controls", "Audio cleanup"),
         ("settings", "settings", "Settings"),
     ]
+    NAVIGATION_SECTIONS = (
+        ("WORKSPACE", ("home", "assistant", "transcription", "recording", "batch")),
+        ("LIBRARY & TOOLS", ("history", "editor", "subtitles", "models", "audio", "cleanup")),
+        ("PREFERENCES", ("settings",)),
+    )
 
     def __init__(self, paths, settings_store, history, database, model_manager, recording_history=None):
         super().__init__()
@@ -229,53 +235,95 @@ class MainWindow(QMainWindow):
 
         sidebar = QFrame()
         sidebar.setObjectName("Sidebar")
-        sidebar.setMinimumWidth(190)
-        sidebar.setMaximumWidth(230)
+        sidebar.setMinimumWidth(220)
+        sidebar.setMaximumWidth(220)
         side_layout = QVBoxLayout(sidebar)
-        side_layout.setContentsMargins(15, 22, 15, 16)
-        side_layout.setSpacing(6)
+        side_layout.setContentsMargins(13, 18, 13, 14)
+        side_layout.setSpacing(8)
+
         brand = QHBoxLayout()
+        brand.setContentsMargins(2, 0, 2, 3)
+        brand.setSpacing(9)
         mark = QLabel("T")
-        mark.setStyleSheet("font-size: 22px; color: #75a7ff; font-weight: 800;")
+        mark.setObjectName("SidebarMark")
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mark.setFixedSize(34, 34)
         self.brand_name = QLabel("Transcriber")
-        self.brand_name.setStyleSheet("font-size: 18px; font-weight: 700;")
+        self.brand_name.setObjectName("SidebarBrand")
         brand.addWidget(mark)
         brand.addWidget(self.brand_name)
         brand.addStretch(1)
         side_layout.addLayout(brand)
+
         self.tagline = QLabel("VOICE  /  TEXT  /  LOCAL AI")
-        self.tagline.setObjectName("Muted")
-        self.tagline.setStyleSheet("font-size: 9px; letter-spacing: 1px; margin: 2px 0 18px 3px;")
+        self.tagline.setObjectName("SidebarTagline")
         side_layout.addWidget(self.tagline)
+
+        # The navigation scrolls independently; branding and utility controls
+        # remain anchored when the application is opened on a short display.
+        nav_scroll = QScrollArea(sidebar)
+        nav_scroll.setObjectName("SidebarNavigationScroll")
+        nav_scroll.setWidgetResizable(True)
+        nav_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        nav_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        nav_scroll.setMinimumHeight(0)
+        nav_content = QWidget()
+        nav_content.setObjectName("SidebarNavigationContent")
+        nav_layout = QVBoxLayout(nav_content)
+        nav_layout.setContentsMargins(0, 7, 0, 7)
+        nav_layout.setSpacing(3)
+
+        navigation = {key: (icon_name, title) for key, icon_name, title in self.NAVIGATION}
         self.nav_buttons: dict[str, QPushButton] = {}
-        for key, icon_name, title in self.NAVIGATION:
-            button = QPushButton(title)
-            button.setObjectName("Nav")
-            button.setIcon(self.icon_registry.icon(icon_name, size=18))
-            button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
-            button.setToolTip({
-                "Record audio": "Capture and save a microphone recording; this page does not perform live transcription.",
-                "Transcript editor": "Correct recognized words, speakers and timed transcript segments.",
-                "Subtitles & timing": "Edit subtitle cues, validate readability and export subtitle files.",
-                "AI models": "Discover, install and manage local speech-recognition models.",
-            }.get(title, title))
-            button.setCheckable(True)
-            button.setMinimumHeight(40)
-            button.clicked.connect(lambda _checked=False, page=key: self.navigate(page))
-            self.nav_buttons[key] = button
-            side_layout.addWidget(button)
-        side_layout.addStretch(1)
+        self.sidebar_section_labels: list[QLabel] = []
+        tooltips = {
+            "recording": "Capture and save a microphone recording; this page does not perform live transcription.",
+            "editor": "Correct recognized words, speakers and timed transcript segments.",
+            "subtitles": "Edit subtitle cues, validate readability and export subtitle files.",
+            "models": "Discover, install and manage local speech-recognition models.",
+        }
+        for section_title, page_keys in self.NAVIGATION_SECTIONS:
+            section_label = QLabel(section_title, nav_content)
+            section_label.setObjectName("SidebarSectionLabel")
+            self.sidebar_section_labels.append(section_label)
+            nav_layout.addWidget(section_label)
+            for key in page_keys:
+                icon_name, title = navigation[key]
+                button = QPushButton(title, nav_content)
+                button.setObjectName("Nav")
+                button.setIcon(self.icon_registry.icon(icon_name, size=18))
+                button.setIconSize(QSize(18, 18))
+                button.setToolTip(tooltips.get(key, title))
+                button.setAccessibleName(title)
+                button.setCheckable(True)
+                button.setMinimumHeight(38)
+                button.setMinimumWidth(0)
+                button.setCursor(Qt.CursorShape.PointingHandCursor)
+                button.clicked.connect(lambda _checked=False, page=key: self.navigate(page))
+                self.nav_buttons[key] = button
+                nav_layout.addWidget(button)
+            nav_layout.addSpacing(7)
+
+        nav_layout.addStretch(1)
+        nav_scroll.setWidget(nav_content)
+        side_layout.addWidget(nav_scroll, 1)
+        self.sidebar_navigation_scroll = nav_scroll
+        self.sidebar_navigation_content = nav_content
+
         self.sidebar_toggle = QPushButton("Collapse sidebar")
-        self.sidebar_toggle.setObjectName("Nav")
+        self.sidebar_toggle.setObjectName("SidebarCollapseButton")
+        self.sidebar_toggle.setMinimumHeight(36)
         self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
         side_layout.addWidget(self.sidebar_toggle)
+
         local_status = QLabel("●  LOCAL-FIRST")
-        local_status.setStyleSheet("color: #43b68b; font-size: 10px; font-weight: 700; margin: 4px;")
+        local_status.setObjectName("SidebarLocalStatus")
         side_layout.addWidget(local_status)
         self.local_status = local_status
+
         version = QLabel("Version 2.1.4")
-        version.setObjectName("Muted")
-        version.setStyleSheet("font-size: 10px; margin: 4px;")
+        version.setObjectName("SidebarVersion")
         side_layout.addWidget(version)
         self.sidebar_version = version
         self.sidebar = sidebar
@@ -286,17 +334,20 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
         toolbar = QFrame()
-        toolbar.setObjectName("Sidebar")
+        toolbar.setObjectName("TopBar")
         toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setContentsMargins(24, 13, 24, 13)
+        toolbar_layout.setContentsMargins(22, 10, 22, 10)
+        toolbar_layout.setSpacing(10)
         self.page_title = QLabel("Home")
-        self.page_title.setStyleSheet("font-size: 16px; font-weight: 650;")
+        self.page_title.setObjectName("ToolbarPageTitle")
         self.top_status = QLabel("● Local mode")
         self.top_status.setObjectName("Muted")
         self.global_search = QLineEdit()
         self.global_search.setPlaceholderText("Search projects, transcripts and commands…")
         self.global_search.installEventFilter(self)
-        self.global_search.setMaximumWidth(250)
+        self.global_search.setMinimumWidth(150)
+        self.global_search.setMaximumWidth(320)
+        self.global_search.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.command_button = QPushButton("Ctrl+K  Commands")
         self.command_button.clicked.connect(self.show_command_palette)
         self.assistant_button = QPushButton("AI Assistant")
@@ -1702,11 +1753,13 @@ class MainWindow(QMainWindow):
 
     def _apply_sidebar_collapsed_state(self, collapsed: bool, *, persist: bool = True):
         self._sidebar_collapsed = bool(collapsed)
-        width = 76 if self._sidebar_collapsed else 210
+        width = 76 if self._sidebar_collapsed else 220
         self.sidebar.setMinimumWidth(width)
         self.sidebar.setMaximumWidth(width)
         self.brand_name.setVisible(not self._sidebar_collapsed)
         self.tagline.setVisible(not self._sidebar_collapsed)
+        for section_label in self.sidebar_section_labels:
+            section_label.setVisible(not self._sidebar_collapsed)
         self.sidebar_toggle.setText("" if self._sidebar_collapsed else "Collapse sidebar")
         self.sidebar_toggle.setIcon(self.icon_registry.icon("forward" if self._sidebar_collapsed else "back", size=16))
         self.sidebar_toggle.setToolTip("Expand sidebar" if self._sidebar_collapsed else "Collapse sidebar")
