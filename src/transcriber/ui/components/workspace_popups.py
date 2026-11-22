@@ -30,9 +30,7 @@ class CommandPalettePopup(QFrame):
         layout.setSpacing(8)
         self.search_input = QLineEdit(self)
         self.search_input.setObjectName("CommandPaletteSearch")
-        self.search_input.setPlaceholderText(
-            "Search commands, pages, transcripts and settings…"
-        )
+        self.search_input.setPlaceholderText("Search commands, pages, transcripts and settings…")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._filter)
         self.search_input.installEventFilter(self)
@@ -144,12 +142,14 @@ class CommandPalettePopup(QFrame):
             )
             shortcut = f"   [{result['shortcut']}]" if result.get("shortcut") else ""
             item = QListWidgetItem(f"{title}{shortcut}   ·   {category}")
-            item.setToolTip(str(
-                result.get("description")
-                or result.get("keywords")
-                or result.get("subtitle")
-                or ""
-            ))
+            item.setToolTip(
+                str(
+                    result.get("description")
+                    or result.get("keywords")
+                    or result.get("subtitle")
+                    or ""
+                )
+            )
             item.setData(Qt.UserRole, result)
             self.list_widget.addItem(item)
 
@@ -160,13 +160,12 @@ class CommandPalettePopup(QFrame):
                 f"{len(results)} result(s) · Transcript lookup unavailable: {search_error}"
             )
         elif results:
-            self.hint.setText(
-                f"{len(results)} result(s) · ↑ ↓ Navigate · Enter Open · Esc Close"
-            )
+            self.hint.setText(f"{len(results)} result(s) · ↑ ↓ Navigate · Enter Open · Esc Close")
         else:
             self.hint.setText(
                 "No matching commands, pages or transcripts"
-                if normalized else "Start typing to search commands, pages and transcripts"
+                if normalized
+                else "Start typing to search commands, pages and transcripts"
             )
 
     def _activate_item(self, item):
