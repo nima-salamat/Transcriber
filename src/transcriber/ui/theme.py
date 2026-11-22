@@ -76,11 +76,6 @@ def stylesheet(theme: str) -> str:
         font-size: 18px;
         font-weight: 600;
     }}
-    QFrame#PageHeaderAccent {{
-        background: {c['accent']};
-        border: 0;
-        border-radius: 2px;
-    }}
     QWidget#PageHeaderCopy {{
         background: transparent;
     }}
@@ -289,6 +284,22 @@ def stylesheet(theme: str) -> str:
     QLabel#Muted {{ color: {c['muted']}; }}
     QLabel#PageTitle {{ color: {c['text']}; font-size: {TYPOGRAPHY['heading']}px; font-weight: 600; }}
     QLabel#SectionTitle {{ font-size: {TYPOGRAPHY['section']}px; font-weight: 600; }}
+    QLabel#HomeEyebrow {{
+        color: {c['muted']};
+        font-size: {TYPOGRAPHY['small']}px;
+        font-weight: 600;
+        letter-spacing: 0.8px;
+    }}
+    QLabel#HomeHeroTitle {{
+        color: {c['text']};
+        font-size: 24px;
+        font-weight: 600;
+    }}
+    QLabel#StatValue {{
+        color: {c['text']};
+        font-size: 26px;
+        font-weight: 600;
+    }}
     QLabel#AssistantTitle {{ font-size: 17px; font-weight: 700; }}
     QLabel#AssistantEyebrow {{ color: {c['muted']}; font-size: 10px; font-weight: 750; letter-spacing: 1px; }}
     QLabel#AssistantProject {{ font-size: 12px; font-weight: 600; }}
