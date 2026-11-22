@@ -33,7 +33,7 @@ These are Transcriber's own palette values inspired by the reference direction. 
 | Primary action / `primary` | `#879AFF` | `#526DE5` | Main actions |
 | Text on primary / `on_primary` | `#202432` | `#FFFFFF` | Text and icons inside primary actions |
 | Accent / `accent` | `#A1B0FF` | `#526DE5` | Links, selected controls, progress and information |
-| Soft accent / `accent_soft` | `#374365` | `#E8ECFF` | Selected navigation and low-emphasis emphasis |
+| Soft accent / `accent_soft` | `#374365` | `#E8ECFF` | Selected navigation and subtle active surfaces |
 | Focus / `focus` | `#A1B0FF` | `#7189F0` | Keyboard focus ring |
 | Success / `success` | `#73D2B2` | `#177A5D` | Completed and healthy states |
 | Warning / `warning` | `#F3BD75` | `#94601E` | Caution and pending attention |
