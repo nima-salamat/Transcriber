@@ -239,9 +239,33 @@ class OpenCodeACPClient:
             "prompt": [{"type": "text", "text": text}],
         }, timeout=timeout)
 
+    def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
+        """Send a one-way JSON-RPC notification without an ID or response wait."""
+        self._require_connected()
+        message = {
+            "jsonrpc": "2.0",
+            "method": str(method),
+            "params": params or {},
+        }
+        payload = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
+        try:
+            with self._write_lock:
+                process = self.process
+                if process is None or process.poll() is not None or process.stdin is None:
+                    raise ACPError("OpenCode ACP disconnected before the notification was sent.")
+                process.stdin.write(payload + "\n")
+                process.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            raise ACPError(
+                f"OpenCode ACP connection failed while sending {method}: {exc}"
+            ) from exc
+
     def cancel(self, *, timeout: float = 3.0) -> None:
+        """Cancel the foreground prompt using ACP's fire-and-forget notification."""
+        # Keep timeout in the signature for compatibility with existing callers.
+        # session/cancel is a notification: it has no JSON-RPC ID and no reply.
         if self.connected and self.session_id:
-            self.request("session/cancel", {"sessionId": self.session_id}, timeout=timeout)
+            self.notify("session/cancel", {"sessionId": self.session_id})
 
     def request(self, method: str, params: dict[str, Any] | None = None,
                 *, timeout: float | None = 20.0) -> dict[str, Any]:
