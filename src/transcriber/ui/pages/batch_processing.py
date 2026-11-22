@@ -30,7 +30,7 @@ from transcriber.audio.imports import collect_media_paths
 from transcriber.transcription.exporters import export_transcript
 from transcriber.transcription.segments import TranscriptionOptions
 from transcriber.transcription.service import TranscriptionService
-from transcriber.ui.widgets import Card, page_header, primary_button
+from transcriber.ui.widgets import Card, page_header, primary_button, section_header, empty_state, status_pill
 from transcriber.ui.workers import FunctionWorker
 
 
@@ -54,32 +54,42 @@ class BatchProcessingPage(QWidget):
         self._paused = False
         self._running = False
         self._worker = None
-        root = QVBoxLayout(self)
-        root.setContentsMargins(2, 2, 10, 12)
-        root.setSpacing(12)
-        root.addWidget(page_header("Batch Processing", "Queue multiple files and process them safely with a single shared ASR model."))
 
-        card = Card()
-        controls = QVBoxLayout(card)
-        row = QHBoxLayout()
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 18)
+        root.setSpacing(14)
+        root.addWidget(page_header(
+            "Batch processing",
+            "Build a queue of media files and process them sequentially with one shared ASR model.",
+        ))
+
+        setup = Card()
+        setup.setObjectName("WorkspacePanel")
+        setup_layout = QVBoxLayout(setup)
+        setup_layout.setContentsMargins(14, 12, 14, 12)
+        setup_layout.setSpacing(10)
+
+        import_row = QHBoxLayout()
         self.add_files_button = QPushButton("Add files")
         self.add_files_button.clicked.connect(self.add_files)
         self.add_folder_button = QPushButton("Add folder")
         self.add_folder_button.clicked.connect(self.add_folder)
+        model_label = QLabel("Recognition model")
+        model_label.setObjectName("Muted")
         self.model_combo = QComboBox()
-        self.model_combo.setMinimumWidth(160)
+        self.model_combo.setMinimumWidth(180)
         self.model_combo.setMinimumContentsLength(18)
         for model in self.model_manager.installed(include_sizes=False):
             if model.get("compatible"):
                 self.model_combo.addItem(model["repo_id"], model["repo_id"])
-        row.addWidget(self.add_files_button)
-        row.addWidget(self.add_folder_button)
-        row.addWidget(QLabel("Model"))
-        row.addWidget(self.model_combo, 1)
-        controls.addLayout(row)
-        actions = QGridLayout()
-        actions.setHorizontalSpacing(8)
-        actions.setVerticalSpacing(7)
+        import_row.addWidget(self.add_files_button)
+        import_row.addWidget(self.add_folder_button)
+        import_row.addSpacing(8)
+        import_row.addWidget(model_label)
+        import_row.addWidget(self.model_combo, 1)
+        setup_layout.addLayout(import_row)
+
+        action_row = QHBoxLayout()
         self.start_button = primary_button("Start queue")
         self.start_button.clicked.connect(self.start_queue)
         self.pause_button = QPushButton("Pause after current")
@@ -96,36 +106,71 @@ class BatchProcessingPage(QWidget):
         self.retry_button.clicked.connect(self.retry_failed)
         self.export_button = QPushButton("Export completed…")
         self.export_button.clicked.connect(self.export_all)
-        buttons = (
-            self.start_button, self.pause_button, self.cancel_button,
-            self.stop_queue_button, self.retry_button, self.export_button,
-        )
-        for index, button in enumerate(buttons):
-            button.setMinimumWidth(0)
-            actions.addWidget(button, index // 3, index % 3)
-        for column in range(3):
-            actions.setColumnStretch(column, 1)
-        controls.addLayout(actions)
-        root.addWidget(card)
+        action_row.addWidget(self.start_button)
+        action_row.addWidget(self.pause_button)
+        action_row.addWidget(self.cancel_button)
+        action_row.addWidget(self.stop_queue_button)
+        action_row.addStretch(1)
+        action_row.addWidget(self.retry_button)
+        action_row.addWidget(self.export_button)
+        setup_layout.addLayout(action_row)
+        root.addWidget(setup)
 
-        self.empty_state = QLabel("Add audio or video files to build a transcription queue.")
-        self.empty_state.setObjectName("PageEmptyState")
-        self.empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_state.setWordWrap(True)
-        self.empty_state.setMinimumHeight(170)
-        root.addWidget(self.empty_state)
+        workspace = QHBoxLayout()
+        workspace.setSpacing(14)
 
+        queue_panel = Card()
+        queue_panel.setObjectName("WorkspacePanel")
+        queue_layout = QVBoxLayout(queue_panel)
+        queue_layout.setContentsMargins(14, 13, 14, 14)
+        queue_layout.setSpacing(9)
+        queue_layout.addWidget(section_header(
+            "Processing queue",
+            "Files run in order. A cancelled or failed item can be retried.",
+        ))
         self.list = QListWidget()
-        self.list.setAlternatingRowColors(True)
-        self.list.setMinimumHeight(180)
-        root.addWidget(self.list, 1)
+        self.list.setObjectName("BatchQueue")
+        self.list.setAlternatingRowColors(False)
+        self.list.setMinimumHeight(240)
+        queue_layout.addWidget(self.list, 1)
+        self.empty_state = empty_state(
+            "The queue is empty",
+            "Add a group of audio or video files to prepare a batch transcription.",
+            QPushButton("Add media files"),
+        )
+        empty_action = self.empty_state.findChild(QPushButton)
+        if empty_action is not None:
+            empty_action.clicked.connect(self.add_files)
+        queue_layout.addWidget(self.empty_state, 1)
+        workspace.addWidget(queue_panel, 3)
+
+        status_panel = Card()
+        status_panel.setObjectName("BatchStatusPanel")
+        status_layout = QVBoxLayout(status_panel)
+        status_layout.setContentsMargins(15, 14, 15, 14)
+        status_layout.setSpacing(11)
+        status_layout.addWidget(section_header("Queue status", "Progress for the current batch."))
+        self.queue_state = status_pill("Waiting for files", "neutral")
+        status_layout.addWidget(self.queue_state, 0, Qt.AlignLeft)
+        self.summary = QLabel("No files queued")
+        self.summary.setObjectName("BatchSummary")
+        self.summary.setWordWrap(True)
+        status_layout.addWidget(self.summary)
         self.progress = QProgressBar()
+        self.progress.setObjectName("BatchProgress")
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        root.addWidget(self.progress)
-        self.summary = QLabel("No files queued")
-        self.summary.setObjectName("Muted")
-        root.addWidget(self.summary)
+        status_layout.addWidget(self.progress)
+        note = QLabel(
+            "Resource policy\nOnly one transcription runs at a time because the active Faster-Whisper model is shared."
+        )
+        note.setObjectName("BatchResourceNote")
+        note.setWordWrap(True)
+        status_layout.addWidget(note)
+        status_layout.addStretch(1)
+        workspace.addWidget(status_panel, 1)
+        root.addLayout(workspace, 1)
+
         self.model_combo.currentIndexChanged.connect(self._update_action_state)
         self.refresh()
 
