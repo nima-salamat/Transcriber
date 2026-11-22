@@ -2361,4 +2361,50 @@ def stylesheet(theme: str) -> str:
         selection-background-color: {c['surface_hover']};
     }}
 
+
+    QListWidget#SettingsNavigation {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+        padding: 6px;
+    }}
+    QListWidget#SettingsNavigation::item {{
+        color: {c['muted']};
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        padding: 9px 10px;
+        margin: 1px 0;
+        font-size: 12px;
+    }}
+    QListWidget#SettingsNavigation::item:hover {{
+        color: {c['text']};
+        background: {c['surface_hover']};
+    }}
+    QListWidget#SettingsNavigation::item:selected {{
+        color: {c['text']};
+        background: {c['surface_2']};
+        border-color: {c['border_hover']};
+        font-weight: 650;
+    }}
+    QScrollArea#SettingsContentScroll {{
+        background: transparent;
+        border: 0;
+    }}
+    QScrollArea#SettingsContentScroll > QWidget > QWidget {{
+        background: transparent;
+    }}
+    QFrame#RecordingListRow {{
+        background: transparent;
+        border: 0;
+        border-bottom: 1px solid {c['border']};
+        border-radius: 0;
+    }}
+    QFrame#RecordingListRow:hover {{
+        background: {c['surface_hover']};
+    }}
+    QFrame#RecordingListRow[selected="true"] {{
+        background: {c['surface_2']};
+    }}
+
     """
