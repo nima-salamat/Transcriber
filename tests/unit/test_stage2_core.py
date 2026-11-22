@@ -677,30 +677,32 @@ def test_opencode_cancel_notification_interrupts_active_prompt(tmp_path):
     command_log = tmp_path / "active-cancel-requests.jsonl"
     executable = tmp_path / "opencode-cancel-test"
     executable.write_text(
-        "#!/usr/bin/env python3\\n"
-        "import json, os, sys\\n"
-        "pending_prompt = None\\n"
-        "for line in sys.stdin:\\n"
-        "    request = json.loads(line)\\n"
-        "    with open(os.environ['ACP_CANCEL_TEST_LOG'], 'a', encoding='utf-8') as log:\\n"
-        "        log.write(json.dumps(request) + '\\\\n')\\n"
-        "    method = request.get('method')\\n"
-        "    if method == 'session/prompt':\\n"
-        "        pending_prompt = request\\n"
-        "        continue\\n"
-        "    if method == 'session/cancel':\\n"
-        "        if pending_prompt is not None:\\n"
-        "            response = {'jsonrpc': '2.0', 'id': pending_prompt['id'], 'result': {'stopReason': 'cancelled'}}\\n"
-        "            sys.stdout.write(json.dumps(response) + '\\\\n')\\n"
-        "            sys.stdout.flush()\\n"
-        "            pending_prompt = None\\n"
-        "        continue\\n"
-        "    result = {'agentCapabilities': {'loadSession': True}} if method == 'initialize' else {}\\n"
-        "    if method == 'session/new': result = {'sessionId': 'cancel-session'}\\n"
-        "    if 'id' in request:\\n"
-        "        response = {'jsonrpc': '2.0', 'id': request['id'], 'result': result}\\n"
-        "        sys.stdout.write(json.dumps(response) + '\\\\n')\\n"
-        "        sys.stdout.flush()\\n",
+        """#!/usr/bin/env python3
+import json, os, sys
+pending_prompt = None
+for line in sys.stdin:
+    request = json.loads(line)
+    with open(os.environ['ACP_CANCEL_TEST_LOG'], 'a', encoding='utf-8') as log:
+        log.write(json.dumps(request) + '\\n')
+    method = request.get('method')
+    if method == 'session/prompt':
+        pending_prompt = request
+        continue
+    if method == 'session/cancel':
+        if pending_prompt is not None:
+            response = {'jsonrpc': '2.0', 'id': pending_prompt['id'], 'result': {'stopReason': 'cancelled'}}
+            sys.stdout.write(json.dumps(response) + '\\n')
+            sys.stdout.flush()
+            pending_prompt = None
+        continue
+    result = {'agentCapabilities': {'loadSession': True}} if method == 'initialize' else {}
+    if method == 'session/new':
+        result = {'sessionId': 'cancel-session'}
+    if 'id' in request:
+        response = {'jsonrpc': '2.0', 'id': request['id'], 'result': result}
+        sys.stdout.write(json.dumps(response) + '\\n')
+        sys.stdout.flush()
+""",
         encoding="utf-8",
     )
     executable.chmod(0o755)
