@@ -2407,4 +2407,16 @@ def stylesheet(theme: str) -> str:
         background: {c['surface_2']};
     }}
 
+
+    QFrame#ModelDiscoveryToolbar {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+    }}
+    QFrame#ModelDiscoveryToolbar QLabel {{
+        color: {c['muted']};
+        font-size: 11px;
+        font-weight: 650;
+    }}
+
     """
