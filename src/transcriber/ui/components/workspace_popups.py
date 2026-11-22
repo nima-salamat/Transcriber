@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
-    QApplication,
     QFrame,
     QLabel,
     QLineEdit,
@@ -15,143 +14,9 @@ from PySide6.QtWidgets import (
 )
 
 
-class GlobalSearchPopup(QFrame):
-    result_activated = Signal(object)
-
-    def __init__(self, parent: QWidget, provider):
-        super().__init__(parent, Qt.Widget)
-        self.setObjectName("GlobalSearchPopup")
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self._provider = provider
-        self._anchor = None
-        self._recent: list[str] = []
-        self._query = ""
-        self._app_filter_installed = False
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        self.heading = QLabel("Search results")
-        self.heading.setObjectName("Muted")
-        layout.addWidget(self.heading)
-        self.list_widget = QListWidget(self)
-        self.list_widget.setFocusPolicy(Qt.NoFocus)
-        self.list_widget.itemClicked.connect(self._activate_item)
-        self.list_widget.itemActivated.connect(self._activate_item)
-        layout.addWidget(self.list_widget)
-        self.message = QLabel("")
-        self.message.setObjectName("Muted")
-        layout.addWidget(self.message)
-        self._debounce = QTimer(self)
-        self._debounce.setSingleShot(True)
-        self._debounce.setInterval(180)
-        self._debounce.timeout.connect(self._search)
-        self.hide()
-
-    def open_for(self, anchor: QWidget, query: str):
-        self._anchor = anchor
-        self._query = str(query or "")
-        self.reposition()
-        self.show()
-        self.raise_()
-        if not self._app_filter_installed and QApplication.instance() is not None:
-            QApplication.instance().installEventFilter(self)
-            self._app_filter_installed = True
-        self._debounce.start(0 if self._query.strip() else 1)
-
-    def _search(self):
-        query = self._query.strip()
-        if not query:
-            results = [
-                {"kind": "recent", "title": value, "subtitle": "Recent search"}
-                for value in reversed(self._recent[-8:])
-            ]
-        else:
-            self.heading.setText("Searching…")
-            try:
-                results = list(self._provider(query) or [])
-            except Exception as exc:
-                self._render([], error=str(exc))
-                return
-        self._render(results)
-
-    def _render(self, results, error=None):
-        self.list_widget.clear()
-        if error:
-            self.heading.setText("Search unavailable")
-            self.message.setText(error)
-            return
-        self.heading.setText("Search results" if self._query.strip() else "Recent searches")
-        for result in results:
-            title = str(result.get("title") or "Untitled")
-            subtitle = str(result.get("subtitle") or result.get("kind") or "")
-            item = QListWidgetItem(f"{title}   ·   {subtitle}")
-            item.setData(Qt.UserRole, result)
-            self.list_widget.addItem(item)
-        self.message.setText("No results found" if not results and self._query.strip() else "")
-        if self.list_widget.count():
-            self.list_widget.setCurrentRow(0)
-
-    def reposition(self):
-        if self._anchor is None or self.parentWidget() is None:
-            return
-        parent = self.parentWidget()
-        anchor_pos = self._anchor.mapTo(parent, QPoint(0, self._anchor.height() + 4))
-        width = min(560, max(320, parent.width() - 32))
-        height = min(390, max(180, parent.height() - 40))
-        x = min(max(16, anchor_pos.x()), max(16, parent.width() - width - 16))
-        y = anchor_pos.y()
-        if y + height > parent.height() - 16:
-            y = max(16, anchor_pos.y() - height - self._anchor.height() - 8)
-        self.setGeometry(x, y, width, height)
-
-    def move_selection(self, amount: int):
-        count = self.list_widget.count()
-        if count:
-            self.list_widget.setCurrentRow(
-                max(0, min(count - 1, self.list_widget.currentRow() + amount))
-            )
-
-    def activate_current(self):
-        item = self.list_widget.currentItem()
-        if item is None and self.list_widget.count():
-            item = self.list_widget.item(0)
-        if item is not None:
-            self._activate_item(item)
-
-    def _activate_item(self, item):
-        result = item.data(Qt.UserRole)
-        if not isinstance(result, dict):
-            return
-        if self._query.strip() and self._query.strip() not in self._recent:
-            self._recent.append(self._query.strip())
-        if self._query.strip() and result.get("kind") == "transcript":
-            result = {**result, "search_query": self._query.strip()}
-        self.hide()
-        self.result_activated.emit(result)
-
-    def eventFilter(self, watched, event):
-        if watched is self.parentWidget() and event.type() in (QEvent.Resize, QEvent.Move):
-            if self.isVisible():
-                self.reposition()
-        elif self.isVisible() and event.type() == QEvent.MouseButtonPress:
-            widget = watched if isinstance(watched, QWidget) else None
-            inside = widget is not None and (widget is self or self.isAncestorOf(widget))
-            anchor = widget is not None and (
-                widget is self._anchor
-                or (self._anchor is not None and self._anchor.isAncestorOf(widget))
-            )
-            if not inside and not anchor:
-                self.hide()
-        return False
-
-    def hideEvent(self, event):
-        if self._app_filter_installed and QApplication.instance() is not None:
-            QApplication.instance().removeEventFilter(self)
-            self._app_filter_installed = False
-        super().hideEvent(event)
-
-
 class CommandPalettePopup(QFrame):
+    """One searchable result list for workspace commands and transcript matches."""
+
     command_activated = Signal(object)
 
     def __init__(self, parent: QWidget):
@@ -159,32 +24,42 @@ class CommandPalettePopup(QFrame):
         self.setObjectName("CommandPalettePopup")
         self.setFrameShape(QFrame.StyledPanel)
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(0)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         self.search_input = QLineEdit(self)
-        self.search_input.setPlaceholderText("Search pages, settings and actions…")
+        self.search_input.setObjectName("CommandPaletteSearch")
+        self.search_input.setPlaceholderText(
+            "Search commands, pages, transcripts and settings…"
+        )
+        self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._filter)
         self.search_input.installEventFilter(self)
         layout.addWidget(self.search_input)
         self.list_widget = QListWidget(self)
+        self.list_widget.setObjectName("CommandPaletteResults")
         self.list_widget.itemActivated.connect(self._activate_item)
         self.list_widget.itemClicked.connect(self._activate_item)
         self.list_widget.installEventFilter(self)
-        layout.addWidget(self.list_widget)
-        self.hint = QLabel("↑ ↓ Navigate   Enter Run   Esc Close")
+        layout.addWidget(self.list_widget, 1)
+        self.hint = QLabel("↑ ↓ Navigate   Enter Open   Esc Close")
         self.hint.setObjectName("Muted")
         layout.addWidget(self.hint)
         self._commands: list[dict] = []
+        self._search_provider = None
+        self._query = ""
         self.hide()
 
-    def open(self, commands):
+    def open(self, commands, *, search_provider=None, initial_query=""):
         self._commands = list(commands or [])
-        self.search_input.clear()
-        self._filter("")
+        self._search_provider = search_provider
+        self._query = str(initial_query or "")
+        self.search_input.setText(self._query)
+        self._filter(self._query)
         parent = self.parentWidget()
-        width = min(620, max(420, parent.width() - 48))
-        height = min(480, max(260, parent.height() - 80))
+        width = min(700, max(320, parent.width() - 32))
+        height = min(520, max(240, parent.height() - 56))
         self.setGeometry(
             max(16, (parent.width() - width) // 2),
             max(16, (parent.height() - height) // 2),
@@ -194,58 +69,114 @@ class CommandPalettePopup(QFrame):
         self.show()
         self.raise_()
         self.search_input.setFocus()
+        self.search_input.selectAll()
+
+    @staticmethod
+    def _score(item: dict, query: str) -> int:
+        title = str(item.get("title") or "")
+        category = str(item.get("category") or "")
+        folded = title.casefold()
+        if not query:
+            return 0
+        if folded == query:
+            return 0
+        if folded.startswith(query):
+            return 1
+        if query in folded:
+            return 2
+        if query in category.casefold():
+            return 3
+        return 4
 
     def _filter(self, query):
         normalized = str(query or "").casefold().strip()
+        self._query = str(query or "").strip()
         tokens = normalized.split()
         matches = []
+        seen = set()
+
         for index, command in enumerate(self._commands):
             searchable = " ".join(
                 str(command.get(key) or "")
                 for key in ("title", "category", "keywords", "description", "shortcut")
             ).casefold()
-            if not tokens or all(token in searchable for token in tokens):
-                title = str(command.get("title") or "")
-                category = str(command.get("category") or "")
-                title_folded = title.casefold()
-                if not normalized:
-                    score = 0
-                elif title_folded == normalized:
-                    score = 0
-                elif title_folded.startswith(normalized):
-                    score = 1
-                elif normalized in title_folded:
-                    score = 2
-                elif normalized in category.casefold():
-                    score = 3
-                else:
-                    score = 4
-                matches.append((score, index, command))
-
-        matches.sort(key=lambda item: (item[0], item[1]))
-        commands = [item[2] for item in matches]
-        self.list_widget.clear()
-        for command in commands:
-            shortcut = f"   [{command['shortcut']}]" if command.get("shortcut") else ""
-            item = QListWidgetItem(
-                f"{command.get('title', 'Untitled')}{shortcut}   ·   {command.get('category', 'Command')}"
+            if tokens and not all(token in searchable for token in tokens):
+                continue
+            kind = str(command.get("kind") or "command")
+            identity = (
+                ("command", str(command.get("title") or "").casefold())
+                if kind == "command"
+                else (kind, str(command.get("id") or command.get("title") or ""))
             )
-            item.setToolTip(str(command.get("keywords") or command.get("description") or ""))
-            item.setData(Qt.UserRole, command)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            matches.append((self._score(command, normalized), index, command))
+
+        search_error = ""
+        if normalized and callable(self._search_provider):
+            try:
+                found = list(self._search_provider(self._query) or [])
+            except Exception as exc:
+                found = []
+                search_error = str(exc)
+            offset = len(self._commands)
+            for index, result in enumerate(found):
+                if not isinstance(result, dict):
+                    continue
+                identity = (
+                    str(result.get("kind") or "result"),
+                    str(result.get("id") or result.get("title") or ""),
+                )
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                matches.append((self._score(result, normalized), offset + index, result))
+
+        matches.sort(key=lambda entry: (entry[0], entry[1]))
+        results = [entry[2] for entry in matches]
+        self.list_widget.clear()
+        for result in results:
+            title = str(result.get("title") or "Untitled")
+            category = str(
+                result.get("category")
+                or ("Transcripts" if result.get("kind") == "transcript" else "Command")
+            )
+            shortcut = f"   [{result['shortcut']}]" if result.get("shortcut") else ""
+            item = QListWidgetItem(f"{title}{shortcut}   ·   {category}")
+            item.setToolTip(str(
+                result.get("description")
+                or result.get("keywords")
+                or result.get("subtitle")
+                or ""
+            ))
+            item.setData(Qt.UserRole, result)
             self.list_widget.addItem(item)
+
         if self.list_widget.count():
             self.list_widget.setCurrentRow(0)
-        self.hint.setText(
-            f"{len(commands)} result(s) · ↑ ↓ Navigate · Enter Run · Esc Close"
-            if commands
-            else "No matching pages, settings or actions"
-        )
+        if search_error:
+            self.hint.setText(
+                f"{len(results)} result(s) · Transcript lookup unavailable: {search_error}"
+            )
+        elif results:
+            self.hint.setText(
+                f"{len(results)} result(s) · ↑ ↓ Navigate · Enter Open · Esc Close"
+            )
+        else:
+            self.hint.setText(
+                "No matching commands, pages or transcripts"
+                if normalized else "Start typing to search commands, pages and transcripts"
+            )
 
     def _activate_item(self, item):
-        command = item.data(Qt.UserRole)
-        if isinstance(command, dict):
-            self.hide()
-            self.command_activated.emit(command)
+        result = item.data(Qt.UserRole)
+        if not isinstance(result, dict):
+            return
+        if result.get("kind") == "transcript" and self._query:
+            result = {**result, "search_query": self._query}
+        self.hide()
+        self.command_activated.emit(result)
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.KeyPress:

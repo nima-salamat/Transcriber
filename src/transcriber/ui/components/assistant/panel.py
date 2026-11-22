@@ -357,8 +357,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         chat_workspace.setObjectName("AssistantChatWorkspace")
         chat_workspace.setMinimumWidth(0)
         self.chat_layout = QVBoxLayout(chat_workspace)
-        self.chat_layout.setContentsMargins(18, 4, 10, 6)
-        self.chat_layout.setSpacing(10)
+        self.chat_layout.setContentsMargins(6, 2, 6, 4)
+        self.chat_layout.setSpacing(8)
         chat_workspace.installEventFilter(self)
         self.conversation_header = ConversationHeader(self)
         self.session_title_label = self.conversation_header.title_label
@@ -858,13 +858,6 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._sync_voice_orb()
         QTimer.singleShot(0, self._auto_connect_provider)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        narrow = event.size().width() < 760
-        margins = (8, 8, 8, 8) if narrow else (16, 14, 16, 14)
-        if self.root_layout.getContentsMargins() != margins:
-            self.root_layout.setContentsMargins(*margins)
-
     def eventFilter(self, watched, event):
         if (
             watched is getattr(self, "chat_workspace", None)
@@ -872,10 +865,10 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
             and hasattr(self, "chat_layout")
         ):
             narrow = event.size().width() < 560
-            margins = (7, 3, 7, 5) if narrow else (18, 4, 10, 6)
+            margins = (2, 1, 2, 2) if narrow else (6, 2, 6, 4)
             if self.chat_layout.getContentsMargins() != margins:
                 self.chat_layout.setContentsMargins(*margins)
-                self.chat_layout.setSpacing(7 if narrow else 10)
+                self.chat_layout.setSpacing(6 if narrow else 8)
         return super().eventFilter(watched, event)
 
     def _create_settings_section(self, title: str):

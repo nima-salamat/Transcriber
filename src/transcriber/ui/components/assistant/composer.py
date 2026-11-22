@@ -384,7 +384,8 @@ class MessageComposer(QFrame):
         self.status_label.setObjectName("AssistantComposerStatus")
         self.status_label.setWordWrap(True)
         self.status_label.setMinimumWidth(0)
-        self.status_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.status_label.setMaximumWidth(220)
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.status_label.hide()
 
@@ -415,7 +416,8 @@ class MessageComposer(QFrame):
         if compact:
             self.row_layout.addWidget(self.prompt, 1)
             self.bottom_row_layout.addWidget(self.model_picker, 0)
-            self.bottom_row_layout.addWidget(self.status_label, 1)
+            self.bottom_row_layout.addWidget(self.status_label, 0)
+            self.bottom_row_layout.addStretch(1)
             self.bottom_row_layout.addWidget(self.voice_chat_button, 0)
             self.bottom_row_layout.addWidget(self.send_button, 0)
             self.bottom_row_container.show()
@@ -442,8 +444,8 @@ class MessageComposer(QFrame):
             )
             self.bottom_row_layout.setSpacing(5 if very_narrow else 8)
             self.model_picker.layout().setSpacing(4 if very_narrow else 7)
-            self.model_picker.button.setMinimumWidth(64 if very_narrow else 128)
-            self.model_picker.button.setMaximumWidth(92 if very_narrow else 230)
+            self.model_picker.button.setMinimumWidth(68 if very_narrow else 148)
+            self.model_picker.button.setMaximumWidth(92 if very_narrow else 184)
             self.model_picker.retry_button.setFixedSize(
                 28 if very_narrow else 34, 28 if very_narrow else 34
             )
@@ -466,8 +468,11 @@ class MessageComposer(QFrame):
             self.voice_chat_button.setAccessibleName("Start voice conversation")
         else:
             self.voice_chat_button.setText("Start voice")
-            self.voice_chat_button.setMinimumSize(0, 42)
-            self.voice_chat_button.setMaximumSize(16777215, 42)
+            if self._compact_mode:
+                self.voice_chat_button.setFixedSize(112, 42)
+            else:
+                self.voice_chat_button.setMinimumSize(0, 42)
+                self.voice_chat_button.setMaximumSize(16777215, 42)
             self.voice_chat_button.setProperty("iconOnly", False)
             self.voice_chat_button.setToolTip("Start or stop local voice conversation")
         self.voice_chat_button.style().unpolish(self.voice_chat_button)

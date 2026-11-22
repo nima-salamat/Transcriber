@@ -7,6 +7,7 @@ from pathlib import Path
 
 class IconRegistry:
     ICONS = {
+        "brand": "transcriber.svg",
         "home": "house.svg",
         "record": "mic.svg",
         "projects": "folder-open.svg",

@@ -33,7 +33,7 @@ class MessageWidget(QFrame):
         self.icons = icons
         self.setObjectName(f"AssistantMessage_{self.role}")
         self.setMinimumWidth(0)
-        self.setMaximumWidth(960)
+        self.setMaximumWidth(1100)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.setProperty("role", self.role)
 

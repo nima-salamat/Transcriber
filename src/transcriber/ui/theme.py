@@ -27,11 +27,9 @@ def stylesheet(theme: str) -> str:
         border-bottom: 1px solid {c['border']};
     }}
     QLabel#SidebarMark {{
-        background: {c['accent']};
-        color: white;
-        border-radius: 10px;
-        font-size: 20px;
-        font-weight: 800;
+        background: transparent;
+        border: 0;
+        padding: 0;
     }}
     QLabel#SidebarBrand {{
         color: {c['text']};
@@ -345,6 +343,42 @@ def stylesheet(theme: str) -> str:
         background: {c['surface_hover']};
         border-color: {c['accent']};
     }}
+    QFrame#CommandPalettePopup {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 16px;
+    }}
+    QLineEdit#CommandPaletteSearch {{
+        background: {c['input']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+        padding: 11px 13px;
+        font-size: 13px;
+    }}
+    QLineEdit#CommandPaletteSearch:focus {{
+        border-color: {c['focus']};
+    }}
+    QListWidget#CommandPaletteResults {{
+        background: transparent;
+        border: 0;
+        padding: 2px;
+    }}
+    QListWidget#CommandPaletteResults::item {{
+        background: {c['surface_2']};
+        border: 1px solid transparent;
+        border-radius: 9px;
+        padding: 11px 12px;
+        margin: 2px 0;
+    }}
+    QListWidget#CommandPaletteResults::item:hover {{
+        background: {c['surface_hover']};
+    }}
+    QListWidget#CommandPaletteResults::item:selected {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+        color: {c['text']};
+    }}
     QFrame#AssistantComposer {{
         background: {c['surface']};
         border: 1px solid {c['border']};
@@ -626,6 +660,43 @@ def stylesheet(theme: str) -> str:
         font-weight: 700;
     }}
     QPushButton#Primary:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#CommandPaletteButton {{
+        background: {c['surface_2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+        padding: 8px 13px;
+        min-height: 18px;
+        font-weight: 650;
+    }}
+    QPushButton#CommandPaletteButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QPushButton#HomePrimaryAction {{
+        background: {c['accent']};
+        color: white;
+        border: 1px solid {c['accent']};
+        border-radius: 12px;
+        padding: 0 12px;
+        font-weight: 700;
+    }}
+    QPushButton#HomePrimaryAction:hover {{
+        background: {c['accent_hover']};
+        border-color: {c['accent_hover']};
+    }}
+    QPushButton#HomeSecondaryAction {{
+        background: {c['surface_2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+        padding: 0 12px;
+        font-weight: 650;
+    }}
+    QPushButton#HomeSecondaryAction:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
     QPushButton#Danger {{ background: {c['danger']}; color: white; border: 0; }}
     QPushButton#Subtle {{ background: transparent; border: 1px solid {c['border']}; }}
     QPushButton#Subtle:hover {{ background: {c['surface_hover']}; }}

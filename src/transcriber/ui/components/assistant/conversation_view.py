@@ -44,13 +44,13 @@ class ConversationView(QFrame):
         self.content.setMinimumWidth(0)
         self.content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.content_layout = QVBoxLayout(self.content)
-        self.content_layout.setContentsMargins(18, 22, 18, 26)
-        self.content_layout.setSpacing(13)
+        self.content_layout.setContentsMargins(10, 14, 10, 16)
+        self.content_layout.setSpacing(11)
 
         self.empty_state = QFrame()
         self.empty_state.setObjectName("AssistantEmptyState")
         empty_layout = QVBoxLayout(self.empty_state)
-        empty_layout.setContentsMargins(18, 34, 18, 34)
+        empty_layout.setContentsMargins(12, 20, 12, 20)
         empty_layout.setSpacing(12)
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title = QLabel("How can I help you today?")
@@ -397,7 +397,7 @@ class ConversationView(QFrame):
     def _responsive_message_max_width(self) -> int:
         """Keep chat cards inside the viewport instead of forcing a desktop width."""
         viewport_width = max(1, self.scroll_area.viewport().width())
-        return max(1, min(1120, int(viewport_width * 0.94)))
+        return max(1, min(1100, int(viewport_width * 0.97)))
 
     def _update_message_widths(self):
         max_width = self._responsive_message_max_width()
@@ -410,13 +410,13 @@ class ConversationView(QFrame):
         super().resizeEvent(event)
         narrow = event.size().width() < 560
         if narrow:
-            self.content_layout.setContentsMargins(8, 12, 8, 16)
-            self._empty_layout.setContentsMargins(8, 18, 8, 18)
+            self.content_layout.setContentsMargins(4, 8, 4, 10)
+            self._empty_layout.setContentsMargins(8, 12, 8, 12)
             self._empty_layout.setSpacing(9)
         else:
-            self.content_layout.setContentsMargins(18, 22, 18, 26)
-            self._empty_layout.setContentsMargins(18, 34, 18, 34)
-            self._empty_layout.setSpacing(12)
+            self.content_layout.setContentsMargins(10, 14, 10, 16)
+            self._empty_layout.setContentsMargins(12, 20, 12, 20)
+            self._empty_layout.setSpacing(10)
         for widget in self._widgets:
             widget.body.refresh_document_size()
         # Let the scroll area's viewport finish its layout before measuring it.

@@ -34,7 +34,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -68,7 +67,7 @@ from transcriber.storage.recordings import RecordingRepository
 from transcriber.transcription.segments import TranscriptionOptions
 from transcriber.ui.components.assistant_panel import AssistantPanel
 from transcriber.ui.components.waveform import WaveformTimeline
-from transcriber.ui.components.workspace_popups import CommandPalettePopup, GlobalSearchPopup
+from transcriber.ui.components.workspace_popups import CommandPalettePopup
 from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.pages.audio_cleanup import AudioCleanupPage
 from transcriber.ui.pages.audio_library import AudioLibraryPage
@@ -199,7 +198,7 @@ class MainWindow(QMainWindow):
             dispatcher=self.dispatcher, approval=self._approve_agent_action,
         )
         self._waveform_generation = 0
-        self._pending_global_search: tuple[str, str] | None = None
+        self._pending_transcript_search: tuple[str, str] | None = None
         self._shutdown_started = False
         self._shutdown_complete = False
         self._active_agent_approval: QMessageBox | None = None
@@ -210,6 +209,11 @@ class MainWindow(QMainWindow):
         self._shutdown_timer.timeout.connect(self._poll_shutdown)
         self.thread_pool.setMaxThreadCount(max(2, min(8, settings_store.settings.download_concurrency + 2)))
         self.setWindowTitle("Transcriber")
+        app_icon = self.icon_registry.icon("brand", size=128)
+        self.setWindowIcon(app_icon)
+        app = QApplication.instance()
+        if app is not None:
+            app.setWindowIcon(app_icon)
         self.setMinimumSize(760, 500)
         self.setAcceptDrops(True)
         self._build_ui()
@@ -253,10 +257,11 @@ class MainWindow(QMainWindow):
         brand = QHBoxLayout()
         brand.setContentsMargins(2, 0, 2, 3)
         brand.setSpacing(9)
-        mark = QLabel("T")
+        mark = QLabel()
         mark.setObjectName("SidebarMark")
         mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mark.setFixedSize(34, 34)
+        mark.setPixmap(self.icon_registry.icon("brand", size=30).pixmap(30, 30))
+        mark.setFixedSize(36, 36)
         self.brand_name = QLabel("Transcriber")
         self.brand_name.setObjectName("SidebarBrand")
         brand.addWidget(mark)
@@ -351,14 +356,16 @@ class MainWindow(QMainWindow):
         self.page_title.setObjectName("ToolbarPageTitle")
         self.top_status = QLabel("● Local mode")
         self.top_status.setObjectName("Muted")
-        self.global_search = QLineEdit()
-        self.global_search.setPlaceholderText("Search projects, transcripts and commands…")
-        self.global_search.installEventFilter(self)
-        self.global_search.setMinimumWidth(150)
-        self.global_search.setMaximumWidth(320)
-        self.global_search.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.command_button = QPushButton("Ctrl+K  Commands")
-        self.command_button.clicked.connect(self.show_command_palette)
+        self.command_button = QPushButton("Commands")
+        self.command_button.setObjectName("CommandPaletteButton")
+        self.command_button.setIcon(self.icon_registry.icon("search", size=16))
+        self.command_button.setIconSize(QSize(16, 16))
+        self.command_button.setToolTip(
+            "Search workspace pages, transcripts, settings and actions · Ctrl+K"
+        )
+        self.command_button.clicked.connect(
+            lambda _checked=False: self.show_command_palette()
+        )
         self.assistant_button = QPushButton("AI Assistant")
         self.assistant_button.setToolTip("Open the dedicated AI conversation page")
         self.assistant_button.clicked.connect(self.show_ai_assistant)
@@ -367,7 +374,6 @@ class MainWindow(QMainWindow):
         new_button.clicked.connect(lambda: self.navigate("transcription"))
         toolbar_layout.addWidget(self.page_title)
         toolbar_layout.addStretch(1)
-        toolbar_layout.addWidget(self.global_search)
         toolbar_layout.addWidget(self.command_button)
         toolbar_layout.addWidget(self.assistant_button)
         toolbar_layout.addWidget(self.top_status)
@@ -530,12 +536,8 @@ class MainWindow(QMainWindow):
         )
 
         self.command_registry: list[dict] = []
-        self.global_search_popup = GlobalSearchPopup(self, self._search_items)
-        self.global_search_popup.result_activated.connect(self._activate_search_result)
-        self.global_search.textChanged.connect(self._on_global_search_text_changed)
-        self.global_search.returnPressed.connect(self.global_search_popup.activate_current)
         self.command_palette_popup = CommandPalettePopup(self)
-        self.command_palette_popup.command_activated.connect(self._run_palette_command)
+        self.command_palette_popup.command_activated.connect(self._activate_palette_result)
         self._build_menus()
 
     def _install_drawer_title_bar(self, dock, title: str, glyph: str, dimension: str):
@@ -688,6 +690,7 @@ class MainWindow(QMainWindow):
 
     def _register_command(self, title, category, callback, shortcut=None, keywords=""):
         self.command_registry.append({
+            "kind": "command",
             "title": title, "category": category, "shortcut": shortcut,
             "keywords": str(keywords or ""),
             "callback": callback,
@@ -734,7 +737,9 @@ class MainWindow(QMainWindow):
         self._add_menu_action(edit_menu, "Copy", lambda: self._edit_focused_widget("copy"), "Ctrl+C")
         self._add_menu_action(edit_menu, "Paste", lambda: self._edit_focused_widget("paste"), "Ctrl+V")
         self._add_menu_action(edit_menu, "Select All", lambda: self._edit_focused_widget("selectAll"), "Ctrl+A")
-        self._add_menu_action(edit_menu, "Find", self.global_search.setFocus, "Ctrl+F")
+        self._add_menu_action(
+            edit_menu, "Find in workspace…", self.show_command_palette, "Ctrl+F"
+        )
         self._add_menu_action(edit_menu, "Replace", self._focus_replace, "Ctrl+H")
 
         view_menu = bar.addMenu("&View")
@@ -783,8 +788,8 @@ class MainWindow(QMainWindow):
         self._add_menu_action(help_menu, "Keyboard Shortcuts", self._show_keyboard_shortcuts)
         self._add_menu_action(help_menu, "About Transcriber", self._show_about)
 
-        # Settings are destinations, too: expose every major control group to
-        # both global search and the Ctrl+K command palette.
+        # Settings are destinations, too: expose every major control group
+        # in the unified command palette.
         for entry in self.settings_page.search_entries():
             self._register_command(
                 entry["title"],
@@ -810,7 +815,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self, "Keyboard Shortcuts",
             "Ctrl+O  Open audio\\nCtrl+S  Save transcript\\nCtrl+Shift+N  New transcription\\n"
-            "Ctrl+K  Command palette\\nCtrl+F  Global search\\nCtrl+Z / Ctrl+Y  Undo / Redo\\n"
+            "Ctrl+K / Ctrl+F  Commands, pages and transcript search\\nCtrl+Z / Ctrl+Y  Undo / Redo\\n"
             "Ctrl+Shift+I  Toggle inspector\\nCtrl+Shift+T  Toggle timeline\\nF11  Maximize / restore",
         )
 
@@ -849,40 +854,25 @@ class MainWindow(QMainWindow):
             inspector_visible=True, timeline_visible=True, window_state=None,
         )
 
-    @staticmethod
-    def _command_matches(command: dict, query: str) -> bool:
-        searchable = " ".join(
-            str(command.get(key) or "")
-            for key in ("title", "category", "keywords", "description", "shortcut")
-        ).casefold()
-        return all(token in searchable for token in str(query or "").casefold().split())
-
-    def _search_items(self, query):
-        normalized = str(query or "").strip().casefold()
+    def _search_transcripts(self, query: str) -> list[dict]:
+        """Return saved transcript matches for the unified command palette."""
+        try:
+            records = self.history.list(str(query or "").strip(), limit=12)
+        except (OSError, RuntimeError, ValueError):
+            return []
         results = []
-        if normalized:
-            try:
-                records = self.history.list(query, limit=12)
-            except (OSError, RuntimeError, ValueError):
-                records = []
-            for record in records:
-                results.append({
-                    "kind": "transcript", "id": record["id"],
-                    "title": record["title"], "subtitle": record.get("preview", "Transcript"),
-                })
-            for page_id, _icon, title in self.NAVIGATION:
-                if any(
-                    token in title.casefold() or token in page_id.casefold()
-                    for token in normalized.split()
-                ):
-                    results.append({"kind": "page", "id": page_id, "title": title, "subtitle": "Workspace page"})
-            for command in self.command_registry:
-                if self._command_matches(command, normalized):
-                    results.append({
-                        "kind": "command", "title": command["title"],
-                        "subtitle": command["category"], "command": command,
-                    })
-        return results[:40]
+        for record in records:
+            preview = str(record.get("preview") or "").strip()
+            results.append({
+                "kind": "transcript",
+                "id": str(record["id"]),
+                "title": str(record.get("title") or "Untitled transcript"),
+                "category": "Transcripts",
+                "description": preview,
+                "subtitle": preview,
+                "keywords": "audio transcript saved project",
+            })
+        return results
 
     def _open_settings_target(self, callback):
         self.navigate("settings")
@@ -892,23 +882,20 @@ class MainWindow(QMainWindow):
         self.recording_page.refresh_devices()
         self.transcription_page.player.set_output_device(output_device_id)
 
-    def _on_global_search_text_changed(self, query):
-        self.global_search_popup.open_for(self.global_search, query)
-
-    def _activate_search_result(self, result):
-        if not result:
+    def _activate_palette_result(self, result):
+        if not isinstance(result, dict):
             return
         kind = result.get("kind")
         if kind == "transcript":
-            transcript_id = str(result["id"])
+            transcript_id = str(result.get("id") or "")
             query = str(result.get("search_query") or "").strip()
-            self._pending_global_search = (transcript_id, query) if query else None
-            if not self.open_transcript(transcript_id):
-                self._pending_global_search = None
-        elif kind == "page":
-            self.navigate(str(result["id"]))
-        elif kind == "command":
-            self._run_palette_command(result["command"])
+            self._pending_transcript_search = (
+                (transcript_id, query) if transcript_id and query else None
+            )
+            if not transcript_id or not self.open_transcript(transcript_id):
+                self._pending_transcript_search = None
+        else:
+            self._run_palette_command(result)
 
     def _run_palette_command(self, command):
         callback = command.get("callback") if isinstance(command, dict) else None
@@ -916,8 +903,12 @@ class MainWindow(QMainWindow):
             self.command_palette_popup.hide()
             callback()
 
-    def show_command_palette(self):
-        self.command_palette_popup.open(self.command_registry)
+    def show_command_palette(self, initial_query: str = ""):
+        self.command_palette_popup.open(
+            self.command_registry,
+            search_provider=self._search_transcripts,
+            initial_query=initial_query,
+        )
 
     def _on_transcription_text_edited(self, _segments):
         self.editor_page.refresh()
@@ -926,25 +917,16 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        popup = getattr(self, "global_search_popup", None)
-        if popup is not None and popup.isVisible():
-            popup.reposition()
 
     def eventFilter(self, watched, event):
-        # A wheel over a numeric control or dropdown must not change its value;
-        # the user's gesture should remain a page-scroll gesture.
-        if (
-            event.type() == QEvent.Type.Wheel
-            and isinstance(watched, QWidget)
-        ):
+        # Prevent accidental value changes when the user scrolls over controls.
+        if event.type() == QEvent.Type.Wheel and isinstance(watched, QWidget):
             ancestors = []
             current = watched
             while current is not None:
                 ancestors.append(current)
                 current = current.parentWidget()
 
-            # A combo's popup list is a separate interaction surface and remains
-            # scrollable/selectable; only the closed control itself is guarded.
             inside_popup_list = any(
                 isinstance(widget, QAbstractItemView) for widget in ancestors
             )
@@ -956,9 +938,6 @@ class MainWindow(QMainWindow):
                 )
             )
             if guarded_control:
-                # Forward the same wheel gesture to the nearest scroll viewport.
-                # The input control never sees it, so its value cannot change,
-                # while a surrounding settings/page scroll area still moves.
                 scroll_area = next(
                     (widget for widget in ancestors if isinstance(widget, QScrollArea)),
                     None,
@@ -983,19 +962,6 @@ class MainWindow(QMainWindow):
                     QApplication.sendEvent(viewport, forwarded)
                 event.accept()
                 return True
-
-        popup = getattr(self, "global_search_popup", None)
-        if watched is self.global_search and popup is not None and popup.isVisible():
-            if event.type() == QEvent.Type.KeyPress:
-                if event.key() == Qt.Key.Key_Down:
-                    popup.move_selection(1)
-                    return True
-                if event.key() == Qt.Key.Key_Up:
-                    popup.move_selection(-1)
-                    return True
-                if event.key() == Qt.Key.Key_Escape:
-                    popup.hide()
-                    return True
         return super().eventFilter(watched, event)
 
     def _start_local_ipc(self):
@@ -1843,9 +1809,6 @@ class MainWindow(QMainWindow):
     def toggle_sidebar(self):
         self._apply_sidebar_collapsed_state(not self._sidebar_collapsed)
 
-    def _search_library(self):
-        self.global_search_popup.activate_current()
-
     def _on_audio_duration_changed(self, duration_ms):
         self._audio_duration_ms = max(0, int(duration_ms))
         if self.timeline.peaks:
@@ -1905,9 +1868,9 @@ class MainWindow(QMainWindow):
 
         # Opening a history result is asynchronous. Apply its search only after
         # the matching transcript has actually been loaded into the editor.
-        pending = self._pending_global_search
+        pending = self._pending_transcript_search
         if pending and pending[0] == str(self.transcription_page.transcript_id or ""):
-            self._pending_global_search = None
+            self._pending_transcript_search = None
             query = pending[1]
             QTimer.singleShot(80, lambda value=query: self.transcription_page.find_text(value))
 
