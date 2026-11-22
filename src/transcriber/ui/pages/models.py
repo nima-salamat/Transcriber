@@ -111,10 +111,11 @@ class ModelCard(Card):
             else model.repo_id
         )
         heading = QLabel(heading_text)
-        heading.setStyleSheet("font-size: 15px; font-weight: 650;")
+        heading.setObjectName("ModelDetailHeading")
         top.addWidget(heading, 1)
         self.compatibility = QLabel("Compatibility not inspected")
-        self.compatibility.setObjectName("Muted")
+        self.compatibility.setObjectName("ModelCompatibility")
+        self._set_compatibility_state("neutral")
         top.addWidget(self.compatibility)
         layout.addLayout(top)
         description = QLabel(model.description or "Description: Not provided by the repository card.")
@@ -164,6 +165,14 @@ class ModelCard(Card):
         layout.addWidget(self.progress)
         layout.addWidget(self.progress_text)
 
+    def _set_compatibility_state(self, state: str):
+        """Apply a semantic compatibility state through the shared theme."""
+        self.compatibility.setProperty("state", state)
+        style = self.compatibility.style()
+        style.unpolish(self.compatibility)
+        style.polish(self.compatibility)
+        self.compatibility.update()
+
     def set_inspection(self, metadata, report):
         self.model = metadata
         self.report = report
@@ -171,10 +180,10 @@ class ModelCard(Card):
         runtime_name = "Vosk" if runtime == "vosk" else "Faster-Whisper"
         if report.compatible:
             self.compatibility.setText(f"Compatible · {runtime_name}")
-            self.compatibility.setStyleSheet("color: #36a47e; font-weight: 600;")
+            self._set_compatibility_state("compatible")
         else:
             self.compatibility.setText(f"Not compatible · {runtime_name}")
-            self.compatibility.setStyleSheet("color: #d65a65; font-weight: 600;")
+            self._set_compatibility_state("incompatible")
         missing = (" Missing: " + ", ".join(report.missing_files)) if report.missing_files else ""
         if runtime == "vosk":
             self.inspection_detail = (
@@ -221,10 +230,7 @@ class ModelCard(Card):
                 f"{runtime_name} · Installed" if compatible
                 else f"{runtime_name} · Repair needed"
             )
-            self.compatibility.setStyleSheet(
-                "color: #36a47e; font-weight: 700;" if compatible
-                else "color: #d49a42; font-weight: 700;"
-            )
+            self._set_compatibility_state("compatible" if compatible else "warning")
             self.install_button.setText("Installed" if compatible else "Installed · Repair")
             self.install_button.setEnabled(False)
             path = installed_info.get("path")
@@ -242,15 +248,12 @@ class ModelCard(Card):
                     f"Compatible · {runtime_name}" if compatible
                     else f"Not compatible · {runtime_name}"
                 )
-                self.compatibility.setStyleSheet(
-                    "color: #36a47e; font-weight: 600;" if compatible
-                    else "color: #d65a65; font-weight: 600;"
-                )
+                self._set_compatibility_state("compatible" if compatible else "incompatible")
                 if self.inspection_detail:
                     self.detail_label.setText(self.inspection_detail)
             else:
                 self.compatibility.setText("Compatibility not inspected")
-                self.compatibility.setStyleSheet("")
+                self._set_compatibility_state("neutral")
             self.install_button.setText("Install model")
             self.install_button.setEnabled(bool(self.report and self.report.compatible))
 
@@ -415,10 +418,6 @@ class ModelLibraryPage(QWidget):
         self.download_list.verticalScrollBar().setSingleStep(18)
         self.download_list.horizontalScrollBar().setSingleStep(18)
         self.download_list.setUniformItemSizes(True)
-        self.download_list.setStyleSheet(
-            "QListWidget#DownloadTaskList { background: transparent; border: 0; outline: 0; } "
-            "QListWidget#DownloadTaskList::item { background: transparent; border: 0; padding: 0; }"
-        )
         downloads_layout.addWidget(self.download_list, 1)
         download_actions = QHBoxLayout()
         self.clear_failed_button = QPushButton("Clear failed")
@@ -445,7 +444,7 @@ class ModelLibraryPage(QWidget):
         installed_layout.setSpacing(10)
         installed_toolbar = QHBoxLayout()
         self.installed_summary = QLabel("Installed models")
-        self.installed_summary.setStyleSheet("font-size: 15px; font-weight: 650;")
+        self.installed_summary.setObjectName("ModelInstalledSummary")
         self.installed_search = QLineEdit()
         self.installed_search.setPlaceholderText("Search installed models…")
         self.installed_search.textChanged.connect(self._filter_installed_cards)
