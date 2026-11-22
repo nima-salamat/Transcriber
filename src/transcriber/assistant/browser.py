@@ -18,6 +18,8 @@ from urllib.error import URLError
 from urllib.parse import quote, urlparse
 from urllib.request import urlopen
 
+from transcriber.core.process import hidden_subprocess_creation_flags
+
 
 class BrowserAutomationError(RuntimeError):
     """A browser could not be started or an interaction failed."""
@@ -317,7 +319,7 @@ class WindowsBrowserController:
                     stderr=subprocess.DEVNULL,
                     check=False,
                     timeout=8,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    creationflags=hidden_subprocess_creation_flags(),
                 )
             except (OSError, subprocess.TimeoutExpired):
                 pass

@@ -94,6 +94,18 @@ python -m transcriber
 
 The legacy `APP.py` file remains only as a compatibility launcher. It imports the package entry point and no longer contains a second implementation.
 
+### Build a Windows desktop application
+
+The Windows release is built as a **windowed** PyInstaller application. It does not create a console window at startup, and background command-line tools have their output captured instead of opening terminal windows.
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+.\scripts\build_windows.ps1
+```
+
+For an NVIDIA CUDA-enabled build, add `-WithCuda`. The output is `dist/Transcriber/Transcriber.exe` with its supporting files. Keep the application directory together when distributing it. The `transcriber-mcp` stdio endpoint remains a console script by design; it is not the desktop launcher. On Windows source checkouts, double-click `APP.pyw` to launch without a console.
+
 ## Install an offline model
 
 1. Open **Model Library**.

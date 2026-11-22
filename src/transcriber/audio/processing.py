@@ -7,6 +7,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from transcriber.core.process import hidden_subprocess_creation_flags
+
 
 class AudioProcessingError(RuntimeError):
     pass
@@ -53,7 +55,15 @@ def process_audio(source: Path, output: Path, *, filters: list[str], cancel_even
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.stem + ".processing" + output.suffix)
     command = ["ffmpeg", "-nostdin", "-y", "-i", str(source), "-vn", "-af", ",".join(filters), str(temporary)]
-    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        close_fds=True,
+        creationflags=hidden_subprocess_creation_flags(),
+    )
     try:
         while process.poll() is None:
             should_cancel = cancel_event.wait(0.15) if cancel_event else False

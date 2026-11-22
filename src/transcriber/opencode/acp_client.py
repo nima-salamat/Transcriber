@@ -12,6 +12,8 @@ from collections.abc import Callable
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from transcriber.core.process import hidden_subprocess_creation_flags
+
 
 class ACPError(RuntimeError):
     pass
@@ -141,7 +143,7 @@ class OpenCodeACPClient:
                 command, cwd=self.cwd, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                 encoding="utf-8", errors="replace", bufsize=1,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                creationflags=hidden_subprocess_creation_flags(),
                 start_new_session=(os.name != "nt"),
                 **launch_options,
             )
@@ -329,7 +331,7 @@ class OpenCodeACPClient:
                     stderr=subprocess.DEVNULL,
                     check=False,
                     timeout=8,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    creationflags=hidden_subprocess_creation_flags(),
                 )
             except (OSError, subprocess.TimeoutExpired):
                 pass

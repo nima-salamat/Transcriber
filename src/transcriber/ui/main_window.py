@@ -59,6 +59,7 @@ from transcriber.assistant.powershell import (
     requires_destructive_permission,
 )
 from transcriber.audio.decoder import validate_audio_file
+from transcriber.core.process import hidden_subprocess_creation_flags
 from transcriber.audio.waveform import build_waveform
 from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
@@ -1527,7 +1528,7 @@ class MainWindow(QMainWindow):
                 timeout=timeout,
                 check=False,
                 shell=False,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                creationflags=hidden_subprocess_creation_flags(),
             )
             output = (completed.stdout or completed.stderr or "").strip()
             if completed.returncode:
@@ -1555,7 +1556,7 @@ class MainWindow(QMainWindow):
                     stderr=subprocess.DEVNULL,
                     timeout=8,
                     check=False,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    creationflags=hidden_subprocess_creation_flags(),
                 )
             except (OSError, subprocess.TimeoutExpired):
                 pass
@@ -1599,9 +1600,7 @@ class MainWindow(QMainWindow):
     ):
         if cancel_event.is_set():
             raise CancelledError("Agent command was cancelled before it started.")
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        if os.name == "nt":
-            flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        flags = hidden_subprocess_creation_flags(new_process_group=True)
         process = subprocess.Popen(
             command_line,
             cwd=cwd,
@@ -1725,7 +1724,7 @@ class MainWindow(QMainWindow):
                 timeout=timeout,
                 check=False,
                 shell=False,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                creationflags=hidden_subprocess_creation_flags(),
             )
         except subprocess.TimeoutExpired as exc:
             stdout = (

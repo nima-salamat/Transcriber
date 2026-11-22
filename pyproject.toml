@@ -56,8 +56,12 @@ dev = [
 ]
 packaging = ["pyinstaller>=6.10,<7"]
 
-[project.scripts]
+[project.gui-scripts]
+# Windows installs receive a pythonw-style launcher (no console window).
 transcriber = "transcriber.__main__:main"
+
+[project.scripts]
+# The MCP server is a stdio process and must keep its console streams.
 transcriber-mcp = "transcriber.mcp_server:main"
 
 [tool.setuptools]
