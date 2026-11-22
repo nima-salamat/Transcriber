@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — Workspace refinement and Windows release hardening
+
+- Refined shared design tokens and polished the Home, Recording, History, Model Library, Batch, Audio Cleanup, Transcript Editor and Subtitle Studio experiences.
+- Improved AI Assistant welcome prompts, conversation layout, provider interactions and independent Stop behavior.
+- Improved application icon handling by generating a multi-resolution Windows ICO from the bundled SVG, embedding it in the executable and verifying its PE icon resources before packaging.
+- Ensured Windows Start Menu and optional desktop shortcuts use the executable's embedded application icon.
+- Updated the automated release workflow to use version-matched release notes and verify the published installer asset.
+
 ## 0.1.0 — First public Windows release
 
 - Published the modular PySide6 desktop workspace for local-first transcription, recording, transcript editing and subtitle production.

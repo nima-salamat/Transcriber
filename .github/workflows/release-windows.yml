@@ -128,7 +128,11 @@ jobs:
           $Tag = "${{ steps.version.outputs.tag }}"
           $Version = "${{ steps.version.outputs.version }}"
           $Installer = "release/Transcriber-Setup-$Version-x64.exe"
-          gh release create $Tag $Installer --target $env:GITHUB_SHA --title "Transcriber $Version" --notes-file "release-notes/v0.1.0.md" --latest
+          $ReleaseNotes = "release-notes/v$Version.md"
+          if (-not (Test-Path -LiteralPath $ReleaseNotes -PathType Leaf)) {
+              throw "Missing versioned release notes: $ReleaseNotes"
+          }
+          gh release create $Tag $Installer --target $env:GITHUB_SHA --title "Transcriber $Version" --notes-file $ReleaseNotes --latest
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release upload failed." }
           $Assets = gh release view $Tag --json assets --jq ".assets[].name"
           if ($LASTEXITCODE -ne 0) { throw "Could not verify the published release assets." }

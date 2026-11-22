@@ -1,8 +1,15 @@
 # Transcriber
 
-**Transcriber** is a local-first desktop workspace for audio transcription, segment editing, subtitle production and optional AI-agent assistance. The 0.1.0 release uses PySide6, SQLite, Hugging Face Hub and Faster-Whisper/CTranslate2. A downloaded compatible ASR model can run offline; the default local engine does not send audio to a cloud service.
+**Transcriber** is a local-first desktop workspace for audio transcription, segment editing, subtitle production and optional AI-agent assistance. The 0.2.0 release uses PySide6, SQLite, Hugging Face Hub and Faster-Whisper/CTranslate2. A downloaded compatible ASR model can run offline; the default local engine does not send audio to a cloud service.
 
-> **Project status:** 0.1.0 is the first public release of the modular desktop application, with a native workspace, resizable inspector/timeline docks, segment-aware editing, subtitle tools, Batch, Audio Cleanup, a generic model-runtime foundation and optional OpenCode ACP/MCP integration. Important limits remain, including no live partial ASR, automatic diarization, verified Persian wake-word accuracy, TTS or full video-preview workflow. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
+> **Project status:** 0.2.0 builds on the first public release of the modular desktop application, refining its native workspace, shared design system, transcription and editing screens, Batch, Audio Cleanup and optional AI-agent integrations. Important limits remain, including no live partial ASR, automatic diarization, verified Persian wake-word accuracy, TTS or full video-preview workflow. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
+
+## What's new in 0.2.0
+
+- Refined the desktop design system and polished Home, Recording, History, Model Library, Batch, Audio Cleanup, Transcript Editor and Subtitle Studio screens.
+- Improved the AI Assistant welcome experience, suggested prompts, conversation layout, provider interactions and Stop control.
+- Strengthened Windows packaging with a multi-resolution application icon embedded in the executable and verified before installer creation.
+
 
 ## What is implemented
 
@@ -104,7 +111,7 @@ py -3.12 -m venv .venv
 .\scripts\build_windows.ps1
 \`\`\`
 
-For an NVIDIA CUDA-enabled build, add \`-WithCuda\`. The build produces the windowed application in \`dist/Transcriber/\` and the installer at \`release/Transcriber-Setup-0.1.0-x64.exe\`. Distribute the installer rather than the unpacked PyInstaller directory. Install Inno Setup 6 before running the local build script.
+For an NVIDIA CUDA-enabled build, add \`-WithCuda\`. The build produces the windowed application in \`dist/Transcriber/\` and the installer at \`release/Transcriber-Setup-0.2.0-x64.exe\`. Distribute the installer rather than the unpacked PyInstaller directory. Install Inno Setup 6 before running the local build script.
 ## Install an offline model
 
 1. Open **Model Library**.
