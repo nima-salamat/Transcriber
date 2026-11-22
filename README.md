@@ -1,8 +1,8 @@
 # Transcriber
 
-**Transcriber** is a local-first desktop workspace for audio transcription, segment editing, subtitle production and optional AI-agent assistance. The 2.1.4 source uses PySide6, SQLite, Hugging Face Hub and Faster-Whisper/CTranslate2. A downloaded compatible ASR model can run offline; the default local engine does not send audio to a cloud service.
+**Transcriber** is a local-first desktop workspace for audio transcription, segment editing, subtitle production and optional AI-agent assistance. The 0.1.0 release uses PySide6, SQLite, Hugging Face Hub and Faster-Whisper/CTranslate2. A downloaded compatible ASR model can run offline; the default local engine does not send audio to a cloud service.
 
-> **Project status:** 2.1.4 expands the Stage-1 modernization with a native workspace, resizable inspector/timeline docks, segment-aware editing, subtitle tools, Batch, Audio Cleanup, a generic model-runtime foundation and optional OpenCode ACP/MCP integration. This is still an alpha development snapshot. Important limits remain, including no live partial ASR, automatic diarization, verified Persian wake-word accuracy, TTS or full video-preview workflow. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
+> **Project status:** 0.1.0 is the first public release of the modular desktop application, with a native workspace, resizable inspector/timeline docks, segment-aware editing, subtitle tools, Batch, Audio Cleanup, a generic model-runtime foundation and optional OpenCode ACP/MCP integration. Important limits remain, including no live partial ASR, automatic diarization, verified Persian wake-word accuracy, TTS or full video-preview workflow. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
 
 ## What is implemented
 
@@ -94,18 +94,17 @@ python -m transcriber
 
 The legacy `APP.py` file remains only as a compatibility launcher. It imports the package entry point and no longer contains a second implementation.
 
-### Build a Windows desktop application
+### Build and install on Windows
 
-The Windows release is built as a **windowed** PyInstaller application. It does not create a console window at startup, and background command-line tools have their output captured instead of opening terminal windows.
+The Windows release is distributed as a per-user installer, not as a loose application folder. It installs under the current user's profile, adds a Start Menu shortcut, and can optionally add a desktop shortcut. Administrator privileges are not required.
 
-```powershell
+\`\`\`powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 .\scripts\build_windows.ps1
-```
+\`\`\`
 
-For an NVIDIA CUDA-enabled build, add `-WithCuda`. The output is `dist/Transcriber/Transcriber.exe` with its supporting files. Keep the application directory together when distributing it. The `transcriber-mcp` stdio endpoint remains a console script by design; it is not the desktop launcher. On Windows source checkouts, double-click `APP.pyw` to launch without a console.
-
+For an NVIDIA CUDA-enabled build, add \`-WithCuda\`. The build produces the windowed application in \`dist/Transcriber/\` and the installer at \`release/Transcriber-Setup-0.1.0-x64.exe\`. Distribute the installer rather than the unpacked PyInstaller directory. Install Inno Setup 6 before running the local build script.
 ## Install an offline model
 
 1. Open **Model Library**.

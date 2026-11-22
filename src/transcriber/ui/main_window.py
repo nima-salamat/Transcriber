@@ -59,6 +59,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from transcriber import __version__
 from transcriber.assistant.action_registry import ActionRegistry, ActionSpec
 from transcriber.assistant.browser import WindowsBrowserController
 from transcriber.assistant.operations import OperationManager
@@ -348,7 +349,7 @@ class MainWindow(QMainWindow):
         side_layout.addWidget(local_status)
         self.local_status = local_status
 
-        version = QLabel("Version 2.1.4")
+        version = QLabel(f"Version {__version__}")
         version.setObjectName("SidebarVersion")
         side_layout.addWidget(version)
         self.sidebar_version = version
@@ -832,7 +833,7 @@ class MainWindow(QMainWindow):
         )
 
     def _show_about(self):
-        QMessageBox.about(self, "About Transcriber", "Transcriber 2.1.5\\nLocal-first audio transcription workspace")
+        QMessageBox.about(self, "About Transcriber", f"Transcriber {__version__}\nLocal-first audio transcription workspace")
 
     def _set_sidebar_visible(self, visible):
         self.sidebar.setVisible(bool(visible))

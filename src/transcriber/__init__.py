@@ -1,3 +1,3 @@
 """Transcriber: local-first desktop audio transcription."""
 
-__version__ = "2.1.4"
+__version__ = "0.1.0"

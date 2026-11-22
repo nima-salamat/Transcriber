@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0 — First public Windows release
+
+- Published the modular PySide6 desktop workspace for local-first transcription, recording, transcript editing and subtitle production.
+- Added a windowed Windows application package and a per-user Inno Setup installer with Start Menu and optional desktop shortcuts.
+- Suppressed console windows for background command-line tools launched by the desktop application.
+- Improved live recording waveform visibility, recorder restart after discard and stable recorder controls.
+
+## Development history (pre-release)
+
+
 ## 2.1.4 — Microphone device-change signal fix
 
 - Fixed the Recording page startup crash caused by trying to connect `QMediaDevices.audioInputsChanged` as a class-level signal.
