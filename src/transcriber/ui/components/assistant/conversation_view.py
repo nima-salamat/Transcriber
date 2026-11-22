@@ -1,7 +1,8 @@
 """Incremental conversation renderer with stable streaming cards and scroll anchoring."""
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -12,11 +13,106 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStyle,
+    QStyleOptionButton,
+    QStylePainter,
     QVBoxLayout,
     QWidget,
 )
 
 from .message_widget import MessageWidget
+
+
+class _PromptSuggestionButton(QPushButton):
+    """A prompt card that paints its own two-line content above the button surface."""
+
+    def __init__(self, title: str, description: str, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._description = description
+        self.setObjectName("AssistantPromptSuggestion")
+        self.setText(title)
+        self.setAccessibleName(title)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(f"Use this prompt: {title}")
+
+    def _content_fonts(self) -> tuple[QFont, QFont]:
+        title_font = QFont(self.font())
+        title_font.setPixelSize(12)
+        title_font.setWeight(QFont.Weight.Bold)
+        description_font = QFont(self.font())
+        description_font.setPixelSize(11)
+        description_font.setWeight(QFont.Weight.Normal)
+        return title_font, description_font
+
+    def sizeHint(self) -> QSize:
+        title_font, description_font = self._content_fonts()
+        title_metrics = QFontMetrics(title_font)
+        description_metrics = QFontMetrics(description_font)
+        width = max(
+            title_metrics.horizontalAdvance(self._title),
+            description_metrics.horizontalAdvance(self._description),
+        ) + 36
+        height = (
+            title_metrics.height()
+            + description_metrics.height()
+            + 3
+            + 20
+            + 2
+        )
+        return QSize(max(220, width), height)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, self.sizeHint().height())
+
+    def paintEvent(self, event):
+        # Paint the native/QSS button chrome first, without its built-in text.
+        style_painter = QStylePainter(self)
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        option.text = ""
+        style_painter.drawControl(QStyle.ControlElement.CE_PushButton, option)
+        style_painter.end()
+
+        # Paint the two labels directly on top of the button surface. This
+        # avoids child-label stacking and layout clipping inside QPushButton.
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        content_rect = self.rect().adjusted(16, 8, -16, -8)
+        title_font, description_font = self._content_fonts()
+        title_metrics = QFontMetrics(title_font)
+        description_metrics = QFontMetrics(description_font)
+        total_height = title_metrics.height() + 3 + description_metrics.height()
+        top = content_rect.center().y() - total_height // 2
+
+        title_rect = content_rect.adjusted(0, 0, 0, 0)
+        title_rect.setTop(top)
+        title_rect.setHeight(title_metrics.height())
+        painter.setFont(title_font)
+        painter.setPen(self.palette().color(QPalette.ColorRole.ButtonText))
+        painter.drawText(
+            title_rect,
+            Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextSingleLine,
+            self._title,
+        )
+
+        description_rect = content_rect.adjusted(0, 0, 0, 0)
+        description_rect.setTop(top + title_metrics.height() + 3)
+        description_rect.setHeight(description_metrics.height())
+        description_color = self.palette().color(QPalette.ColorRole.ButtonText)
+        description_color.setAlpha(175)
+        painter.setFont(description_font)
+        painter.setPen(description_color)
+        painter.drawText(
+            description_rect,
+            Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextSingleLine,
+            self._description,
+        )
+        painter.end()
 
 
 class ConversationView(QFrame):
@@ -122,59 +218,9 @@ class ConversationView(QFrame):
             ),
         )
         for title_text, detail_text, prompt_text in prompt_examples:
-            button = QPushButton(self.prompt_grid)
-            button.setObjectName("AssistantPromptSuggestion")
-            button.setMinimumWidth(0)
-            button.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+            button = _PromptSuggestionButton(
+                title_text, detail_text, self.prompt_grid
             )
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setAccessibleName(title_text)
-            button.setToolTip(f"Use this prompt: {title_text}")
-
-            card_layout = QVBoxLayout(button)
-            card_layout.setContentsMargins(16, 10, 16, 10)
-            card_layout.setSpacing(2)
-            title_label = QLabel(title_text, button)
-            title_label.setObjectName("AssistantPromptSuggestionTitle")
-            title_label.setMinimumWidth(0)
-            title_label.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
-            )
-            title_label.setAlignment(
-                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
-            )
-            title_label.setAttribute(
-                Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-            )
-            detail_label = QLabel(detail_text, button)
-            detail_label.setObjectName("AssistantPromptSuggestionDescription")
-            detail_label.setMinimumWidth(0)
-            detail_label.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
-            )
-            detail_label.setWordWrap(False)
-            detail_label.setAlignment(
-                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
-            )
-            detail_label.setAttribute(
-                Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-            )
-            card_layout.addWidget(title_label)
-            card_layout.addWidget(detail_label)
-            card_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-            # Size the card from both labels plus the inner padding and border.
-            # The grid layout propagates this minimum height to its own container.
-            margins = card_layout.contentsMargins()
-            content_height = (
-                title_label.sizeHint().height()
-                + detail_label.sizeHint().height()
-                + card_layout.spacing()
-                + margins.top()
-                + margins.bottom()
-                + 2
-            )
-            button.setMinimumHeight(content_height)
             button.clicked.connect(
                 lambda _checked=False, value=prompt_text: self.prompt_selected.emit(value)
             )

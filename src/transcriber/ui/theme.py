@@ -1079,6 +1079,7 @@ def stylesheet(theme: str) -> str:
         border: 0;
     }}
     QPushButton#AssistantPromptSuggestion {{
+        color: {c['text']};
         background: {c['surface']};
         border: 1px solid {c['border']};
         border-radius: 9px;
