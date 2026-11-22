@@ -664,3 +664,96 @@ def test_settings_only_persist_browser_trust_not_shell_or_destructive_bypass(tmp
     store.update(agent_trusted_permissions=[])
     assert store.settings.agent_trusted_permissions == []
 
+
+def test_opencode_cancel_notification_interrupts_active_prompt(tmp_path):
+    import json
+    import os
+    import sys
+
+    if os.name != "posix":
+        pytest.skip("The lightweight ACP simulator uses a POSIX executable shebang")
+
+    from transcriber.opencode.acp_client import OpenCodeACPClient
+
+    command_log = tmp_path / "active-cancel-requests.jsonl"
+    executable = tmp_path / "opencode-cancel-test"
+    executable.write_text(
+        "#!/usr/bin/env python3\\n"
+        "import json, os, sys\\n"
+        "pending_prompt = None\\n"
+        "for line in sys.stdin:\\n"
+        "    request = json.loads(line)\\n"
+        "    with open(os.environ['ACP_CANCEL_TEST_LOG'], 'a', encoding='utf-8') as log:\\n"
+        "        log.write(json.dumps(request) + '\\\\n')\\n"
+        "    method = request.get('method')\\n"
+        "    if method == 'session/prompt':\\n"
+        "        pending_prompt = request\\n"
+        "        continue\\n"
+        "    if method == 'session/cancel':\\n"
+        "        if pending_prompt is not None:\\n"
+        "            response = {'jsonrpc': '2.0', 'id': pending_prompt['id'], 'result': {'stopReason': 'cancelled'}}\\n"
+        "            sys.stdout.write(json.dumps(response) + '\\\\n')\\n"
+        "            sys.stdout.flush()\\n"
+        "            pending_prompt = None\\n"
+        "        continue\\n"
+        "    result = {'agentCapabilities': {'loadSession': True}} if method == 'initialize' else {}\\n"
+        "    if method == 'session/new': result = {'sessionId': 'cancel-session'}\\n"
+        "    if 'id' in request:\\n"
+        "        response = {'jsonrpc': '2.0', 'id': request['id'], 'result': result}\\n"
+        "        sys.stdout.write(json.dumps(response) + '\\\\n')\\n"
+        "        sys.stdout.flush()\\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    os.environ["ACP_CANCEL_TEST_LOG"] = str(command_log)
+    client = OpenCodeACPClient(str(executable), cwd=tmp_path)
+    prompt_thread = None
+    outcome = {}
+    try:
+        client.start(timeout=3)
+        session_id = client.new_session()
+        assert session_id == "cancel-session"
+
+        def send_prompt():
+            try:
+                outcome["result"] = client.prompt("Keep working until cancelled", timeout=5)
+            except Exception as exc:
+                outcome["error"] = exc
+
+        prompt_thread = threading.Thread(target=send_prompt, daemon=True)
+        prompt_thread.start()
+
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if command_log.is_file():
+                requests = [
+                    json.loads(line)
+                    for line in command_log.read_text(encoding="utf-8").splitlines()
+                ]
+                if any(item.get("method") == "session/prompt" for item in requests):
+                    break
+            time.sleep(0.01)
+        else:
+            pytest.fail("The ACP simulator did not receive the active prompt.")
+
+        # This must return immediately; a notification has no response to await.
+        client.cancel(timeout=5)
+        prompt_thread.join(timeout=3)
+        assert not prompt_thread.is_alive()
+        assert "error" not in outcome
+        assert outcome["result"]["stopReason"] == "cancelled"
+
+        requests = [
+            json.loads(line)
+            for line in command_log.read_text(encoding="utf-8").splitlines()
+        ]
+        cancellation = next(
+            item for item in requests if item.get("method") == "session/cancel"
+        )
+        assert "id" not in cancellation
+        assert cancellation["params"] == {"sessionId": session_id}
+    finally:
+        client.close()
+        if prompt_thread is not None:
+            prompt_thread.join(timeout=2)
+        os.environ.pop("ACP_CANCEL_TEST_LOG", None)
