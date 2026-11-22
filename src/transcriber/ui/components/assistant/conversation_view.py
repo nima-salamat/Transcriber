@@ -52,7 +52,7 @@ class ConversationView(QFrame):
 
         self.empty_state = QFrame()
         self.empty_state.setObjectName("AssistantEmptyState")
-        self.empty_state.setMaximumWidth(760)
+        self.empty_state.setMaximumWidth(960)
         self.empty_state.setMinimumWidth(0)
         self.empty_state.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
@@ -60,7 +60,6 @@ class ConversationView(QFrame):
         empty_layout = QVBoxLayout(self.empty_state)
         empty_layout.setContentsMargins(16, 20, 16, 20)
         empty_layout.setSpacing(12)
-        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title = QLabel("How can I help you today?")
         title.setObjectName("AssistantEmptyTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -84,7 +83,7 @@ class ConversationView(QFrame):
         self.prompt_grid = QWidget(self.empty_state)
         self.prompt_grid.setObjectName("AssistantPromptGrid")
         self.prompt_grid.setMinimumWidth(0)
-        self.prompt_grid.setMaximumWidth(680)
+        self.prompt_grid.setMaximumWidth(900)
         self.prompt_grid.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
@@ -149,7 +148,7 @@ class ConversationView(QFrame):
             )
             self.prompt_buttons.append(button)
 
-        empty_layout.addWidget(self.prompt_grid, 0, Qt.AlignmentFlag.AlignHCenter)
+        empty_layout.addWidget(self.prompt_grid)
         self._prompt_columns = 0
         self._layout_prompt_suggestions(self.width())
 
@@ -204,7 +203,11 @@ class ConversationView(QFrame):
             app.installEventFilter(self)
 
     def _layout_prompt_suggestions(self, width: int):
-        columns = 1 if int(width) < 620 else 2
+        available_width = max(0, int(width) - 32)
+        self.empty_state.setMinimumWidth(min(928, available_width))
+        # Two columns are reserved for genuinely wide conversation workspaces.
+        # At normal desktop widths, each suggestion gets a full readable row.
+        columns = 2 if int(width) >= 1000 else 1
         if columns == self._prompt_columns:
             return
         self._prompt_columns = columns
