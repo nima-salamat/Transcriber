@@ -6,13 +6,38 @@ performed by callers from a worker thread, never from the Qt GUI thread.
 
 from __future__ import annotations
 
+import http.client
 import json
 import socket
+import ssl
 from collections.abc import Callable, Iterable
 from threading import Event, Lock
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+
+class _ManagedHTTPResponse:
+    """Keep the HTTP connection available so cancellation can interrupt header reads."""
+
+    def __init__(self, connection, response):
+        self._connection = connection
+        self._response = response
+
+    @property
+    def sock(self):
+        return self._connection.sock
+
+    def read(self, *args, **kwargs):
+        return self._response.read(*args, **kwargs)
+
+    def __iter__(self):
+        return iter(self._response)
+
+    def close(self):
+        try:
+            self._response.close()
+        finally:
+            self._connection.close()
 
 
 class OllamaError(RuntimeError):
@@ -67,7 +92,10 @@ class OllamaCancellation:
             if current is None or id(current) in seen:
                 continue
             seen.add(id(current))
-            sock = getattr(current, "_sock", None)
+            sock = (
+                current if isinstance(current, socket.socket)
+                else getattr(current, "sock", None) or getattr(current, "_sock", None)
+            )
             if sock is not None:
                 shutdown = getattr(sock, "shutdown", None)
                 if callable(shutdown):
@@ -75,7 +103,7 @@ class OllamaCancellation:
                         shutdown(socket.SHUT_RDWR)
                     except (OSError, ValueError):
                         pass
-            for attribute in ("fp", "raw", "buffer", "_sock"):
+            for attribute in ("fp", "raw", "buffer", "_sock", "sock"):
                 nested = getattr(current, attribute, None)
                 if nested is not None and id(nested) not in seen:
                     candidates.append(nested)
@@ -125,31 +153,87 @@ class OllamaClient:
             raise ValueError("Enter the Ollama server base URL without an API path.")
         return base_url
 
-    def _open(self, request: Request, *, timeout: float | None = None):
+    def _open(
+        self,
+        request: Request,
+        *,
+        timeout: float | None = None,
+        cancellation: OllamaCancellation | None = None,
+    ):
         request_timeout = self.timeout if timeout is None else max(1.0, float(timeout))
+        parsed = urlsplit(request.full_url)
+        connection = None
+        managed = None
+        succeeded = False
         try:
-            return urlopen(request, timeout=request_timeout)
-        except HTTPError as exc:
-            try:
-                detail = exc.read().decode("utf-8", errors="replace")
-            except Exception:
-                detail = str(exc)
-            raise OllamaError(f"Ollama returned HTTP {exc.code}: {detail[:1200]}") from exc
-        except URLError as exc:
-            reason = getattr(exc, "reason", exc)
-            if isinstance(reason, TimeoutError):
+            if parsed.scheme == "https":
+                connection = http.client.HTTPSConnection(
+                    parsed.hostname, parsed.port, timeout=request_timeout,
+                    context=ssl.create_default_context(),
+                )
+            else:
+                connection = http.client.HTTPConnection(
+                    parsed.hostname, parsed.port, timeout=request_timeout,
+                )
+
+            # Attach before request()/getresponse(). A cold Ollama model may delay
+            # HTTP headers until it is resident in RAM/VRAM. Attaching only after
+            # headers arrive leaves this entire first-load interval uncancellable.
+            if cancellation:
+                cancellation.raise_if_cancelled()
+                cancellation.attach(connection)
+
+            path = parsed.path or "/"
+            if parsed.query:
+                path += "?" + parsed.query
+            connection.request(
+                request.get_method(), path, body=request.data,
+                headers=dict(request.header_items()),
+            )
+            if cancellation:
+                cancellation.raise_if_cancelled()
+
+            response = connection.getresponse()
+            managed = _ManagedHTTPResponse(connection, response)
+            if cancellation:
+                cancellation.attach(managed)
+                cancellation.raise_if_cancelled()
+
+            if response.status >= 400:
+                detail = managed.read().decode("utf-8", errors="replace")
                 raise OllamaError(
-                    f"Ollama timed out while opening {request.full_url} "
-                    f"(waited {request_timeout:g}s). Check that the local Ollama server is responsive."
-                ) from exc
-            raise OllamaError(
-                f"Cannot reach Ollama at {self.base_url} while requesting "
-                f"{request.full_url} ({reason}). Start Ollama and verify its URL."
-            ) from exc
-        except TimeoutError as exc:
+                    f"Ollama returned HTTP {response.status}: {detail[:1200]}"
+                )
+
+            succeeded = True
+            return managed
+        except OllamaCancelled:
+            raise
+        except (TimeoutError, socket.timeout) as exc:
+            if cancellation and cancellation.cancelled:
+                raise OllamaCancelled("Ollama request was cancelled.") from exc
             raise OllamaError(
                 f"Ollama request to {request.full_url} timed out after {request_timeout:g}s."
             ) from exc
+        except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
+            if cancellation and cancellation.cancelled:
+                raise OllamaCancelled("Ollama request was cancelled.") from exc
+            raise OllamaError(
+                f"Cannot reach Ollama at {self.base_url} while requesting "
+                f"{request.full_url} ({exc}). Start Ollama and verify its URL."
+            ) from exc
+        finally:
+            if not succeeded and connection is not None:
+                if cancellation:
+                    cancellation.detach(managed)
+                    cancellation.detach(connection)
+                try:
+                    if managed is not None:
+                        managed.close()
+                    else:
+                        connection.close()
+                except Exception:
+                    pass
 
     def _json_request(
         self,
@@ -172,7 +256,7 @@ class OllamaClient:
         try:
             if cancellation:
                 cancellation.raise_if_cancelled()
-            response = self._open(request, timeout=request_timeout)
+            response = self._open(request, timeout=request_timeout, cancellation=cancellation)
             if cancellation:
                 cancellation.attach(response)
             raw = response.read()
@@ -343,7 +427,7 @@ class OllamaClient:
         try:
             if cancellation:
                 cancellation.raise_if_cancelled()
-            response = self._open(request, timeout=timeout)
+            response = self._open(request, timeout=timeout, cancellation=cancellation)
             if cancellation:
                 cancellation.attach(response)
             for raw_line in response:

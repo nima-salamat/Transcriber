@@ -185,9 +185,13 @@ class AssistantProviderMixin:
         self.composer.set_provider_ready(provider_ready)
         turn_active = bool(getattr(self, "_agent_turn_active", False))
         stop_requested = bool(getattr(self, "_stop_requested", False))
+        connection_cancellable = bool(
+            getattr(self, "_model_load_cancellation", None)
+            or getattr(self, "_ollama_refresh_cancellation", None)
+        )
         self.composer.set_busy(
             self._worker_active,
-            stoppable=turn_active and not stop_requested,
+            stoppable=(turn_active or connection_cancellable) and not stop_requested,
         )
         self.new_chat_button.setEnabled(not self._worker_active or turn_active)
         # The permission-aware tool toggle belongs to the local Ollama agent,
@@ -479,12 +483,19 @@ class AssistantProviderMixin:
         worker.signals.error.connect(self.signals.ollama_refresh_error.emit)
         worker.signals.finished.connect(self._worker_finished)
         self._worker_active = True
-        self.composer.set_busy(True, stoppable=False)
+        self.composer.set_busy(True, stoppable=True)
         self.thread_pool.start(worker)
 
     def _on_ollama_refresh_error(self, message: str):
+        cancellation = getattr(self, "_ollama_refresh_cancellation", None)
         self._ollama_refresh_cancellation = None
         if getattr(self, "_shutting_down", False):
+            return
+        if cancellation is not None and cancellation.cancelled:
+            self._connection_busy = False
+            self._stop_requested = False
+            self.composer.set_status("Ollama model discovery stopped.")
+            self._apply_provider_ui()
             return
         self._connection_busy = False
         self._ollama_connected = False
@@ -505,8 +516,15 @@ class AssistantProviderMixin:
         self.status_message.emit(f"Ollama model discovery: {message}")
 
     def _on_ollama_models_ready(self, models):
+        cancellation = getattr(self, "_ollama_refresh_cancellation", None)
         self._ollama_refresh_cancellation = None
         if getattr(self, "_shutting_down", False):
+            return
+        if cancellation is not None and cancellation.cancelled:
+            self._connection_busy = False
+            self._stop_requested = False
+            self.composer.set_status("Ollama model discovery stopped.")
+            self._apply_provider_ui()
             return
         self._connection_busy = False
         saved = str(getattr(self, "_session_requested_ollama_model", "") or "").strip()
@@ -665,7 +683,7 @@ class AssistantProviderMixin:
         self.connection_state.setText("Loading…")
         self.connection_state.setProperty("state", "connecting")
         self.composer.set_status(f"Loading · {requested_model}")
-        self.composer.set_busy(True, stoppable=False)
+        self.composer.set_busy(True, stoppable=True)
 
         def connect(_emit):
             try:
@@ -714,6 +732,7 @@ class AssistantProviderMixin:
                 raise OllamaError(
                     f"Could not load '{requested_model}'. Check available RAM/VRAM and Ollama's server log. {exc}"
                 ) from exc
+            load_cancellation.raise_if_cancelled()
             return {
                 "models": models,
                 "model": requested_model,
@@ -775,9 +794,18 @@ class AssistantProviderMixin:
             self.toggle_voice_agent()
 
     def _on_ollama_error(self, message):
+        cancellation = self._model_load_cancellation
         if getattr(self, "_shutting_down", False):
             self._model_load_cancellation = None
             self._ollama_cancellation = None
+            return
+        if cancellation is not None and cancellation.cancelled:
+            self._connection_busy = False
+            self._model_load_cancellation = None
+            self._stop_requested = False
+            self.activity_label.setText("Model loading stopped")
+            self.composer.set_status("Model loading stopped.")
+            self._apply_provider_ui()
             return
         if getattr(self, "_agent_turn_active", False):
             self._finish_assistant_stream("Error")
@@ -1327,9 +1355,22 @@ class AssistantProviderMixin:
         self.thread_pool.start(worker)
 
     def cancel_prompt(self):
-        if not getattr(self, "_agent_turn_active", False):
-            return
         if getattr(self, "_stop_requested", False):
+            return
+        if not getattr(self, "_agent_turn_active", False):
+            # Model discovery and cold model loading use the composer before
+            # an assistant turn exists. They must still be cancellable.
+            cancellation = (
+                getattr(self, "_model_load_cancellation", None)
+                or getattr(self, "_ollama_refresh_cancellation", None)
+            )
+            if cancellation is None:
+                return
+            self._stop_requested = True
+            cancellation.cancel()
+            self.composer.set_busy(True, stoppable=False)
+            self.activity_label.setText("Stopping model load…")
+            self.composer.set_status("Stopping Ollama model loading…")
             return
         self._stop_requested = True
         # Keep the Stop glyph visible while disabling repeat clicks during the
