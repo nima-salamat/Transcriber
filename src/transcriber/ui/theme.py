@@ -288,13 +288,46 @@ def stylesheet(theme: str) -> str:
         color: {c['muted']};
     }}
     QComboBox#AssistantProviderSelect, QComboBox#AssistantModelSelect {{
-        background: {c['input']};
+        min-height: 36px;
+        padding: 5px 10px;
+        background: {c['surface_2']};
         border: 1px solid {c['border']};
-        border-radius: 9px;
-        padding: 7px 9px;
+        border-radius: 10px;
+        color: {c['text']};
+        font-size: 11px;
+        font-weight: 600;
     }}
-    QComboBox#AssistantProviderSelect:focus, QComboBox#AssistantModelSelect:focus {{
-        border-color: {c['focus']};
+    QComboBox#AssistantProviderSelect:hover, QComboBox#AssistantModelSelect:hover {{
+        border-color: {c['accent']};
+        background: {c['surface_hover']};
+    }}
+    QComboBox#AssistantProviderSelect::drop-down, QComboBox#AssistantModelSelect::drop-down {{
+        border: 0;
+        width: 24px;
+    }}
+    QPushButton#AssistantRefreshModels {{
+        min-height: 36px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        font-size: 11px;
+    }}
+    QLabel#AssistantComposerStatus {{
+        color: {c['muted']};
+        font-size: 11px;
+        padding-left: 3px;
+    }}
+    QLabel#AssistantComposerStatus[state="error"] {{
+        color: {c['danger']};
+    }}
+    QPushButton#AssistantStopButton {{
+        background: {c['danger']};
+        color: white;
+        border: 0;
+        border-radius: 11px;
+        min-width: 38px;
+        min-height: 38px;
+        padding: 0 12px;
+        font-weight: 650;
     }}
     QPushButton#AssistantSendButton {{
         background: {c['accent']};
@@ -308,6 +341,10 @@ def stylesheet(theme: str) -> str:
         padding: 0;
     }}
     QPushButton#AssistantSendButton:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#AssistantSendButton:disabled {{
+        background: {c['surface_2']};
+        color: {c['muted']};
+    }}
     QPushButton#AssistantSendButton:disabled {{
         background: {c['surface_2']};
         color: {c['muted']};
