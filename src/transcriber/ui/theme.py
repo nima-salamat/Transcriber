@@ -1829,4 +1829,119 @@ def stylesheet(theme: str) -> str:
         font-size: 11px;
         font-weight: 750;
     }}
+
+    /* Shared workspace chrome and dock controls */
+    QLabel#InspectorTitle {{
+        color: {c['text']};
+        font-size: 15px;
+        font-weight: 650;
+    }}
+    QLabel#DrawerTitle {{
+        color: {c['text']};
+        font-size: 13px;
+        font-weight: 650;
+    }}
+    QLabel#DrawerTitleIcon {{
+        color: {c['muted']};
+        font-size: 16px;
+        font-weight: 650;
+    }}
+    QPushButton#DrawerToggleButton {{
+        color: {c['muted']};
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 6px;
+        padding: 2px 8px;
+        min-height: 0;
+        max-height: 25px;
+        font-size: 10px;
+        font-weight: 600;
+    }}
+    QPushButton#DrawerToggleButton:hover {{
+        color: {c['text']};
+        background: {c['surface_hover']};
+        border-color: {c['border_hover']};
+    }}
+    QPushButton#DrawerToggleButton:checked {{
+        color: {c['text']};
+        background: {c['surface_2']};
+        border-color: {c['border_hover']};
+    }}
+    QPushButton#DrawerCloseButton {{
+        color: {c['muted']};
+        background: transparent;
+        border: 0;
+        border-radius: 7px;
+        font-size: 20px;
+        font-weight: 400;
+        padding: 0;
+    }}
+    QPushButton#DrawerCloseButton:hover {{
+        color: {c['text']};
+        background: {c['surface_hover']};
+    }}
+
+    /* Model Library semantic labels */
+    QLabel#ModelDetailHeading, QLabel#ModelInstalledSummary {{
+        color: {c['text']};
+        font-size: 15px;
+        font-weight: 650;
+    }}
+    QLabel#ModelCompatibility {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 7px;
+        padding: 4px 8px;
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    QLabel#ModelCompatibility[state="compatible"] {{
+        color: {c['success']};
+        border-color: {c['success']};
+    }}
+    QLabel#ModelCompatibility[state="incompatible"] {{
+        color: {c['danger']};
+        border-color: {c['danger']};
+    }}
+    QLabel#ModelCompatibility[state="warning"] {{
+        color: {c['warning']};
+        border-color: {c['warning']};
+    }}
+    QListWidget#DownloadTaskList {{
+        background: transparent;
+        border: 0;
+        outline: 0;
+    }}
+    QListWidget#DownloadTaskList::item {{
+        background: transparent;
+        border: 0;
+        padding: 0;
+    }}
+
+    /* Settings, recording and audio-library typography */
+    QLabel#SettingsSectionTitle {{
+        color: {c['text']};
+        font-size: 16px;
+        font-weight: 650;
+        padding: 2px 0;
+    }}
+    QLabel#SettingsSubsectionTitle {{
+        color: {c['text']};
+        font-weight: 650;
+        margin-top: 8px;
+    }}
+    QLabel#RecordingFormatBadge {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+    }}
+    QLabel#AudioLibraryListHeading {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }}
+
     """
