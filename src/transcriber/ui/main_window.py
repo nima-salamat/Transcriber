@@ -936,7 +936,6 @@ class MainWindow(QMainWindow):
         if (
             event.type() == QEvent.Type.Wheel
             and isinstance(watched, QWidget)
-            and watched.window() is self
         ):
             ancestors = []
             current = watched
