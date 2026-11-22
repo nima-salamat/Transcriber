@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
-    QWidget,
+    QWidget,QFrame
 )
 
 from transcriber.audio.devices import audio_device_id
