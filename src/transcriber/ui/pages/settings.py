@@ -322,7 +322,7 @@ class SettingsPage(QWidget):
         agent_note.setObjectName("Muted")
         agent_layout.addWidget(agent_note)
         permission_title = QLabel("Agent permissions")
-        permission_title.setStyleSheet("font-weight: 650; margin-top: 8px;")
+        permission_title.setObjectName("SettingsSubsectionTitle")
         agent_layout.addWidget(permission_title)
         permission_labels = {
             "read_only": "Read application state",
@@ -405,7 +405,7 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(outer)
         layout.setContentsMargins(0, 0, 0, 0)
         label = QLabel(title)
-        label.setStyleSheet("font-size: 16px; font-weight: 650; padding: 2px 0;")
+        label.setObjectName("SettingsSectionTitle")
         layout.addWidget(label)
         layout.addWidget(content)
         self._sections[key] = outer
