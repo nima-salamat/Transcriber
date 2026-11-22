@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from transcriber.ui.widgets import Card, metric_card, page_header, primary_button, section_header, empty_state
+from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.workers import FunctionWorker
 
 
@@ -23,8 +24,9 @@ class HomePage(QWidget):
     open_transcript = Signal(str)
     status_message = Signal(str)
 
-    def __init__(self, history, model_manager, thread_pool, parent=None):
+    def __init__(self, history, model_manager, thread_pool, parent=None, icons: IconRegistry | None = None):
         super().__init__(parent)
+        self.icons = icons or IconRegistry()
         self.history = history
         self.model_manager = model_manager
         self.thread_pool = thread_pool
@@ -36,17 +38,30 @@ class HomePage(QWidget):
         layout.setSpacing(16)
 
         heading = QHBoxLayout()
+        heading.setSpacing(10)
         heading.addWidget(page_header(
             "Workspace",
             "Start a new transcript, return to recent work or manage your local audio tools.",
         ), 1)
         start = primary_button("New transcription")
         start.setObjectName("HomePrimaryAction")
-        start.setMinimumHeight(38)
+        start.setIcon(self.icons.icon("waveform", color="#ffffff", size=18))
+        start.setIconSize(QSize(18, 18))
+        start.setMinimumHeight(44)
+        start.setMinimumWidth(158)
+        start.setCursor(Qt.CursorShape.PointingHandCursor)
+        start.setToolTip("Create a transcript from an audio or video file")
+        start.setAccessibleName("New transcription")
         start.clicked.connect(lambda: self.navigate.emit("transcription"))
         record = QPushButton("Record audio")
         record.setObjectName("HomeSecondaryAction")
-        record.setMinimumHeight(38)
+        record.setIcon(self.icons.icon("record", size=18))
+        record.setIconSize(QSize(18, 18))
+        record.setMinimumHeight(44)
+        record.setMinimumWidth(142)
+        record.setCursor(Qt.CursorShape.PointingHandCursor)
+        record.setToolTip("Start a new microphone recording")
+        record.setAccessibleName("Record audio")
         record.clicked.connect(lambda: self.navigate.emit("recording"))
         heading.addWidget(record, 0, Qt.AlignmentFlag.AlignTop)
         heading.addWidget(start, 0, Qt.AlignmentFlag.AlignTop)

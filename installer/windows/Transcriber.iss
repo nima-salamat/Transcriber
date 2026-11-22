@@ -24,6 +24,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 WizardResizable=no
+SetupIconFile=..\..\release\Transcriber.ico
 SetupLogging=yes
 CloseApplications=yes
 RestartApplications=no

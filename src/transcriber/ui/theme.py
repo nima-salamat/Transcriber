@@ -691,24 +691,38 @@ def stylesheet(theme: str) -> str:
         background: {c['primary']};
         color: {c['on_primary']};
         border: 1px solid {c['primary']};
-        border-radius: 12px;
-        padding: 0 12px;
+        border-radius: 11px;
+        padding: 0 16px;
+        min-height: 42px;
         font-weight: 700;
     }}
     QPushButton#HomePrimaryAction:hover {{
         background: {c['primary_hover']};
         border-color: {c['primary_hover']};
     }}
+    QPushButton#HomePrimaryAction:pressed {{
+        background: {c['primary_hover']};
+    }}
+    QPushButton#HomePrimaryAction:focus {{
+        border-color: {c['accent']};
+    }}
     QPushButton#HomeSecondaryAction {{
-        background: {c['surface_2']};
+        background: {c['surface']};
         color: {c['text']};
         border: 1px solid {c['border']};
-        border-radius: 12px;
-        padding: 0 12px;
+        border-radius: 11px;
+        padding: 0 15px;
+        min-height: 42px;
         font-weight: 650;
     }}
     QPushButton#HomeSecondaryAction:hover {{
         background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QPushButton#HomeSecondaryAction:pressed {{
+        background: {c['surface_2']};
+    }}
+    QPushButton#HomeSecondaryAction:focus {{
         border-color: {c['accent']};
     }}
     QPushButton#Danger {{ background: {c['danger']}; color: white; border: 0; }}
@@ -934,10 +948,11 @@ def stylesheet(theme: str) -> str:
         background: {c['surface']};
         border-right: 1px solid {c['border']};
     }}
-    QLabel#AssistantBrand {{
-        font-size: 15px;
-        font-weight: 750;
-        padding: 3px 2px 9px 2px;
+    QLabel#AssistantBrandIcon {{
+        background: transparent;
+        border: 0;
+        padding: 0;
+        margin: 0;
     }}
     QPushButton#AssistantIconButton {{
         background: transparent;
@@ -1067,15 +1082,29 @@ def stylesheet(theme: str) -> str:
         background: {c['surface']};
         border: 1px solid {c['border']};
         border-radius: 12px;
-        padding: 13px 15px;
+        padding: 11px 14px;
         min-width: 0;
+        min-height: 68px;
         text-align: left;
-        font-size: 12px;
-        font-weight: 650;
     }}
     QPushButton#AssistantPromptSuggestion:hover {{
         background: {c['surface_hover']};
         border-color: {c['accent']};
+    }}
+    QPushButton#AssistantPromptSuggestion:pressed {{
+        background: {c['surface_2']};
+    }}
+    QLabel#AssistantPromptSuggestionTitle {{
+        color: {c['text']};
+        background: transparent;
+        font-size: 12px;
+        font-weight: 700;
+    }}
+    QLabel#AssistantPromptSuggestionDescription {{
+        color: {c['muted']};
+        background: transparent;
+        font-size: 11px;
+        font-weight: 400;
     }}
     QPushButton#AssistantPromptSuggestion[compact="true"] {{
         padding: 9px 10px;

@@ -1,10 +1,11 @@
 """Incremental conversation renderer with stable streaming cards and scroll anchoring."""
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -19,6 +20,8 @@ from .message_widget import MessageWidget
 
 class ConversationView(QFrame):
     """Stable message cards; streamed tokens are inserted into an existing document."""
+
+    prompt_selected = Signal(str)
 
     def __init__(self, icons=None, parent=None):
         super().__init__(parent)
@@ -49,8 +52,13 @@ class ConversationView(QFrame):
 
         self.empty_state = QFrame()
         self.empty_state.setObjectName("AssistantEmptyState")
+        self.empty_state.setMaximumWidth(760)
+        self.empty_state.setMinimumWidth(0)
+        self.empty_state.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
+        )
         empty_layout = QVBoxLayout(self.empty_state)
-        empty_layout.setContentsMargins(12, 20, 12, 20)
+        empty_layout.setContentsMargins(16, 20, 16, 20)
         empty_layout.setSpacing(12)
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title = QLabel("How can I help you today?")
@@ -72,7 +80,85 @@ class ConversationView(QFrame):
         description.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         description.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(description)
-        self.content_layout.addWidget(self.empty_state)
+
+        self.prompt_grid = QWidget(self.empty_state)
+        self.prompt_grid.setObjectName("AssistantPromptGrid")
+        self.prompt_grid.setMinimumWidth(0)
+        self.prompt_grid.setMaximumWidth(680)
+        self.prompt_grid.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self.prompt_grid_layout = QGridLayout(self.prompt_grid)
+        self.prompt_grid_layout.setContentsMargins(0, 6, 0, 0)
+        self.prompt_grid_layout.setHorizontalSpacing(10)
+        self.prompt_grid_layout.setVerticalSpacing(10)
+        self.prompt_buttons: list[QPushButton] = []
+
+        prompt_examples = (
+            (
+                "Summarize a transcript",
+                "Turn a long recording into clear takeaways.",
+                "Summarize the transcript I provide into a concise overview, key points, decisions, and action items.",
+            ),
+            (
+                "Improve transcript quality",
+                "Find unclear wording and possible recognition errors.",
+                "Review the transcript I provide for likely speech-recognition mistakes, unclear phrases, repetitions, and formatting issues. Suggest corrections without silently changing uncertain words.",
+            ),
+            (
+                "Create readable subtitles",
+                "Break dialogue into concise, natural subtitle lines.",
+                "Help me turn the transcript I provide into readable subtitle cues. Keep each cue concise, use natural line breaks, and preserve the original meaning.",
+            ),
+            (
+                "Plan an audio workflow",
+                "Choose an efficient way to transcribe and clean a recording.",
+                "Help me choose an efficient workflow for transcribing and cleaning an audio recording. Explain the best order of steps and relevant options.",
+            ),
+        )
+        for title_text, detail_text, prompt_text in prompt_examples:
+            button = QPushButton(self.prompt_grid)
+            button.setObjectName("AssistantPromptSuggestion")
+            button.setMinimumHeight(72)
+            button.setMinimumWidth(0)
+            button.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            )
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setAccessibleName(title_text)
+            button.setToolTip(f"Use this prompt: {title_text}")
+
+            card_layout = QVBoxLayout(button)
+            card_layout.setContentsMargins(0, 0, 0, 0)
+            card_layout.setSpacing(4)
+            title_label = QLabel(title_text, button)
+            title_label.setObjectName("AssistantPromptSuggestionTitle")
+            title_label.setAttribute(
+                Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+            )
+            detail_label = QLabel(detail_text, button)
+            detail_label.setObjectName("AssistantPromptSuggestionDescription")
+            detail_label.setWordWrap(True)
+            detail_label.setAttribute(
+                Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+            )
+            card_layout.addWidget(title_label)
+            card_layout.addWidget(detail_label)
+            button.clicked.connect(
+                lambda _checked=False, value=prompt_text: self.prompt_selected.emit(value)
+            )
+            self.prompt_buttons.append(button)
+
+        empty_layout.addWidget(self.prompt_grid, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._prompt_columns = 0
+        self._layout_prompt_suggestions(self.width())
+
+        # The paired stretches keep the welcome content vertically centered.
+        # New message rows are inserted before the trailing stretch below.
+        self.content_layout.addStretch(1)
+        self.content_layout.addWidget(
+            self.empty_state, 0, Qt.AlignmentFlag.AlignHCenter
+        )
         self.content_layout.addStretch(1)
         self.scroll_area.setWidget(self.content)
         outer.addWidget(self.scroll_area, 1)
@@ -112,6 +198,22 @@ class ConversationView(QFrame):
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
+
+    def _layout_prompt_suggestions(self, width: int):
+        columns = 1 if int(width) < 620 else 2
+        if columns == self._prompt_columns:
+            return
+        self._prompt_columns = columns
+        while self.prompt_grid_layout.count():
+            self.prompt_grid_layout.takeAt(0)
+        for index, button in enumerate(self.prompt_buttons):
+            self.prompt_grid_layout.addWidget(
+                button, index // columns, index % columns
+            )
+        for column in range(2):
+            self.prompt_grid_layout.setColumnStretch(
+                column, 1 if column < columns else 0
+            )
 
     def dispose(self):
         """Stop deferred UI work and detach the application event filter."""
@@ -449,8 +551,9 @@ class ConversationView(QFrame):
             self._empty_layout.setSpacing(9)
         else:
             self.content_layout.setContentsMargins(10, 14, 10, 16)
-            self._empty_layout.setContentsMargins(12, 20, 12, 20)
-            self._empty_layout.setSpacing(10)
+            self._empty_layout.setContentsMargins(16, 20, 16, 20)
+            self._empty_layout.setSpacing(12)
+        self._layout_prompt_suggestions(event.size().width())
         for widget in self._widgets:
             widget.body.refresh_document_size()
         # Let the scroll area's viewport finish its layout before measuring it.

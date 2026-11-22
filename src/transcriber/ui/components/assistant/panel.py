@@ -696,6 +696,12 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
             self.ui_icons, chat_workspace, provider=self._chat_provider
         )
         self.prompt = self.composer.prompt
+        self.conversation_view.prompt_selected.connect(
+            self.composer.prompt.setPlainText
+        )
+        self.conversation_view.prompt_selected.connect(
+            lambda _text: self.composer.prompt.setFocus()
+        )
         self.model_picker = self.composer.model_picker
         self.provider_combo = self.composer.provider_combo
         self.model_combo = self.composer.model_combo

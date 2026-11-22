@@ -396,7 +396,7 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(toolbar)
 
         self.stack = QStackedWidget()
-        self.home_page = HomePage(self.history, self.model_manager, self.thread_pool)
+        self.home_page = HomePage(self.history, self.model_manager, self.thread_pool, icons=self.icon_registry)
         self.transcription_page = TranscriptionPage(self.paths, self.settings_store, self.history, self.model_manager, self.thread_pool, document=self.transcript_document, command_history=self.transcript_history)
         self.recording_page = RecordingPage(self.paths, self.recording_history, self.settings_store)
         self.history_page = HistoryPage(self.history, self.thread_pool)
