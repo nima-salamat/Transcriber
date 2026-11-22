@@ -504,8 +504,8 @@ class MessageComposer(QFrame):
         self.voice_chat_button.setEnabled(not self._busy)
         if self._stoppable:
             self.send_button.setIcon(self.icons.icon("stop", color="#ffffff", size=16))
-            self.send_button.setToolTip("Stop the current response")
-            self.send_button.setAccessibleName("Stop response")
+            self.send_button.setToolTip("Stop the current operation")
+            self.send_button.setAccessibleName("Stop current operation")
             self.send_button.setEnabled(True)
         else:
             self.send_button.setIcon(self.icons.icon("send", color="#ffffff", size=18))
