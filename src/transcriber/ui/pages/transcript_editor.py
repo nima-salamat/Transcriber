@@ -29,7 +29,7 @@ from transcriber.editor.document import TranscriptDocument
 from transcriber.editor.search import replace as replace_text
 from transcriber.editor.search import search as search_text
 from transcriber.transcription.quality_report import build_quality_report
-from transcriber.ui.widgets import Card, page_header
+from transcriber.ui.widgets import Card, page_header, section_header
 
 
 class TranscriptEditorPage(QWidget):
@@ -123,21 +123,116 @@ class TranscriptEditorPage(QWidget):
         controls.addLayout(row3)
         root.addWidget(toolbar)
 
+        workspace = QHBoxLayout()
+        workspace.setSpacing(14)
+
+        table_panel = Card()
+        table_panel.setObjectName("WorkspacePanel")
+        table_layout = QVBoxLayout(table_panel)
+        table_layout.setContentsMargins(14, 13, 14, 13)
+        table_layout.setSpacing(9)
+        table_layout.addWidget(section_header(
+            "Transcript segments",
+            "Edit text and timing directly. Double-click a row to seek to its start.",
+        ))
+
         self.table = QTableWidget(0, 8)
+        self.table.setObjectName("TranscriptSegmentTable")
         self.table.setHorizontalHeaderLabels([
             "Start", "End", "Speaker", "Text", "Bookmark", "Reviewed", "Locked", "Words",
         ])
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
-        self.table.setAlternatingRowColors(True)
+        self.table.setAlternatingRowColors(False)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table.itemChanged.connect(self._table_item_changed)
+        self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.cellDoubleClicked.connect(self._seek_row)
-        root.addWidget(self.table, 1)
+        table_layout.addWidget(self.table, 1)
+
         self.summary = QLabel("No transcript loaded")
         self.summary.setObjectName("Muted")
-        root.addWidget(self.summary)
+        table_layout.addWidget(self.summary)
+        workspace.addWidget(table_panel, 4)
+
+        inspector = Card()
+        inspector.setObjectName("EditorInspector")
+        inspector_layout = QVBoxLayout(inspector)
+        inspector_layout.setContentsMargins(15, 14, 15, 14)
+        inspector_layout.setSpacing(10)
+        inspector_layout.addWidget(section_header(
+            "Segment inspector",
+            "Context for the current selection.",
+        ))
+        self.segment_title = QLabel("No segment selected")
+        self.segment_title.setObjectName("EditorInspectorTitle")
+        self.segment_title.setWordWrap(True)
+        inspector_layout.addWidget(self.segment_title)
+        self.segment_timing = QLabel("Start —  ·  End —  ·  Duration —")
+        self.segment_timing.setObjectName("EditorInspectorMeta")
+        inspector_layout.addWidget(self.segment_timing)
+        self.segment_text_preview = QLabel("Select a segment to review its text and status.")
+        self.segment_text_preview.setObjectName("EditorSegmentPreview")
+        self.segment_text_preview.setWordWrap(True)
+        self.segment_text_preview.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        inspector_layout.addWidget(self.segment_text_preview, 1)
+        self.segment_state = QLabel("Selection details appear here.")
+        self.segment_state.setObjectName("EditorInspectorMeta")
+        self.segment_state.setWordWrap(True)
+        inspector_layout.addWidget(self.segment_state)
+        self.seek_selected_button = QPushButton("Seek to segment")
+        self.seek_selected_button.clicked.connect(self._seek_selected)
+        inspector_layout.addWidget(self.seek_selected_button)
+        workspace.addWidget(inspector, 2)
+
+        root.addLayout(workspace, 1)
+
+
+    def _selected_segment(self):
+        rows = sorted({index.row() for index in self.table.selectionModel().selectedRows()})
+        if not rows:
+            return None
+        item = self.table.item(rows[0], 0)
+        if item is None:
+            return None
+        try:
+            return self.document.get(item.data(Qt.UserRole))
+        except (KeyError, TypeError):
+            return None
+
+    def _selection_changed(self):
+        segment = self._selected_segment()
+        self.seek_selected_button.setEnabled(segment is not None)
+        if segment is None:
+            self.segment_title.setText("No segment selected")
+            self.segment_timing.setText("Start —  ·  End —  ·  Duration —")
+            self.segment_text_preview.setText("Select a segment to review its text and status.")
+            self.segment_state.setText("Selection details appear here.")
+            return
+        duration = max(0.0, float(segment.end) - float(segment.start))
+        self.segment_title.setText(segment.speaker or "Unassigned speaker")
+        self.segment_timing.setText(
+            f"{segment.start:.3f}s  →  {segment.end:.3f}s  ·  {duration:.3f}s"
+        )
+        self.segment_text_preview.setText(segment.text or "Empty segment")
+        states = []
+        if segment.bookmarked:
+            states.append("Bookmarked")
+        if segment.reviewed:
+            states.append("Reviewed")
+        if segment.locked:
+            states.append("Locked")
+        if segment.is_edited:
+            states.append("Edited")
+        self.segment_state.setText("  ·  ".join(states) if states else "No review flags")
+
+    def _seek_selected(self):
+        segment = self._selected_segment()
+        if segment is not None:
+            self.seek_requested.emit(float(segment.start))
 
     def load_segments(
         self, segments, *, source_path=None, language=None, duration=0.0,
@@ -181,6 +276,7 @@ class TranscriptEditorPage(QWidget):
             f"{len(self.document.segments)} segments · {len(self.document.text.split())} words · "
             f"revision {self.document.revision} · {sum(bool(s.is_edited) for s in self.document.segments)} edited"
         )
+        self._selection_changed()
 
     def _selected_ids(self):
         rows = sorted({index.row() for index in self.table.selectionModel().selectedRows()})
