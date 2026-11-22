@@ -90,6 +90,14 @@ def stylesheet(theme: str) -> str:
         color: {c['muted']};
         font-size: 12px;
     }}
+    QLabel#PageEmptyState {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px dashed {c['border']};
+        border-radius: 12px;
+        padding: 22px;
+        font-size: 12px;
+    }}
     QFrame#Card {{
         background: {c['surface']};
         border: 1px solid {c['border']};

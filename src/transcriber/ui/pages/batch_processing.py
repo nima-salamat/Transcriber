@@ -10,10 +10,11 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -66,6 +67,8 @@ class BatchProcessingPage(QWidget):
         self.add_folder_button = QPushButton("Add folder")
         self.add_folder_button.clicked.connect(self.add_folder)
         self.model_combo = QComboBox()
+        self.model_combo.setMinimumWidth(160)
+        self.model_combo.setMinimumContentsLength(18)
         for model in self.model_manager.installed(include_sizes=False):
             if model.get("compatible"):
                 self.model_combo.addItem(model["repo_id"], model["repo_id"])
@@ -74,7 +77,9 @@ class BatchProcessingPage(QWidget):
         row.addWidget(QLabel("Model"))
         row.addWidget(self.model_combo, 1)
         controls.addLayout(row)
-        row2 = QHBoxLayout()
+        actions = QGridLayout()
+        actions.setHorizontalSpacing(8)
+        actions.setVerticalSpacing(7)
         self.start_button = primary_button("Start queue")
         self.start_button.clicked.connect(self.start_queue)
         self.pause_button = QPushButton("Pause after current")
@@ -91,15 +96,28 @@ class BatchProcessingPage(QWidget):
         self.retry_button.clicked.connect(self.retry_failed)
         self.export_button = QPushButton("Export completed…")
         self.export_button.clicked.connect(self.export_all)
-        for button in (self.start_button, self.pause_button, self.cancel_button,
-                       self.stop_queue_button, self.retry_button, self.export_button):
-            row2.addWidget(button)
-        row2.addStretch(1)
-        controls.addLayout(row2)
+        buttons = (
+            self.start_button, self.pause_button, self.cancel_button,
+            self.stop_queue_button, self.retry_button, self.export_button,
+        )
+        for index, button in enumerate(buttons):
+            button.setMinimumWidth(0)
+            actions.addWidget(button, index // 3, index % 3)
+        for column in range(3):
+            actions.setColumnStretch(column, 1)
+        controls.addLayout(actions)
         root.addWidget(card)
+
+        self.empty_state = QLabel("Add audio or video files to build a transcription queue.")
+        self.empty_state.setObjectName("PageEmptyState")
+        self.empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_state.setWordWrap(True)
+        self.empty_state.setMinimumHeight(170)
+        root.addWidget(self.empty_state)
 
         self.list = QListWidget()
         self.list.setAlternatingRowColors(True)
+        self.list.setMinimumHeight(180)
         root.addWidget(self.list, 1)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
@@ -108,6 +126,8 @@ class BatchProcessingPage(QWidget):
         self.summary = QLabel("No files queued")
         self.summary.setObjectName("Muted")
         root.addWidget(self.summary)
+        self.model_combo.currentIndexChanged.connect(self._update_action_state)
+        self.refresh()
 
     def add_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Add media files", str(self.paths.recordings), self.AUDIO_FILTER + ";;All files (*)")
@@ -152,6 +172,10 @@ class BatchProcessingPage(QWidget):
 
     def refresh(self):
         self.list.clear()
+        has_items = bool(self.queue)
+        self.list.setVisible(has_items)
+        self.empty_state.setVisible(not has_items)
+        self.progress.setVisible(has_items)
         for item in self.queue:
             title = f"{Path(item['path']).name}   ·   {item['status']}"
             if item["error"]:
@@ -167,8 +191,18 @@ class BatchProcessingPage(QWidget):
         if self._import_feedback:
             summary += f" · {self._import_feedback}"
         self.summary.setText(summary)
-        self.start_button.setEnabled(not self._running and any(item["status"] == "Queued" for item in self.queue) and bool(self.model_combo.currentData()))
+        self._update_action_state()
+
+    def _update_action_state(self, *_args):
+        failed = sum(item["status"] == "Failed" for item in self.queue)
+        queued = any(item["status"] == "Queued" for item in self.queue)
+        self.start_button.setEnabled(
+            not self._running and queued and bool(self.model_combo.currentData())
+        )
         self.retry_button.setEnabled(not self._running and failed > 0)
+        self.export_button.setEnabled(
+            not self._running and any(item["status"] == "Completed" for item in self.queue)
+        )
 
     def start_queue(self):
         if not self.model_combo.currentData():
