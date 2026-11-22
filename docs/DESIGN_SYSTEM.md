@@ -110,28 +110,28 @@ Use medium weights instead of bold-heavy labels. Use tabular numerals for timers
 - `ui/theme.py` maps semantic tokens to Qt styles. Feature styles must consume the token map; they must not introduce independent color palettes.
 - `ui/widgets.py` owns reusable primitives such as `Card`, `page_header`, `primary_button` and section rows.
 - Page modules own page composition and behavior. Prefer a stable `objectName` plus a shared QSS rule over one-off `setStyleSheet()` calls.
-- Dynamic per-item styling is acceptable only when a state genuinely varies at runtime and cannot be represented cleanly by a shared Qt property.
+- For dynamic visual state, set a semantic Qt property such as `state` or `variant` and let shared QSS render it. Do not generate an ad hoc stylesheet string for each item.
 - Keep domain, audio, transcription, model and persistence code independent of widget styling.
 
 ## Architecture review and refactoring order
 
 The domain/service boundaries are a good foundation: transcription engines do not own widgets, the editor document is independent of Qt, and persistence is not implemented inside page widgets. Preserve those boundaries.
 
-The main UI maintainability issue is concentration of unrelated responsibilities in a few large files (snapshot inspected on 2026-11-22):
+The main UI maintainability issue is concentration of unrelated responsibilities in a few large files (line counts after the first shared-style consolidation pass, inspected on 2026-11-22):
 
 | Module | Approx. lines | Next responsibility boundary |
 |---|---:|---|
-| `ui/main_window.py` | 2,254 | Keep shell/navigation here; extract workspace construction, dock coordination and lifecycle/agent wiring into focused collaborators |
-| `ui/theme.py` | 1,821 | Keep the public `stylesheet(theme)` entry point; split base, shell, controls and feature styles into composable modules |
-| `ui/pages/models.py` | 1,858 | Separate discovery/search, installed models, download tasks and compatibility details into page components |
+| `ui/main_window.py` | 2,250 | Keep shell/navigation here; extract workspace construction, dock coordination and lifecycle/agent wiring into focused collaborators |
+| `ui/theme.py` | 2,136 | Keep the public `stylesheet(theme)` entry point; split shell, controls, assistant, audio, transcription and subtitle rules into composable modules |
+| `ui/pages/models.py` | 1,728 | Separate discovery/search, installed models and download tasks into focused page components; all its component styling now uses shared QSS and semantic Qt properties |
 | `ui/pages/settings.py` | 916 | Compose settings from focused section widgets with shared field/section helpers |
 
 Recommended order:
 
-1. Keep the new semantic token contract stable and remove page-level style literals as pages are touched.
-2. Split the large QSS string by feature area without changing the public theme API.
+1. Keep the semantic token contract stable. The first consolidation pass moved per-widget styles from the MainWindow chrome, Model Library, Settings headings, Recording badge and Audio Library heading into shared QSS; Model Library state and action variants now use Qt properties.
+2. Split the 2,136-line QSS string by feature area without changing the public `stylesheet(theme)` API.
 3. Extract the dock/workspace coordinator and agent/IPC integration from `MainWindow`.
-4. Break Model Library and Settings into focused widgets while preserving their existing service interfaces.
+4. Break the remaining large Model Library and Settings compositions into focused widgets while preserving their existing service interfaces.
 5. Apply the same page-header, list, form and empty-state patterns across every page.
 
 Do not rewrite the domain architecture to solve a visual consistency problem. Make UI changes at the UI boundary and preserve the existing application services and persistence model.
