@@ -82,6 +82,7 @@ from transcriber.ui.components.assistant_panel import AssistantPanel
 from transcriber.ui.components.waveform import WaveformTimeline
 from transcriber.ui.components.workspace_popups import CommandPalettePopup
 from transcriber.ui.design.icon_registry import IconRegistry
+from transcriber.ui.design.tokens import get_tokens
 from transcriber.ui.pages.audio_cleanup import AudioCleanupPage
 from transcriber.ui.pages.audio_library import AudioLibraryPage
 from transcriber.ui.pages.batch_processing import BatchProcessingPage
@@ -459,7 +460,7 @@ class MainWindow(QMainWindow):
         properties_layout = QVBoxLayout(properties)
         properties_layout.setContentsMargins(14, 12, 14, 12)
         self.inspector_title = QLabel("No active document")
-        self.inspector_title.setStyleSheet("font-weight: 650; font-size: 15px;")
+        self.inspector_title.setObjectName("InspectorTitle")
         self.inspector_details = QLabel("Open an audio file or transcript to inspect its properties.")
         self.inspector_details.setWordWrap(True)
         self.inspector_details.setObjectName("Muted")
@@ -506,7 +507,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(status)
         self.status_bar = status
         self.assistant_drawer_button = QPushButton("Inspector")
-        self.assistant_drawer_button.setIcon(self.icon_registry.icon("assistant", color="#79a8ff", size=14))
+        self.assistant_drawer_button.setIcon(self.icon_registry.icon("assistant", color=get_tokens(self.settings_store.settings.theme).muted, size=14))
         self.assistant_drawer_button.setIconSize(QSize(14, 14))
         self.assistant_drawer_button.setCheckable(True)
         self.assistant_drawer_button.setChecked(not self.assistant_dock.isHidden())
@@ -516,7 +517,7 @@ class MainWindow(QMainWindow):
             lambda visible: self._animate_drawer(self.assistant_dock, visible, "width")
         )
         self.timeline_drawer_button = QPushButton("Waveform")
-        self.timeline_drawer_button.setIcon(self.icon_registry.icon("waveform", color="#55b99a", size=14))
+        self.timeline_drawer_button.setIcon(self.icon_registry.icon("waveform", color=get_tokens(self.settings_store.settings.theme).muted, size=14))
         self.timeline_drawer_button.setIconSize(QSize(14, 14))
         self.timeline_drawer_button.setCheckable(True)
         self.timeline_drawer_button.setChecked(not self.timeline_dock.isHidden())
@@ -526,16 +527,9 @@ class MainWindow(QMainWindow):
             lambda visible: self._animate_drawer(self.timeline_dock, visible, "height")
         )
         for drawer_button in (self.assistant_drawer_button, self.timeline_drawer_button):
+            drawer_button.setObjectName("DrawerToggleButton")
             drawer_button.setFixedHeight(25)
             drawer_button.setCursor(Qt.CursorShape.PointingHandCursor)
-            drawer_button.setStyleSheet(
-                "QPushButton { min-height: 0; max-height: 25px; padding: 2px 8px; "
-                "border: 1px solid rgba(130, 145, 165, 0.25); border-radius: 6px; "
-                "font-size: 10px; font-weight: 600; } "
-                "QPushButton:hover { background: rgba(120, 145, 180, 0.12); } "
-                "QPushButton:checked { background: rgba(100, 145, 210, 0.16); "
-                "border-color: rgba(110, 155, 220, 0.55); }"
-            )
         status.setLayoutDirection(Qt.LeftToRight)
         # Permanent widgets live at the far right and cannot be covered by status messages.
         status.addPermanentWidget(self.assistant_drawer_button)
@@ -559,21 +553,16 @@ class MainWindow(QMainWindow):
         title_layout.setContentsMargins(12, 5, 7, 5)
         title_layout.setSpacing(9)
         icon = QLabel(glyph)
-        icon.setStyleSheet("font-size: 16px; font-weight: 800;")
+        icon.setObjectName("DrawerTitleIcon")
         title_label = QLabel(title)
-        title_label.setStyleSheet("font-weight: 700;")
+        title_label.setObjectName("DrawerTitle")
         title_layout.addWidget(icon)
         title_layout.addWidget(title_label, 1)
         close_button = QPushButton("×")
-        close_button.setObjectName(f"DrawerCloseButton_{dock.objectName()}")
+        close_button.setObjectName("DrawerCloseButton")
         close_button.setFixedSize(28, 28)
         close_button.setToolTip("Close drawer")
         close_button.setAccessibleName(f"Close {title}")
-        close_button.setStyleSheet(
-            "QPushButton { border: none; border-radius: 7px; font-size: 20px; "
-            "font-weight: 400; padding: 0; } "
-            "QPushButton:hover { background: rgba(140, 150, 165, 0.18); }"
-        )
         close_button.clicked.connect(lambda _checked=False, target=dock, axis=dimension: self._animate_drawer(target, False, axis))
         title_layout.addWidget(close_button)
         dock.setTitleBarWidget(title_bar)
@@ -2042,7 +2031,14 @@ class MainWindow(QMainWindow):
 
     def apply_theme(self, theme: str):
         effective = "light" if theme == "light" else "dark"
+        tokens = get_tokens(effective)
         QApplication.instance().setStyleSheet(stylesheet(effective))
+        self.assistant_drawer_button.setIcon(
+            self.icon_registry.icon("assistant", color=tokens.muted, size=14)
+        )
+        self.timeline_drawer_button.setIcon(
+            self.icon_registry.icon("waveform", color=tokens.muted, size=14)
+        )
         model_page = getattr(self, "model_page", None)
         if model_page is not None:
             model_page.refresh_visual_theme()
