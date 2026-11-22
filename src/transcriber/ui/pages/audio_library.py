@@ -113,7 +113,7 @@ class AudioLibraryPage(QWidget):
         list_layout = QVBoxLayout(list_card)
         list_layout.setContentsMargins(12, 12, 12, 12)
         list_heading = QLabel("ALL RECORDINGS")
-        list_heading.setStyleSheet("font-size: 10px; font-weight: 800; letter-spacing: 1px;")
+        list_heading.setObjectName("AudioLibraryListHeading")
         list_layout.addWidget(list_heading)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
