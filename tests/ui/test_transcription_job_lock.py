@@ -90,3 +90,34 @@ def test_history_read_locks_out_media_switch_until_result_finishes(qtbot, tmp_pa
     release.set()
     qtbot.waitUntil(lambda: not page.is_busy, timeout=3000)
     window.close()
+
+
+def test_engine_selector_and_controls_are_reenabled_after_transcription(qtbot, tmp_path, monkeypatch):
+    window, _settings = make_window(tmp_path, monkeypatch)
+    qtbot.addWidget(window)
+    page = window.transcription_page
+
+    page.cancel_event = threading.Event()
+    page._job_engine_id = "faster-whisper"
+    page._refresh_busy_controls()
+
+    assert not page.engine_combo.isEnabled()
+    assert not page.language_combo.isEnabled()
+    assert not page.open_button.isEnabled()
+
+    page._finish_worker()
+
+    assert page.engine_combo.isEnabled()
+    assert page.language_combo.isEnabled()
+    assert page.open_button.isEnabled()
+
+    google_index = page.engine_combo.findData("google-web")
+    assert google_index >= 0
+    page.engine_combo.setCurrentIndex(google_index)
+    assert page.model_combo.isEnabled() is False
+    assert page.language_combo.isEnabled()
+
+    local_index = page.engine_combo.findData("faster-whisper")
+    page.engine_combo.setCurrentIndex(local_index)
+    assert page.model_combo.isEnabled()
+    window.close()
