@@ -52,14 +52,14 @@ class ConversationView(QFrame):
 
         self.empty_state = QFrame()
         self.empty_state.setObjectName("AssistantEmptyState")
-        self.empty_state.setMaximumWidth(800)
+        self.empty_state.setMaximumWidth(720)
         self.empty_state.setMinimumWidth(0)
         self.empty_state.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
         )
         empty_layout = QVBoxLayout(self.empty_state)
-        empty_layout.setContentsMargins(16, 20, 16, 20)
-        empty_layout.setSpacing(12)
+        empty_layout.setContentsMargins(12, 12, 12, 12)
+        empty_layout.setSpacing(8)
         title = QLabel("How can I help you today?")
         title.setObjectName("AssistantEmptyTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -83,42 +83,42 @@ class ConversationView(QFrame):
         self.prompt_grid = QWidget(self.empty_state)
         self.prompt_grid.setObjectName("AssistantPromptGrid")
         self.prompt_grid.setMinimumWidth(0)
-        self.prompt_grid.setMaximumWidth(760)
+        self.prompt_grid.setMaximumWidth(680)
         self.prompt_grid.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
         self.prompt_grid_layout = QGridLayout(self.prompt_grid)
-        self.prompt_grid_layout.setContentsMargins(0, 6, 0, 0)
-        self.prompt_grid_layout.setHorizontalSpacing(10)
-        self.prompt_grid_layout.setVerticalSpacing(10)
+        self.prompt_grid_layout.setContentsMargins(0, 0, 0, 0)
+        self.prompt_grid_layout.setHorizontalSpacing(8)
+        self.prompt_grid_layout.setVerticalSpacing(8)
         self.prompt_buttons: list[QPushButton] = []
 
         prompt_examples = (
             (
                 "Summarize a transcript",
-                "Turn a long recording into clear takeaways.",
+                "Key points and action items.",
                 "Summarize the transcript I provide into a concise overview, key points, decisions, and action items.",
             ),
             (
                 "Improve transcript quality",
-                "Find unclear wording and possible recognition errors.",
+                "Catch unclear phrases and recognition errors.",
                 "Review the transcript I provide for likely speech-recognition mistakes, unclear phrases, repetitions, and formatting issues. Suggest corrections without silently changing uncertain words.",
             ),
             (
                 "Create readable subtitles",
-                "Break dialogue into concise, natural subtitle lines.",
+                "Clean, readable subtitle cues.",
                 "Help me turn the transcript I provide into readable subtitle cues. Keep each cue concise, use natural line breaks, and preserve the original meaning.",
             ),
             (
                 "Plan an audio workflow",
-                "Choose an efficient way to transcribe and clean a recording.",
+                "A faster transcription workflow.",
                 "Help me choose an efficient workflow for transcribing and cleaning an audio recording. Explain the best order of steps and relevant options.",
             ),
         )
         for title_text, detail_text, prompt_text in prompt_examples:
             button = QPushButton(self.prompt_grid)
             button.setObjectName("AssistantPromptSuggestion")
-            button.setMinimumHeight(64)
+            button.setFixedHeight(54)
             button.setMinimumWidth(0)
             button.setSizePolicy(
                 QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
@@ -129,20 +129,30 @@ class ConversationView(QFrame):
 
             card_layout = QVBoxLayout(button)
             card_layout.setContentsMargins(0, 0, 0, 0)
-            card_layout.setSpacing(4)
+            card_layout.setSpacing(2)
+            card_layout.addStretch(1)
             title_label = QLabel(title_text, button)
             title_label.setObjectName("AssistantPromptSuggestionTitle")
+            title_label.setMinimumWidth(0)
+            title_label.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
             title_label.setAttribute(
                 Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
             )
             detail_label = QLabel(detail_text, button)
             detail_label.setObjectName("AssistantPromptSuggestionDescription")
-            detail_label.setWordWrap(True)
+            detail_label.setMinimumWidth(0)
+            detail_label.setWordWrap(False)
+            detail_label.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
             detail_label.setAttribute(
                 Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
             )
             card_layout.addWidget(title_label)
             card_layout.addWidget(detail_label)
+            card_layout.addStretch(1)
             button.clicked.connect(
                 lambda _checked=False, value=prompt_text: self.prompt_selected.emit(value)
             )
@@ -164,6 +174,7 @@ class ConversationView(QFrame):
         )
         self.content_layout.addStretch(1)
         self.scroll_area.setWidget(self.content)
+        self._update_empty_state_scroll_height()
         outer.addWidget(self.scroll_area, 1)
 
         self.jump_button = QPushButton("↓  Jump to latest")
@@ -204,9 +215,9 @@ class ConversationView(QFrame):
 
     def _layout_prompt_suggestions(self, width: int):
         available_width = max(0, int(width) - 32)
-        self.empty_state.setMinimumWidth(min(768, available_width))
-        # Keep suggestions in a compact two-column grid whenever the pane allows it.
-        columns = 2 if int(width) >= 640 else 1
+        self.empty_state.setMinimumWidth(min(688, available_width))
+        # Keep two compact columns until the conversation pane becomes narrow.
+        columns = 2 if int(width) >= 540 else 1
         if columns == self._prompt_columns:
             return
         self._prompt_columns = columns
@@ -220,6 +231,22 @@ class ConversationView(QFrame):
             self.prompt_grid_layout.setColumnStretch(
                 column, 1 if column < columns else 0
             )
+
+    def _update_empty_state_scroll_height(self):
+        """Keep every welcome card reachable when the chat viewport is short."""
+        if self.empty_state.isHidden():
+            self.content.setMinimumHeight(0)
+            return
+
+        self.prompt_grid_layout.activate()
+        self._empty_layout.activate()
+        margins = self.content_layout.contentsMargins()
+        required_height = (
+            self.empty_state.sizeHint().height()
+            + margins.top()
+            + margins.bottom()
+        )
+        self.content.setMinimumHeight(max(0, required_height))
 
     def dispose(self):
         """Stop deferred UI work and detach the application event filter."""
@@ -364,6 +391,7 @@ class ConversationView(QFrame):
         has_messages = bool(incoming)
         self.empty_state.setVisible(not has_messages)
         self.empty_top_spacer.setVisible(not has_messages)
+        self._update_empty_state_scroll_height()
         if force_scroll_to_bottom:
             self.jump_button.hide()
             self.scroll_to_latest()
@@ -555,13 +583,14 @@ class ConversationView(QFrame):
         narrow = event.size().width() < 560
         if narrow:
             self.content_layout.setContentsMargins(4, 8, 4, 10)
-            self._empty_layout.setContentsMargins(8, 12, 8, 12)
-            self._empty_layout.setSpacing(9)
+            self._empty_layout.setContentsMargins(8, 10, 8, 10)
+            self._empty_layout.setSpacing(7)
         else:
             self.content_layout.setContentsMargins(10, 14, 10, 16)
-            self._empty_layout.setContentsMargins(16, 20, 16, 20)
-            self._empty_layout.setSpacing(12)
+            self._empty_layout.setContentsMargins(12, 14, 12, 14)
+            self._empty_layout.setSpacing(9)
         self._layout_prompt_suggestions(event.size().width())
+        self._update_empty_state_scroll_height()
         for widget in self._widgets:
             widget.body.refresh_document_size()
         # Let the scroll area's viewport finish its layout before measuring it.

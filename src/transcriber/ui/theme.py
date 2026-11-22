@@ -1081,10 +1081,10 @@ def stylesheet(theme: str) -> str:
     QPushButton#AssistantPromptSuggestion {{
         background: {c['surface']};
         border: 1px solid {c['border']};
-        border-radius: 12px;
-        padding: 9px 12px;
+        border-radius: 9px;
+        padding: 4px 10px;
         min-width: 0;
-        min-height: 64px;
+        min-height: 0;
         text-align: left;
     }}
     QPushButton#AssistantPromptSuggestion:hover {{
