@@ -140,6 +140,9 @@ class _ChatErrorToast(QFrame):
         self.fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.fade_animation.finished.connect(self._on_fade_finished)
         self._hiding = False
+        self._reposition_timer = QTimer(self)
+        self._reposition_timer.setSingleShot(True)
+        self._reposition_timer.timeout.connect(self._reposition)
 
         parent.installEventFilter(self)
         if anchor is not None:
@@ -152,7 +155,7 @@ class _ChatErrorToast(QFrame):
             QEvent.Type.Show,
             QEvent.Type.LayoutRequest,
         ):
-            QTimer.singleShot(0, self._reposition)
+            self._reposition_timer.start(0)
         return super().eventFilter(watched, event)
 
     def _reposition(self):
@@ -851,12 +854,15 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._chat_refresh_timer.setSingleShot(True)
         self._chat_refresh_timer.setInterval(45)
         self._chat_refresh_timer.timeout.connect(self._refresh_chat)
+        self._auto_connect_timer = QTimer(self)
+        self._auto_connect_timer.setSingleShot(True)
+        self._auto_connect_timer.timeout.connect(self._auto_connect_provider)
         self._refresh_chat()
         self._apply_provider_ui()
         self._refresh_session_list()
         self._refresh_chat()
         self._sync_voice_orb()
-        QTimer.singleShot(0, self._auto_connect_provider)
+        self._auto_connect_timer.start(0)
 
     def eventFilter(self, watched, event):
         if (

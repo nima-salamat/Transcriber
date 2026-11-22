@@ -418,7 +418,9 @@ def test_history_sidebar_shows_a_bounded_latest_user_preview(qtbot, tmp_path):
         updated_at=session["updated_at"],
     )
     assert item.text() == ""
-    assert row.title_label.text() == "Renamed transcript review"
+    assert row._full_title == "Renamed transcript review"
+    assert "Renamed transcript review" in row.toolTip()
+    assert row.title_label.text()
 
 
 def test_loading_a_session_forces_conversation_to_latest_message(qtbot):

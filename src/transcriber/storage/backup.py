@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import closing
 import os
 import shutil
 import sqlite3
@@ -20,8 +21,9 @@ def create_backup(database: Database, settings_path: Path, destination: Path) ->
     with tempfile.TemporaryDirectory(prefix="transcriber-backup-") as temporary:
         root = Path(temporary)
         db_copy = root / "transcripts.sqlite3"
-        with database.connect() as source, sqlite3.connect(db_copy) as backup:
+        with closing(database.connect()) as source, closing(sqlite3.connect(db_copy)) as backup:
             source.backup(backup)
+            backup.commit()
         settings_copy = root / "settings.json"
         if Path(settings_path).is_file():
             shutil.copy2(settings_path, settings_copy)

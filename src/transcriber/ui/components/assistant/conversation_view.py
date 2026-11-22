@@ -88,6 +88,18 @@ class ConversationView(QFrame):
         self._stream_scroll_timer.setSingleShot(True)
         self._stream_scroll_timer.setInterval(75)
         self._stream_scroll_timer.timeout.connect(self.scroll_to_latest)
+
+        # Own deferred callbacks so deleting the conversation view cancels
+        # pending work instead of invoking slots on an already-destroyed Qt object.
+        self._scroll_sync_timer = QTimer(self)
+        self._scroll_sync_timer.setSingleShot(True)
+        self._scroll_sync_timer.timeout.connect(self._sync_follow_state_from_scrollbar)
+        self._scroll_apply_timer = QTimer(self)
+        self._scroll_apply_timer.setSingleShot(True)
+        self._scroll_apply_timer.timeout.connect(self._apply_deferred_scroll)
+        self._message_width_timer = QTimer(self)
+        self._message_width_timer.setSingleShot(True)
+        self._message_width_timer.timeout.connect(self._update_message_widths)
         self._follow_stream = True
         self._scroll_generation = 0
         self._programmatic_scroll = False
@@ -96,9 +108,7 @@ class ConversationView(QFrame):
         scrollbar.sliderMoved.connect(self._sync_follow_state_from_scrollbar)
         scrollbar.sliderReleased.connect(self._sync_follow_state_from_scrollbar)
         scrollbar.actionTriggered.connect(self._begin_manual_scroll)
-        scrollbar.actionTriggered.connect(
-            lambda _action: QTimer.singleShot(0, self._sync_follow_state_from_scrollbar)
-        )
+        scrollbar.actionTriggered.connect(self._schedule_scroll_sync)
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
@@ -114,6 +124,9 @@ class ConversationView(QFrame):
         self._stream_scroll_timer.stop()
         self._scroll_generation += 1
         self._follow_stream = False
+
+    def _schedule_scroll_sync(self, *_args):
+        self._scroll_sync_timer.start(0)
 
     def _sync_follow_state_from_scrollbar(self, *_args):
         if self._programmatic_scroll:
@@ -141,7 +154,7 @@ class ConversationView(QFrame):
                 # Disable auto-follow immediately; a resize/layout event can
                 # occur before the scrollbar has applied this wheel delta.
                 self._follow_stream = False
-                QTimer.singleShot(0, self._sync_follow_state_from_scrollbar)
+                self._schedule_scroll_sync()
         return super().eventFilter(watched, event)
 
     @staticmethod
@@ -379,8 +392,10 @@ class ConversationView(QFrame):
     def scroll_to_latest(self):
         self._stream_scroll_timer.stop()
         self._scroll_generation += 1
-        generation = self._scroll_generation
-        QTimer.singleShot(0, lambda current=generation: self._scroll_to_latest_now(current))
+        self._scroll_apply_timer.start(0)
+
+    def _apply_deferred_scroll(self):
+        self._scroll_to_latest_now(self._scroll_generation)
 
     def _scroll_to_latest_now(self, generation: int | None = None):
         if generation is not None and generation != self._scroll_generation:
@@ -420,6 +435,6 @@ class ConversationView(QFrame):
         for widget in self._widgets:
             widget.body.refresh_document_size()
         # Let the scroll area's viewport finish its layout before measuring it.
-        QTimer.singleShot(0, self._update_message_widths)
+        self._message_width_timer.start(0)
         if self._follow_stream:
             self.scroll_to_latest()
