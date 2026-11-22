@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import socket
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +17,8 @@ from transcriber.assistant.ollama_client import (
 class FakeResponse:
     def __init__(self, payload: bytes):
         self.payload = payload
+        self.status = 200
+        self.closed = False
 
     def __enter__(self):
         return self
@@ -28,6 +31,53 @@ class FakeResponse:
 
     def __iter__(self):
         return iter(self.payload.splitlines(keepends=True))
+
+    def close(self):
+        self.closed = True
+
+
+def _install_fake_http_transport(monkeypatch, opener):
+    """Adapt request assertions to OllamaClient's http.client transport."""
+
+    class FakeHTTPConnection:
+        scheme = "http"
+
+        def __init__(self, host, port=None, timeout=None, **_kwargs):
+            self.host = host
+            self.port = port
+            self.timeout = timeout
+            self.sock = None
+            self._request = None
+            self._response = None
+
+        def request(self, method, path, body=None, headers=None):
+            authority = self.host
+            if self.port is not None:
+                authority += ":" + str(self.port)
+            self._request = SimpleNamespace(
+                full_url=self.scheme + "://" + authority + path,
+                data=body,
+                method=method,
+                headers=headers or {},
+            )
+
+        def getresponse(self):
+            if self._request is None:
+                raise AssertionError("HTTP request() must run before getresponse().")
+            self._response = opener(self._request, self.timeout)
+            return self._response
+
+        def close(self):
+            if self._response is not None:
+                self._response.close()
+
+    class FakeHTTPSConnection(FakeHTTPConnection):
+        scheme = "https"
+
+    from transcriber.assistant import ollama_client
+
+    monkeypatch.setattr(ollama_client.http.client, "HTTPConnection", FakeHTTPConnection)
+    monkeypatch.setattr(ollama_client.http.client, "HTTPSConnection", FakeHTTPSConnection)
 
 
 def test_ollama_base_url_requires_a_valid_http_url():
@@ -42,9 +92,7 @@ def test_list_models_reads_installed_local_models(monkeypatch):
             {"model": "llama3.2:3b", "details": {"family": "llama"}},
         ]
     }
-    monkeypatch.setattr(
-        "transcriber.assistant.ollama_client.urlopen",
-        lambda request, timeout: FakeResponse(json.dumps(payload).encode("utf-8")),
+    _install_fake_http_transport(monkeypatch, lambda request, timeout: FakeResponse(json.dumps(payload).encode("utf-8")),
     )
 
     models = OllamaClient().list_models()
@@ -62,7 +110,7 @@ def test_load_model_uses_empty_chat_and_configured_keep_alive(monkeypatch):
         captured["timeout"] = timeout
         return FakeResponse(b'{"done":true,"done_reason":"load"}')
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
     client = OllamaClient(timeout=12.0, model_load_timeout=840.0)
 
     result = client.load_model("qwen2.5:7b", keep_alive="1h")
@@ -83,7 +131,7 @@ def test_model_discovery_keeps_the_short_api_timeout(monkeypatch):
         captured["timeout"] = timeout
         return FakeResponse(b'{"models":[]}')
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
 
     OllamaClient(timeout=18.0, model_load_timeout=840.0).list_models()
 
@@ -95,7 +143,7 @@ def test_model_load_timeout_error_identifies_the_model_endpoint(monkeypatch):
     def fake_urlopen(request, timeout):
         raise TimeoutError("timed out")
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
     client = OllamaClient(timeout=5.0, model_load_timeout=17.0)
 
     with pytest.raises(OllamaError, match=r"/api/chat.*17"):
@@ -114,7 +162,7 @@ def test_chat_streams_tokens_and_preserves_conversation_messages(monkeypatch):
         captured["body"] = json.loads(request.data.decode("utf-8"))
         return FakeResponse("".join(json.dumps(item) + "\n" for item in lines).encode("utf-8"))
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
     chunks = []
     result = OllamaClient().chat(
         "qwen2.5:7b",
@@ -136,7 +184,7 @@ def test_chat_sends_function_schemas_and_preserves_tool_history(monkeypatch):
         captured["body"] = json.loads(request.data.decode("utf-8"))
         payload = {"message": {"role": "assistant", "content": "Done."}, "done": True}
         return FakeResponse((json.dumps(payload) + "\n").encode("utf-8"))
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
     tool = {"type": "function", "function": {"name": "desktop.launch_app", "parameters": {"type": "object"}}}
     history = [
         {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "desktop.launch_app", "arguments": {"app": "notepad"}}}]},
@@ -159,9 +207,7 @@ def test_chat_collects_tool_calls_from_streaming_chunks(monkeypatch):
         {"message": {"role": "assistant", "content": ""}, "done": True},
     ]
     payload = "".join(json.dumps(item) + "\n" for item in chunks).encode("utf-8")
-    monkeypatch.setattr(
-        "transcriber.assistant.ollama_client.urlopen",
-        lambda request, timeout: FakeResponse(payload),
+    _install_fake_http_transport(monkeypatch, lambda request, timeout: FakeResponse(payload),
     )
 
     result = OllamaClient().chat(
@@ -175,7 +221,7 @@ def test_chat_collects_tool_calls_from_streaming_chunks(monkeypatch):
 def test_chat_cancellation_before_network_does_not_send_request(monkeypatch):
     def forbidden_urlopen(*_args, **_kwargs):
         raise AssertionError("a cancelled chat must not make a network request")
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", forbidden_urlopen)
+    _install_fake_http_transport(monkeypatch, forbidden_urlopen)
     token = OllamaCancellation()
     token.cancel()
 
@@ -238,7 +284,7 @@ def test_chat_reports_server_error(monkeypatch):
     def fake_urlopen(request, timeout):
         return FakeResponse(b'{"error":"model not found"}\n')
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
     with pytest.raises(OllamaError, match="model not found"):
         OllamaClient().chat("missing:latest", [{"role": "user", "content": "Hi"}])
 
@@ -257,7 +303,7 @@ def test_show_model_discovers_thinking_controls_and_uses_model_default(monkeypat
         }
         return FakeResponse(json.dumps(payload).encode("utf-8"))
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
     client = OllamaClient()
 
     metadata = client.show_model("qwen3:8b")
@@ -293,7 +339,7 @@ def test_chat_requests_thinking_and_streams_it_separately_from_answer(monkeypatc
         captured["body"] = json.loads(request.data.decode("utf-8"))
         return FakeResponse("".join(json.dumps(item) + "\n" for item in events).encode("utf-8"))
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
     thought_chunks = []
     answer_chunks = []
     result = OllamaClient().chat(
@@ -318,7 +364,7 @@ def test_chat_omits_think_parameter_when_model_does_not_advertise_support(monkey
         captured["body"] = json.loads(request.data.decode("utf-8"))
         return FakeResponse(b'{"message":{"role":"assistant","content":"Hello"},"done":true}')
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
     OllamaClient().chat(
         "llama3.2:3b",
         [{"role": "user", "content": "Hello"}],
@@ -337,7 +383,7 @@ def test_chat_preserves_assistant_thinking_in_follow_up_history(monkeypatch):
             b'{"message":{"role":"assistant","content":"Done"},"done":true}'
         )
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", fake_urlopen)
+    _install_fake_http_transport(monkeypatch, fake_urlopen)
     history = [
         {"role": "assistant", "content": "", "thinking": "I will inspect the action."},
         {"role": "tool", "tool_name": "browser.search", "content": json.dumps({"ok": True})},
@@ -353,7 +399,7 @@ def test_cold_model_load_respects_shutdown_cancellation(monkeypatch):
     def forbidden_urlopen(*_args, **_kwargs):
         raise AssertionError("a cancelled model load must not contact Ollama")
 
-    monkeypatch.setattr("transcriber.assistant.ollama_client.urlopen", forbidden_urlopen)
+    _install_fake_http_transport(monkeypatch, forbidden_urlopen)
     cancellation = OllamaCancellation()
     cancellation.cancel()
 

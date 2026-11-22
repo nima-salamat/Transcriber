@@ -392,7 +392,19 @@ def test_opencode_acp_client_persistent_session_and_prompt(tmp_path):
         result = client.prompt("Summarize the current transcript", timeout=3)
         assert result["stopReason"] == "end_turn"
         client.cancel()
-        lines = [__import__("json").loads(line) for line in command_log.read_text().splitlines()]
+        # ACP cancellation is a one-way notification. The client flushes stdin,
+        # but the simulator consumes and records it on its own thread.
+        deadline = time.monotonic() + 1.0
+        lines = []
+        while time.monotonic() < deadline:
+            if command_log.exists():
+                lines = [
+                    __import__("json").loads(line)
+                    for line in command_log.read_text(encoding="utf-8").splitlines()
+                ]
+                if any(item.get("method") == "session/cancel" for item in lines):
+                    break
+            time.sleep(0.01)
         new_session = next(item for item in lines if item["method"] == "session/new")
         assert new_session["params"]["mcpServers"][0]["name"] == "transcriber"
         prompt = next(item for item in lines if item["method"] == "session/prompt")
