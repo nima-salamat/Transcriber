@@ -746,8 +746,17 @@ class AssistantProviderMixin:
         self.thread_pool.start(worker)
 
     def _on_ollama_connected(self, result):
+        cancellation = self._model_load_cancellation
         if getattr(self, "_shutting_down", False):
             self._model_load_cancellation = None
+            return
+        if cancellation is not None and cancellation.cancelled:
+            self._connection_busy = False
+            self._model_load_cancellation = None
+            self._stop_requested = False
+            self.activity_label.setText("Model loading stopped")
+            self.composer.set_status("Model loading stopped.")
+            self._apply_provider_ui()
             return
         self._connection_busy = False
         selected = str(result.get("model") or "")
