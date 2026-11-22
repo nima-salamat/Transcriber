@@ -118,17 +118,16 @@ class ConversationView(QFrame):
         for title_text, detail_text, prompt_text in prompt_examples:
             button = QPushButton(self.prompt_grid)
             button.setObjectName("AssistantPromptSuggestion")
-            button.setFixedHeight(60)
             button.setMinimumWidth(0)
             button.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
             )
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setAccessibleName(title_text)
             button.setToolTip(f"Use this prompt: {title_text}")
 
             card_layout = QVBoxLayout(button)
-            card_layout.setContentsMargins(12, 2, 12, 2)
+            card_layout.setContentsMargins(16, 9, 16, 9)
             card_layout.setSpacing(2)
             card_layout.addStretch(1)
             title_label = QLabel(title_text, button)
@@ -153,6 +152,10 @@ class ConversationView(QFrame):
             card_layout.addWidget(title_label)
             card_layout.addWidget(detail_label)
             card_layout.addStretch(1)
+            # QPushButton's own sizeHint does not include child labels reliably.
+            # Derive its minimum height from the actual label metrics and padding.
+            card_layout.activate()
+            button.setMinimumHeight(card_layout.sizeHint().height() + 2)
             button.clicked.connect(
                 lambda _checked=False, value=prompt_text: self.prompt_selected.emit(value)
             )
