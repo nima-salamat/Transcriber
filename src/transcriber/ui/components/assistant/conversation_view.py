@@ -128,14 +128,14 @@ class ConversationView(QFrame):
             button.setToolTip(f"Use this prompt: {title_text}")
 
             card_layout = QVBoxLayout(button)
-            card_layout.setContentsMargins(0, 0, 0, 0)
+            card_layout.setContentsMargins(8, 0, 8, 0)
             card_layout.setSpacing(2)
             card_layout.addStretch(1)
             title_label = QLabel(title_text, button)
             title_label.setObjectName("AssistantPromptSuggestionTitle")
             title_label.setMinimumWidth(0)
             title_label.setAlignment(
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
             )
             title_label.setAttribute(
                 Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
@@ -145,7 +145,7 @@ class ConversationView(QFrame):
             detail_label.setMinimumWidth(0)
             detail_label.setWordWrap(False)
             detail_label.setAlignment(
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
             )
             detail_label.setAttribute(
                 Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
