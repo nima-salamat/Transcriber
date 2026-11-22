@@ -101,7 +101,7 @@ class ConversationView(QFrame):
             ),
             (
                 "Improve transcript quality",
-                "Catch unclear phrases and recognition errors.",
+                "Spot unclear speech errors.",
                 "Review the transcript I provide for likely speech-recognition mistakes, unclear phrases, repetitions, and formatting issues. Suggest corrections without silently changing uncertain words.",
             ),
             (
@@ -240,12 +240,10 @@ class ConversationView(QFrame):
 
         self.prompt_grid_layout.activate()
         self._empty_layout.activate()
-        margins = self.content_layout.contentsMargins()
-        required_height = (
-            self.empty_state.sizeHint().height()
-            + margins.top()
-            + margins.bottom()
-        )
+        self.content_layout.activate()
+        # Include layout margins and the two spacer gaps as well as the card
+        # height; otherwise the final row can extend past the scroll widget.
+        required_height = self.content_layout.minimumSize().height()
         self.content.setMinimumHeight(max(0, required_height))
 
     def dispose(self):
