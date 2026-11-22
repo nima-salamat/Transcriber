@@ -153,9 +153,13 @@ class ConversationView(QFrame):
         self._prompt_columns = 0
         self._layout_prompt_suggestions(self.width())
 
-        # The paired stretches keep the welcome content vertically centered.
-        # New message rows are inserted before the trailing stretch below.
-        self.content_layout.addStretch(1)
+        # Center the welcome screen, but remove its top spacer once a chat
+        # starts so message history remains anchored to the top.
+        self.empty_top_spacer = QWidget(self.content)
+        self.empty_top_spacer.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
+        )
+        self.content_layout.addWidget(self.empty_top_spacer, 1)
         self.content_layout.addWidget(
             self.empty_state, 0, Qt.AlignmentFlag.AlignHCenter
         )
@@ -355,7 +359,9 @@ class ConversationView(QFrame):
 
         self._signatures = signatures
         self._messages = values
-        self.empty_state.setVisible(not bool(incoming))
+        has_messages = bool(incoming)
+        self.empty_state.setVisible(not has_messages)
+        self.empty_top_spacer.setVisible(not has_messages)
         if force_scroll_to_bottom:
             self.jump_button.hide()
             self.scroll_to_latest()
