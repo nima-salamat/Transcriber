@@ -514,9 +514,15 @@ class MessageComposer(QFrame):
             self._sync_send_button()
 
     def _sync_send_button(self):
+        # Clearing the prompt after Send emits textChanged. While a turn is
+        # running, that signal must not disable the same button now acting as
+        # Stop. Preserve the busy/stoppable state until the worker finishes.
+        if self._busy:
+            self.send_button.setEnabled(self._stoppable)
+            return
+
         self.send_button.setEnabled(
-            not self._busy
-            and self._provider_ready
+            self._provider_ready
             and bool(self.prompt.toPlainText().strip())
         )
 
