@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from transcriber.ui.widgets import Card, page_header, primary_button
+from transcriber.ui.widgets import Card, page_header, primary_button, section_header, empty_state, status_pill
 from transcriber.ui.workers import FunctionWorker
 
 
@@ -29,17 +29,25 @@ class HistoryPage(QWidget):
         self.thread_pool = thread_pool
         self._generation = 0
         self._worker: FunctionWorker | None = None
+        self._records_by_id: dict[str, dict] = {}
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 10, 12)
-        layout.setSpacing(13)
-        layout.addWidget(page_header("History", "All transcripts are stored in your local SQLite database."))
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(14)
+        layout.addWidget(page_header(
+            "Transcript history",
+            "Search, review and organize transcripts saved on this device.",
+        ))
 
         search_row = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search titles and transcript content…")
+        self.search.setPlaceholderText("Search transcript titles and content…")
         self.search.setClearButtonEnabled(True)
-        self.search.setMinimumHeight(40)
+        self.search.setMinimumHeight(38)
         search_row.addWidget(self.search, 1)
+        self.result_count = QLabel("—")
+        self.result_count.setObjectName("Muted")
+        search_row.addWidget(self.result_count)
         layout.addLayout(search_row)
 
         self.search_timer = QTimer(self)
@@ -48,51 +56,115 @@ class HistoryPage(QWidget):
         self.search_timer.timeout.connect(self.refresh)
         self.search.textChanged.connect(lambda: self.search_timer.start())
 
-        card = Card()
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(14, 14, 14, 14)
-        card_layout.setSpacing(10)
+        workspace = QHBoxLayout()
+        workspace.setSpacing(14)
+
+        list_panel = Card()
+        list_panel.setObjectName("WorkspacePanel")
+        list_layout = QVBoxLayout(list_panel)
+        list_layout.setContentsMargins(13, 13, 13, 13)
+        list_layout.setSpacing(9)
+        list_layout.addWidget(section_header("Saved transcripts", "Select an item to inspect its details."))
+
         self.items = QListWidget()
-        self.items.setSpacing(4)
-        self.items.setMinimumHeight(180)
+        self.items.setSpacing(2)
+        self.items.setMinimumWidth(320)
         self.items.itemDoubleClicked.connect(self._open)
-        self.items.currentItemChanged.connect(lambda *_: self._update_action_state())
-        card_layout.addWidget(self.items, 1)
+        self.items.currentItemChanged.connect(self._selection_changed)
+        list_layout.addWidget(self.items, 1)
 
-        self.empty_state = QLabel("No saved transcripts yet. Start a transcription to build your history.")
-        self.empty_state.setObjectName("PageEmptyState")
-        self.empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_state.setWordWrap(True)
-        self.empty_state.setMinimumHeight(150)
-        card_layout.addWidget(self.empty_state, 1)
-        self.items.hide()
+        self.empty_state = empty_state(
+            "No matching transcripts",
+            "Change the search phrase or create a new transcription to build your library.",
+        )
+        list_layout.addWidget(self.empty_state, 1)
+        workspace.addWidget(list_panel, 3)
 
-        primary_actions = QHBoxLayout()
+        detail_panel = Card()
+        detail_panel.setObjectName("WorkspacePanel")
+        detail_layout = QVBoxLayout(detail_panel)
+        detail_layout.setContentsMargins(17, 16, 17, 16)
+        detail_layout.setSpacing(12)
+        detail_layout.addWidget(section_header("Transcript details", "Actions apply to the selected item."))
+
+        self.detail_status = status_pill("Nothing selected")
+        detail_layout.addWidget(self.detail_status, 0, Qt.AlignmentFlag.AlignLeft)
+        self.detail_title = QLabel("Select a transcript")
+        self.detail_title.setObjectName("HistoryDetailTitle")
+        self.detail_title.setWordWrap(True)
+        detail_layout.addWidget(self.detail_title)
+
+        self.detail_metadata = QLabel("Transcript metadata will appear here.")
+        self.detail_metadata.setObjectName("Muted")
+        self.detail_metadata.setWordWrap(True)
+        detail_layout.addWidget(self.detail_metadata)
+
+        preview_heading = QLabel("Preview")
+        preview_heading.setObjectName("HistoryPreviewHeading")
+        detail_layout.addWidget(preview_heading)
+        self.detail_preview = QLabel("Choose a transcript from the list to read its preview.")
+        self.detail_preview.setObjectName("HistoryPreview")
+        self.detail_preview.setWordWrap(True)
+        self.detail_preview.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        detail_layout.addWidget(self.detail_preview, 1)
+
+        actions = QVBoxLayout()
+        actions.setSpacing(7)
         self.open_button = primary_button("Open transcript")
         self.open_button.clicked.connect(self.open_selected)
         self.rename_button = QPushButton("Rename")
         self.rename_button.clicked.connect(self.rename_selected)
         self.favorite_button = QPushButton("Pin / unpin")
         self.favorite_button.clicked.connect(self.toggle_favorite)
-        primary_actions.addWidget(self.open_button)
-        primary_actions.addWidget(self.rename_button)
-        primary_actions.addWidget(self.favorite_button)
-        primary_actions.addStretch(1)
-        card_layout.addLayout(primary_actions)
-
-        secondary_actions = QHBoxLayout()
         self.duplicate_button = QPushButton("Duplicate")
         self.duplicate_button.clicked.connect(self.duplicate_selected)
-        self.delete_button = QPushButton("Delete")
+        self.delete_button = QPushButton("Delete transcript")
         self.delete_button.setObjectName("Danger")
         self.delete_button.clicked.connect(self.delete_selected)
-        secondary_actions.addWidget(self.duplicate_button)
-        secondary_actions.addWidget(self.delete_button)
-        secondary_actions.addStretch(1)
-        card_layout.addLayout(secondary_actions)
-        layout.addWidget(card, 1)
+        actions.addWidget(self.open_button)
+        actions.addWidget(self.rename_button)
+        actions.addWidget(self.favorite_button)
+        actions.addWidget(self.duplicate_button)
+        actions.addWidget(self.delete_button)
+        detail_layout.addLayout(actions)
+        workspace.addWidget(detail_panel, 2)
+
+        layout.addLayout(workspace, 1)
         self._update_action_state()
         self.refresh()
+
+    def _selection_changed(self, *_args):
+        self._update_action_state()
+        self._show_selected_details()
+
+    def _show_selected_details(self):
+        transcript_id = self._selected_id()
+        record = self._records_by_id.get(transcript_id or "")
+        if not record:
+            self.detail_status.setText("Nothing selected")
+            self.detail_status.setProperty("state", "neutral")
+            self.detail_title.setText("Select a transcript")
+            self.detail_metadata.setText("Transcript metadata will appear here.")
+            self.detail_preview.setText("Choose a transcript from the list to read its preview.")
+            self.favorite_button.setText("Pin / unpin")
+            return
+
+        favorite = bool(record.get("favorite"))
+        self.detail_status.setText("Pinned" if favorite else "Saved locally")
+        self.detail_status.setProperty("state", "info" if favorite else "neutral")
+        self.detail_status.style().unpolish(self.detail_status)
+        self.detail_status.style().polish(self.detail_status)
+        self.detail_title.setText(str(record.get("title") or "Untitled transcript"))
+        updated = str(record.get("updated_at") or "Unknown").replace("T", " ")[:16]
+        self.detail_metadata.setText(
+            f"Updated {updated}\n"
+            f"Engine: {record.get('engine') or 'Unknown'}  ·  "
+            f"Language: {record.get('language') or 'Unknown'}"
+        )
+        self.detail_preview.setText(
+            str(record.get("preview") or "").strip() or "No text preview is available."
+        )
+        self.favorite_button.setText("Unpin transcript" if favorite else "Pin transcript")
 
     def refresh(self, *_):
         self._generation += 1
@@ -108,21 +180,24 @@ class HistoryPage(QWidget):
         if generation != self._generation:
             return
         self.items.clear()
+        self._records_by_id = {str(row["id"]): row for row in rows}
         for row in rows:
-            pinned = "★  " if row["favorite"] else ""
-            details = f"{row['updated_at'][:16].replace('T', ' ')}  ·  {row['engine']}  ·  {row['language'] or 'Unknown language'}"
-            item = QListWidgetItem(f"{pinned}{row['title']}\n{details}\n{row['preview']}")
+            title = str(row.get("title") or "Untitled transcript")
+            updated = str(row.get("updated_at") or "Unknown").replace("T", " ")[:16]
+            details = f"{updated}  ·  {row.get('engine') or 'Unknown engine'}  ·  {row.get('language') or 'Unknown language'}"
+            item = QListWidgetItem(f"{'★  ' if row.get('favorite') else ''}{title}\n{details}")
             item.setData(Qt.ItemDataRole.UserRole, row["id"])
+            item.setToolTip(str(row.get("preview") or title))
             self.items.addItem(item)
 
         has_rows = bool(rows)
         self.items.setVisible(has_rows)
         self.empty_state.setVisible(not has_rows)
-        self.empty_state.setText(
-            "No transcripts match this search. Try a different title or phrase."
-            if self.search.text().strip()
-            else "No saved transcripts yet. Start a transcription to build your history."
-        )
+        self.result_count.setText(f"{len(rows)} transcripts")
+        if has_rows:
+            self.items.setCurrentRow(0)
+        else:
+            self._show_selected_details()
         self._update_action_state()
 
     def _selected_id(self):
