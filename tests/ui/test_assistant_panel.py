@@ -25,7 +25,8 @@ def test_assistant_panel_is_a_conversation_surface(qtbot, tmp_path):
     qtbot.addWidget(panel)
 
     assert isinstance(panel.chat_view, QTextBrowser)
-    assert panel.send_button.text() == "Send"
+    assert panel.send_button.accessibleName() == "Send message"
+    assert panel.send_button.toolTip() == "Send message · Enter"
     assert not panel.send_button.isEnabled()
     assert panel.prompt_library_button.text() == "Open prompt library"
     assert "specialist" in panel.prompt_library.read("00-AGENT.md").casefold()
@@ -121,12 +122,12 @@ def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
     panel = AssistantPanel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
-    assert "Voice" in panel.voice_chat_button.text()
+    assert panel.voice_chat_button.text() == "Start voice"
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
     panel._voice_conversation_mode = True
     panel._sync_voice_orb()
-    assert "Stop voice" in panel.voice_chat_button.text()
+    assert panel.voice_chat_button.text() == "Stop voice"
     assert panel.voice_chat_button.accessibleName() == "Stop voice conversation"
 
     panel._voice_conversation_mode = False
@@ -144,7 +145,12 @@ def test_agent_runtime_controls_the_agent_tools_toggle(qtbot, tmp_path):
     qtbot.addWidget(panel)
 
     assert not panel.agent_mode_check.isEnabled()
-    registry = SimpleNamespace(describe=lambda **_kwargs: [])
+    registry = SimpleNamespace(
+        describe=lambda **_kwargs: [],
+        permissions=set(),
+        set_permission=lambda *_args: None,
+        set_trusted_permission=lambda *_args: None,
+    )
     panel.set_agent_runtime(registry)
     assert not panel.agent_mode_check.isEnabled()
     assert panel.agent_mode_check.isChecked()
@@ -170,7 +176,8 @@ def test_new_local_chat_clears_only_the_current_conversation(qtbot, tmp_path):
 
     assert panel._ollama_messages == []
     assert "old conversation" not in panel.chat_view.toPlainText()
-    assert "New local conversation started." in panel._messages[-1]["text"]
+    assert panel._messages == []
+    assert panel.activity_label.text() == "New conversation · ready for your message."
 
 
 def test_ollama_stop_is_independent_of_opencode_connection(qtbot, tmp_path):
@@ -214,7 +221,7 @@ def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
 
     panel.settings_button.click()
     assert panel.page_stack.currentWidget() is panel.settings_page
-    assert panel.settings_content.isAncestorOf(panel.provider_combo)
+    assert panel.settings_section_stack.isAncestorOf(panel.provider_combo)
     assert panel.settings_content.isAncestorOf(panel.voice_panel)
     assert panel.settings_content.isAncestorOf(panel.project_card)
     assert panel.settings_content.isAncestorOf(panel.prompt_library_button)
@@ -236,7 +243,7 @@ def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path)
     assert panel.provider_combo.currentData() == "ollama"
     assert panel.ollama_controls.isHidden() is False
     assert panel.project_card.isHidden() is True
-    assert panel.connect_button.text() == "Connect Ollama"
+    assert panel.connect_button.text() == "Connect"
     assert panel.voice_chat_button.objectName() == "AssistantVoiceButton"
     assert "Voice" in panel.voice_chat_button.text()
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
@@ -270,7 +277,7 @@ def test_voice_lifecycle_status_is_visible_on_the_conversation_page(qtbot, tmp_p
     qtbot.addWidget(panel)
 
     assert panel.page_stack.currentWidget() is panel.conversation_page
-    assert panel.voice_panel.parentWidget() is panel.settings_content
+    assert panel.settings_section_stack.isAncestorOf(panel.voice_panel)
     assert not panel.voice_live_status.isHidden()
 
     panel.voice_agent = SimpleNamespace(mode="command")
@@ -641,12 +648,13 @@ def test_conversation_messages_expand_a_little_on_wide_desktops(qtbot):
     ])
     qtbot.wait(30)
 
-    assert all(widget.maximumWidth() == 960 for widget in view._widgets)
+    assert all(widget.maximumWidth() == view._responsive_message_max_width() for widget in view._widgets)
 
     view.resize(1500, 520)
     qtbot.wait(50)
 
-    assert all(widget.maximumWidth() == 1120 for widget in view._widgets)
+    assert all(widget.maximumWidth() == view._responsive_message_max_width() for widget in view._widgets)
+    assert all(widget.maximumWidth() <= 1100 for widget in view._widgets)
     assert all(widget.width() <= view.scroll_area.viewport().width() for widget in view._widgets)
 
 

@@ -116,7 +116,7 @@ def test_restore_default_layout_restores_the_workspace_docks(qtbot, tmp_path, mo
     window.close()
 
 
-def test_global_search_opens_an_in_window_popup_without_navigating_away(qtbot, tmp_path, monkeypatch):
+def test_search_command_button_opens_an_in_window_popup_without_navigating_away(qtbot, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QWidget
 
     window, _settings = make_window(tmp_path, monkeypatch)
@@ -125,18 +125,17 @@ def test_global_search_opens_an_in_window_popup_without_navigating_away(qtbot, t
     qtbot.wait(30)
     window.navigate("home")
 
-    window.global_search.setText("meeting notes")
-    qtbot.wait(400)
+    window.command_button.click()
+    qtbot.wait(20)
 
-    assert window.stack.currentWidget() is window.home_page, (
-        "Typing in global search should not navigate away from the current workspace."
-    )
+    assert window.stack.currentWidget() is window.home_page
     popups = [
         child for child in window.findChildren(QWidget)
-        if child.objectName() == "GlobalSearchPopup" and child.isVisible()
+        if child.objectName() == "CommandPalettePopup" and child.isVisible()
     ]
-    assert popups, "Global search must show results in a popup inside the main window."
+    assert popups, "The search command must open the in-window command palette."
     assert all(child.window() is window for child in popups)
+    assert QApplication.activeModalWidget() is None
     window.close()
 
 

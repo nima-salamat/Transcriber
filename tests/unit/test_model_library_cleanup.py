@@ -223,7 +223,7 @@ def test_model_library_uses_pixel_scrolling_and_fixed_card_heights():
 
     assert "QAbstractItemView.ScrollMode.ScrollPerPixel" in source
     assert "self.download_list.setUniformItemSizes(True)" in source
-    assert "row.setFixedHeight(236)" in source
+    assert "row.setFixedHeight(252)" in source
     assert "card.setFixedHeight(360)" in source
     assert "self.installed_cards.setRowStretch(row_index, 0)" in source
 

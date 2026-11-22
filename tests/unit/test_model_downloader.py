@@ -24,6 +24,7 @@ class FakeHub:
     def inspect(self, repo_id, revision=None):
         return SimpleNamespace(
             repo_id=repo_id, revision="a1b2c3d4", files=self.files, license="mit",
+            task="automatic-speech-recognition", languages=(),
         )
 
 

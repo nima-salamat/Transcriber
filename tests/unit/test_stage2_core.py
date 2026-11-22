@@ -595,7 +595,8 @@ def test_main_window_cancellable_command_adapter_forwards_arguments_and_event():
     assert registry.execute(
         "system.run_command", arguments, cancellation=cancel_event
     ) == {"exit_code": 0}
-    assert received["arguments"] is arguments
+    assert received["arguments"] == arguments
+    assert received["arguments"] is not arguments
     assert received["cancel_event"] is cancel_event
 
 

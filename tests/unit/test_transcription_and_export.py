@@ -142,4 +142,6 @@ def test_online_adapter_requires_explicit_consent():
 
     with pytest.raises(PermissionError, match="explicit consent"):
         GoogleCloudEngine()
-    assert GoogleCloudEngine(consent_granted=True).engine_id == "google-cloud"
+    assert GoogleCloudEngine(
+        consent_granted=True, project_id="transcriber-test-project"
+    ).engine_id == "google-cloud-v2"
