@@ -2419,4 +2419,19 @@ def stylesheet(theme: str) -> str:
         font-weight: 650;
     }}
 
+
+    QToolButton#TranscriptionAdvancedToggle {{
+        color: {c['muted']};
+        background: transparent;
+        border: 0;
+        padding: 4px 6px;
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    QToolButton#TranscriptionAdvancedToggle:hover {{
+        color: {c['text']};
+        background: {c['surface_hover']};
+        border-radius: 6px;
+    }}
+
     """
