@@ -160,7 +160,8 @@ class RecordingPage(QWidget):
         self.record_button.setObjectName("RecordPrimary")
         self.record_button.setIcon(self.icons.icon("record", "#ffffff", 20))
         self.record_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(20, 20))
-        self.record_button.setMinimumSize(190, 54)
+        # Keep the control footprint stable while its label changes between states.
+        self.record_button.setFixedSize(220, 54)
         self.record_button.clicked.connect(self._primary_action)
         controls.addWidget(self.record_button)
 

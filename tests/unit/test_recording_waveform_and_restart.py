@@ -4,6 +4,7 @@ import pytest
 
 from transcriber.audio.recorder import QtAudioRecorder, _waveform_display_peak
 from transcriber.ui.pages.recording import _record_button_enabled_for_state
+from transcriber.ui.theme import stylesheet
 
 
 def test_quiet_microphone_peaks_are_visible_in_the_waveform() -> None:
@@ -44,3 +45,14 @@ def test_record_button_can_start_after_discard(state: str) -> None:
 def test_record_button_stays_available_during_active_capture() -> None:
     assert _record_button_enabled_for_state("recording", has_usable_input=False)
     assert _record_button_enabled_for_state("paused", has_usable_input=False)
+
+
+
+def test_record_button_pulse_changes_color_without_changing_border_width() -> None:
+    styles = stylesheet("dark")
+    base_style = styles.split("QPushButton#RecordPrimary {", 1)[1].split("}", 1)[0]
+    pulse_style = styles.split('QPushButton#RecordPrimary[pulse="true"] {', 1)[1].split("}", 1)[0]
+
+    assert "border: 3px solid transparent;" in base_style
+    assert "border-color:" in pulse_style
+    assert "border:" not in pulse_style

@@ -133,7 +133,8 @@ def stylesheet(theme: str) -> str:
     QPushButton#RecordPrimary {{
         background: {c['danger']};
         color: white;
-        border: 1px solid {c['danger']};
+        /* Keep the border width constant; the recording pulse only changes its color. */
+        border: 3px solid transparent;
         border-radius: 15px;
         padding: 0 20px;
         font-size: 14px;
@@ -155,7 +156,7 @@ def stylesheet(theme: str) -> str:
         color: {c['muted']};
     }}
     QPushButton#RecordPrimary[pulse="true"] {{
-        border: 3px solid rgba(225, 75, 91, 0.30);
+        border-color: rgba(225, 75, 91, 0.30);
     }}
     QPushButton#StopRecording {{
         background: {c['danger']};
