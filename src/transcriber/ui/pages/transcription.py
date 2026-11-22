@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSpinBox,
+    QToolButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -171,6 +172,13 @@ class TranscriptionPage(QWidget):
         settings_heading.addWidget(settings_title)
         settings_heading.addWidget(settings_hint)
         settings_heading.addStretch(1)
+        self.advanced_toggle = QToolButton()
+        self.advanced_toggle.setObjectName("TranscriptionAdvancedToggle")
+        self.advanced_toggle.setText("Advanced options")
+        self.advanced_toggle.setCheckable(True)
+        self.advanced_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.advanced_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        settings_heading.addWidget(self.advanced_toggle)
         settings_outer.addLayout(settings_heading)
 
         settings_grid = QGridLayout()
@@ -275,7 +283,20 @@ class TranscriptionPage(QWidget):
         options_row.addWidget(self.vad_check)
         options_row.addWidget(self.word_timestamps)
         options_row.addWidget(self.initial_prompt, 1)
-        settings_outer.addLayout(options_row)
+        advanced_content = QWidget(settings_panel)
+        advanced_layout = QVBoxLayout(advanced_content)
+        advanced_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_layout.addLayout(options_row)
+        advanced_content.setVisible(False)
+        self.advanced_toggle.toggled.connect(
+            lambda expanded: (
+                advanced_content.setVisible(expanded),
+                self.advanced_toggle.setArrowType(
+                    Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+                ),
+            )
+        )
+        settings_outer.addWidget(advanced_content)
 
         privacy_row = QHBoxLayout()
         privacy_row.setContentsMargins(1, 0, 0, 0)
@@ -517,7 +538,7 @@ class TranscriptionPage(QWidget):
             self.open_button, self.engine_combo, self.model_combo,
             self.default_model_button, self.language_combo, self.beam_spin,
             self.vad_check, self.task_combo, self.word_timestamps,
-            self.initial_prompt, self.search_input, self.find_button,
+            self.initial_prompt, self.advanced_toggle, self.search_input, self.find_button,
             self.replace_input, self.replace_button, self.copy_button,
             self.editor, self.include_timestamps, self.export_button,
             self.subtitle_export_button,
