@@ -541,9 +541,11 @@ class TranscriptionPage(QWidget):
             self.export_button.setEnabled(False)
             self.subtitle_export_button.setEnabled(False)
         else:
-            # Recompute the per-engine availability after releasing the lock.
-            # Do not blanket-enable every control: Cloud/Vosk have different
-            # model, task and prompt capabilities than Faster-Whisper.
+            # Re-enable the controls disabled by the busy state first. The
+            # engine-specific updater below then applies capability restrictions
+            # (for example, no local model selector for Google engines).
+            for control in self._busy_controls:
+                control.setEnabled(True)
             self._update_engine_controls()
             self.start_button.setEnabled(True)
             self.close_audio_button.setEnabled(self.audio_path is not None)
