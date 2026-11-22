@@ -1222,13 +1222,17 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         cleanup_targets = []
         if self.voice_agent:
             agent, self.voice_agent = self.voice_agent, None
-            self._closing_voice_agents.append(agent)
-            cleanup_targets.append(("Transcriber-voice-shutdown", agent.close))
+            close_agent = getattr(agent, "close", None)
+            if callable(close_agent):
+                self._closing_voice_agents.append(agent)
+                cleanup_targets.append(("Transcriber-voice-shutdown", close_agent))
 
         client, self.client = self.client, None
         if client:
-            self._closing_opencode_clients.append(client)
-            cleanup_targets.append(("Transcriber-opencode-shutdown", client.close))
+            close_client = getattr(client, "close", None)
+            if callable(close_client):
+                self._closing_opencode_clients.append(client)
+                cleanup_targets.append(("Transcriber-opencode-shutdown", close_client))
 
         # Never queue cleanup behind Agent calls in the same QThreadPool.
         # A blocked ACP prompt or microphone start must not prevent its own close.
