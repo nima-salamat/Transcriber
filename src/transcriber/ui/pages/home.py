@@ -49,11 +49,9 @@ class HomePage(QWidget):
         copy = QVBoxLayout()
         copy.setSpacing(7)
         eyebrow = QLabel("LOCAL-FIRST TRANSCRIPTION")
-        eyebrow.setObjectName("Muted")
-        eyebrow.setStyleSheet("font-size: 10px; font-weight: 750; letter-spacing: 1.2px;")
+        eyebrow.setObjectName("HomeEyebrow")
         title = QLabel("Make every recording useful.")
-        title.setObjectName("SectionTitle")
-        title.setStyleSheet("font-size: 24px; font-weight: 750;")
+        title.setObjectName("HomeHeroTitle")
         description = QLabel(
             "Transcribe with an installed Faster-Whisper model, edit the result and create subtitles. "
             "Audio stays on this device unless you explicitly choose an online engine."
@@ -166,7 +164,7 @@ class HomePage(QWidget):
         row.setSpacing(5)
         heading = QLabel(title)
         heading.setObjectName("Muted")
-        value.setStyleSheet("font-size: 25px; font-weight: 750;")
+        value.setObjectName("StatValue")
         row.addWidget(heading)
         row.addWidget(value)
         return card
