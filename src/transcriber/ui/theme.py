@@ -2133,4 +2133,78 @@ def stylesheet(theme: str) -> str:
         border-color: {c['warning']};
     }}
 
+
+    /* Reusable workspace composition primitives */
+    QWidget#SectionHeader, QWidget#SectionHeaderCopy {{
+        background: transparent;
+    }}
+    QLabel#SectionDescription {{
+        color: {c['muted']};
+        font-size: 12px;
+    }}
+    QFrame#WorkspaceEmptyState {{
+        background: {c['surface']};
+        border: 1px dashed {c['border']};
+        border-radius: 12px;
+    }}
+    QLabel#EmptyStateTitle {{
+        color: {c['text']};
+        font-size: 15px;
+        font-weight: 650;
+    }}
+    QLabel#EmptyStateDescription {{
+        color: {c['muted']};
+        font-size: 12px;
+    }}
+    QLabel#StatusPill {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 7px;
+        padding: 4px 8px;
+        font-size: 10px;
+        font-weight: 700;
+    }}
+    QLabel#StatusPill[state="success"] {{
+        color: {c['success']};
+        border-color: {c['success']};
+    }}
+    QLabel#StatusPill[state="warning"] {{
+        color: {c['warning']};
+        border-color: {c['warning']};
+    }}
+    QLabel#StatusPill[state="danger"] {{
+        color: {c['danger']};
+        border-color: {c['danger']};
+    }}
+    QLabel#StatusPill[state="info"] {{
+        color: {c['accent']};
+        border-color: {c['accent']};
+    }}
+    QFrame#MetricCard {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+    }}
+    QLabel#MetricCaption {{
+        color: {c['muted']};
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+    }}
+    QLabel#MetricValue {{
+        color: {c['text']};
+        font-size: 22px;
+        font-weight: 650;
+    }}
+    QLabel#MetricDetail {{
+        color: {c['muted']};
+        font-size: 10px;
+    }}
+    QFrame#WorkspacePanel {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+
     """
