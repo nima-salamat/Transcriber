@@ -2324,4 +2324,41 @@ def stylesheet(theme: str) -> str:
         border: 0;
     }}
 
+
+    QFrame#SubtitleToolbar {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+    }}
+
+
+    QFrame#EditorInspector {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QLabel#EditorInspectorTitle {{
+        color: {c['text']};
+        font-size: 16px;
+        font-weight: 650;
+    }}
+    QLabel#EditorInspectorMeta {{
+        color: {c['muted']};
+        font-size: 11px;
+    }}
+    QLabel#EditorSegmentPreview {{
+        color: {c['text']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 13px;
+    }}
+    QTableWidget#TranscriptSegmentTable {{
+        background: transparent;
+        border: 0;
+        outline: 0;
+        selection-background-color: {c['surface_hover']};
+    }}
+
     """
