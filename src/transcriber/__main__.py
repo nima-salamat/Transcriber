@@ -22,7 +22,11 @@ def main() -> int:
     app.setApplicationName("Transcriber")
     app.setOrganizationName("Transcriber")
     app.setStyle("Fusion")
-    services = build_services()
+    try:
+        services = build_services()
+    except Exception as exc:
+        QMessageBox.critical(None, "Transcriber could not start", str(exc))
+        return 1
     theme = services["settings"].settings.theme
     app.setStyleSheet(stylesheet("light" if theme == "light" else "dark"))
     try:
