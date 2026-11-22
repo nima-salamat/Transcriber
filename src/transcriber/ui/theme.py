@@ -451,6 +451,10 @@ def stylesheet(theme: str) -> str:
         background: {c['surface_2']};
         border: 1px solid {c['border']};
         border-radius: 17px;
+        min-width: 34px;
+        max-width: 34px;
+        min-height: 34px;
+        max-height: 34px;
         color: {c['accent']};
         padding: 0;
         font-size: 22px;
@@ -578,22 +582,20 @@ def stylesheet(theme: str) -> str:
     QPushButton#AssistantVoiceButton {{
         background: {c['surface_2']};
         border: 1px solid {c['border']};
-        border-radius: 10px;
-        padding: 7px 12px;
-        min-height: 16px;
-        font-size: 11px;
-        font-weight: 650;
+        border-radius: 21px;
+        min-width: 42px;
+        max-width: 42px;
+        min-height: 42px;
+        max-height: 42px;
+        padding: 0;
     }}
     QPushButton#AssistantVoiceButton[active="true"] {{
         color: {c['success']};
         border-color: {c['success']};
     }}
     QPushButton#AssistantVoiceButton[iconOnly="true"] {{
+        border-radius: 21px;
         padding: 0;
-        min-width: 42px;
-        max-width: 42px;
-        min-height: 42px;
-        max-height: 42px;
     }}
     QListWidget#AssistantSettingsNav {{
         background: {c['surface']};

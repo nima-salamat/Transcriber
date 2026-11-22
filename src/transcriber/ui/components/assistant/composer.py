@@ -94,6 +94,8 @@ class ModelPicker(QFrame):
         self.retry_button.setAccessibleName("Retry provider connection")
         self.retry_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.retry_button.setFixedSize(34, 34)
+        self.retry_button.setMinimumSize(34, 34)
+        self.retry_button.setMaximumSize(34, 34)
         self.retry_button.clicked.connect(self.retry_requested.emit)
         layout.addWidget(self.retry_button)
 
@@ -438,17 +440,15 @@ class MessageComposer(QFrame):
         )
         very_narrow = self._compact_mode and self.width() < 440
         if self._compact_mode:
-            self._root_layout.setContentsMargins(
-                7 if very_narrow else 10, 6 if very_narrow else 7,
-                7 if very_narrow else 10, 6 if very_narrow else 7,
-            )
+            # Keep the model selector flush to the left edge of the compact row.
+            self._root_layout.setContentsMargins(0, 6, 0, 6)
             self.bottom_row_layout.setSpacing(5 if very_narrow else 8)
             self.model_picker.layout().setSpacing(4 if very_narrow else 7)
             self.model_picker.button.setMinimumWidth(68 if very_narrow else 148)
             self.model_picker.button.setMaximumWidth(92 if very_narrow else 184)
-            self.model_picker.retry_button.setFixedSize(
-                28 if very_narrow else 34, 28 if very_narrow else 34
-            )
+            self.model_picker.retry_button.setFixedSize(34, 34)
+            self.model_picker.retry_button.setMinimumSize(34, 34)
+            self.model_picker.retry_button.setMaximumSize(34, 34)
             self.model_picker.spinner.setFixedSize(
                 14 if very_narrow else 17, 14 if very_narrow else 17
             )
@@ -459,22 +459,15 @@ class MessageComposer(QFrame):
             self.model_picker.button.setMinimumWidth(128)
             self.model_picker.button.setMaximumWidth(230)
             self.model_picker.retry_button.setFixedSize(34, 34)
+            self.model_picker.retry_button.setMinimumSize(34, 34)
+            self.model_picker.retry_button.setMaximumSize(34, 34)
             self.model_picker.spinner.setFixedSize(17, 17)
-        if very_narrow:
-            self.voice_chat_button.setText("")
-            self.voice_chat_button.setFixedSize(42, 42)
-            self.voice_chat_button.setProperty("iconOnly", True)
-            self.voice_chat_button.setToolTip("Start voice")
-            self.voice_chat_button.setAccessibleName("Start voice conversation")
-        else:
-            self.voice_chat_button.setText("Start voice")
-            if self._compact_mode:
-                self.voice_chat_button.setFixedSize(112, 42)
-            else:
-                self.voice_chat_button.setMinimumSize(0, 42)
-                self.voice_chat_button.setMaximumSize(16777215, 42)
-            self.voice_chat_button.setProperty("iconOnly", False)
-            self.voice_chat_button.setToolTip("Start or stop local voice conversation")
+        # Voice is an icon-only circular action at every width, matching Send.
+        self.voice_chat_button.setText("")
+        self.voice_chat_button.setFixedSize(42, 42)
+        self.voice_chat_button.setProperty("iconOnly", True)
+        self.voice_chat_button.setToolTip("Start or stop local voice conversation")
+        self.voice_chat_button.setAccessibleName("Start voice conversation")
         self.voice_chat_button.style().unpolish(self.voice_chat_button)
         self.voice_chat_button.style().polish(self.voice_chat_button)
         self.model_picker._sync_button_text()
