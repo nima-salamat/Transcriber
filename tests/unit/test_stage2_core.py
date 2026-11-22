@@ -668,7 +668,6 @@ def test_settings_only_persist_browser_trust_not_shell_or_destructive_bypass(tmp
 def test_opencode_cancel_notification_interrupts_active_prompt(tmp_path):
     import json
     import os
-    import sys
 
     if os.name != "posix":
         pytest.skip("The lightweight ACP simulator uses a POSIX executable shebang")
