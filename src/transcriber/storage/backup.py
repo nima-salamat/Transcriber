@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-from contextlib import closing
 import os
 import shutil
 import sqlite3
 import tempfile
 import zipfile
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
