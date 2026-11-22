@@ -57,3 +57,41 @@ jobs:
           python -m pip install --no-deps --target "$RUNNER_TEMP/transcriber-wheel-check" dist/*.whl
       - name: Run unit, integration and UI tests
         run: python -X faulthandler -m pytest -q
+
+  windows-package:
+    name: Windows GUI package · no console window
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Build the Windows desktop application
+        shell: pwsh
+        run: .\scripts\build_windows.ps1
+      - name: Test hidden command-process settings
+        run: python -m pip install --upgrade ".[dev]"
+      - name: Run Windows process and packaging tests
+        run: python -m pytest -q tests/unit/test_windows_process_launch.py tests/unit/test_audio_processing_no_console.py
+      - name: Verify executable uses the Windows GUI subsystem
+        shell: pwsh
+        run: |
+          @'
+          import struct
+          from pathlib import Path
+
+          executable = Path("dist/Transcriber/Transcriber.exe")
+          data = executable.read_bytes()
+          pe_offset = struct.unpack_from("<I", data, 0x3C)[0]
+          if data[pe_offset:pe_offset + 4] != b"PE\0\0":
+              raise SystemExit("Invalid PE executable")
+          optional_header = pe_offset + 24
+          subsystem = struct.unpack_from("<H", data, optional_header + 68)[0]
+          if subsystem != 2:
+              raise SystemExit(f"Expected Windows GUI subsystem (2), got {subsystem}")
+          print(f"Verified GUI subsystem for {executable}")
+          '@ | python -
