@@ -372,6 +372,7 @@ def test_opencode_acp_client_persistent_session_and_prompt(tmp_path):
         "    if method == 'session/new': result = {'sessionId': 'session-test-1'}\n"
         "    if method == 'session/prompt': result = {'stopReason': 'end_turn'}\n"
         "    if method == 'session/load': result = {'loaded': True}\n"
+        "    if 'id' not in request: continue\n"
         "    response = {'jsonrpc': '2.0', 'id': request['id'], 'result': result}\n"
         "    sys.stdout.write(json.dumps(response) + '\\n')\n"
         "    sys.stdout.flush()\n",
@@ -397,7 +398,11 @@ def test_opencode_acp_client_persistent_session_and_prompt(tmp_path):
         prompt = next(item for item in lines if item["method"] == "session/prompt")
         assert prompt["params"]["sessionId"] == session_id
         assert prompt["params"]["prompt"][0]["text"] == "Summarize the current transcript"
-        assert any(item["method"] == "session/cancel" for item in lines)
+        cancel_notification = next(
+            item for item in lines if item["method"] == "session/cancel"
+        )
+        assert "id" not in cancel_notification
+        assert cancel_notification["params"] == {"sessionId": session_id}
     finally:
         client.close()
         os.environ.pop("ACP_TEST_LOG", None)
