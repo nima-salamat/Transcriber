@@ -13,8 +13,8 @@ from transcriber.models.manager import ModelManager
 from transcriber.models.registry import ModelRegistry
 from transcriber.storage.database import Database
 from transcriber.storage.downloads import DownloadRepository
-from transcriber.ui.design.tokens import get_tokens
-from transcriber.ui.pages.models import _card_frame_stylesheet, _installed_runtime_key
+from transcriber.ui.pages.models import _installed_runtime_key
+from transcriber.ui.theme import stylesheet
 
 
 def _download_repository(tmp_path: Path) -> DownloadRepository:
@@ -185,17 +185,13 @@ def test_model_manager_rejects_removal_while_task_is_active(tmp_path):
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_model_card_stylesheets_have_balanced_qss_braces(theme):
-    tokens = get_tokens(theme).colors
-    for object_name, radius, accent in (
-        ("DownloadTaskCard", 12, tokens["danger"]),
-        ("InstalledModelCard", 13, tokens["success"]),
-    ):
-        stylesheet = _card_frame_stylesheet(object_name, tokens, accent, radius)
-        assert stylesheet.count("{") == stylesheet.count("}")
-        assert stylesheet.endswith("}")
-        assert "}}" not in stylesheet
-
+def test_model_library_card_styles_are_defined_in_shared_theme(theme):
+    qss = stylesheet(theme)
+    assert "QFrame#DownloadTaskCard, QFrame#InstalledModelCard {" in qss
+    assert qss.count("{") == qss.count("}")
+    assert qss.rstrip().endswith("}")
+    assert "}}" not in qss
+    assert "border-radius: 12px;" in qss
 
 
 @pytest.mark.parametrize(
