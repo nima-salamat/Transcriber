@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import os
 import struct
 import time
@@ -15,9 +14,14 @@ from PySide6.QtMultimedia import QAudioDevice, QAudioFormat, QAudioSource, QMedi
 from transcriber.audio.devices import audio_device_id
 
 
+def _waveform_display_peak(peak: float) -> float:
+    """Expand quiet PCM peaks for display without changing the recorded samples."""
+    normalized = max(0.0, min(1.0, float(peak)))
+    return max(0.025, normalized ** 0.45)
+
+
 class QtAudioRecorder(QObject):
     state_changed = Signal(str)
-    level_changed = Signal(int)
     duration_changed = Signal(float)
     recording_saved = Signal(str)
     error_occurred = Signal(str)
@@ -155,11 +159,8 @@ class QtAudioRecorder(QObject):
             sample_bytes = len(chunk) - (len(chunk) % 2)
             samples = memoryview(chunk[:sample_bytes]).cast("h")
             if samples:
-                rms = math.sqrt(sum(float(sample) ** 2 for sample in samples) / len(samples))
                 peak = max(abs(int(sample)) for sample in samples) / 32768.0
-                level = max(0, min(100, int(rms / 32768.0 * 330)))
-                self.level_changed.emit(level)
-                self._peaks.append(max(0.015, min(1.0, peak)))
+                self._peaks.append(_waveform_display_peak(peak))
                 if len(self._peaks) > 1800:
                     self._peaks = self._peaks[::2]
                 self.waveform_changed.emit(list(self._peaks))
@@ -308,7 +309,6 @@ class QtAudioRecorder(QObject):
                 self._stream = None
 
         self._state = "idle"
-        self.level_changed.emit(0)
         self.state_changed.emit(self._state)
         self.duration_changed.emit(self._elapsed_before_pause)
         if write_error:
@@ -334,9 +334,17 @@ class QtAudioRecorder(QObject):
         self._finish_recording(publish=False)
         self._clear_preview_snapshot()
         self._path = None
+        self._target_path = None
         self._format = None
+        self._data_bytes = 0
+        self._elapsed_before_pause = 0.0
+        self._started = 0.0
         self._peaks = []
+        self.device_id = None
+        self.device_name = None
         self.waveform_changed.emit([])
+        # The internal state is already idle; this extra event tells the UI
+        # that the completed take was discarded, not that capture is still active.
         self.state_changed.emit("cancelled")
 
     def device_disconnected(self) -> None:

@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -27,6 +26,13 @@ from transcriber.audio.recorder import QtAudioRecorder
 from transcriber.ui.components.waveform import WaveformTimeline
 from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.widgets import Card, page_header
+
+
+def _record_button_enabled_for_state(state: str, has_usable_input: bool) -> bool:
+    """Keep Start available after a discard event returns the recorder to idle."""
+    return state in {"recording", "paused"} or (
+        state in {"idle", "cancelled"} and bool(has_usable_input)
+    )
 
 
 def _clock(seconds: float) -> str:
@@ -134,24 +140,6 @@ class RecordingPage(QWidget):
         self.waveform.set_interactive(False)
         self.waveform.seek_requested.connect(self._seek_preview)
         console_layout.addWidget(self.waveform)
-
-        level_header = QHBoxLayout()
-        level_title = QLabel("INPUT LEVEL")
-        level_title.setStyleSheet("font-size: 10px; font-weight: 750; letter-spacing: 0.9px;")
-        self.level_value = QLabel("0%")
-        self.level_value.setObjectName("Muted")
-        level_header.addWidget(level_title)
-        level_header.addStretch(1)
-        level_header.addWidget(self.level_value)
-        console_layout.addLayout(level_header)
-
-        self.level = QProgressBar()
-        self.level.setObjectName("RecordingLevel")
-        self.level.setRange(0, 100)
-        self.level.setValue(0)
-        self.level.setTextVisible(False)
-        self.level.setFixedHeight(9)
-        console_layout.addWidget(self.level)
 
         controls = QHBoxLayout()
         controls.setSpacing(10)
@@ -263,7 +251,6 @@ class RecordingPage(QWidget):
         layout.addWidget(capture_options)
 
         self.recorder.state_changed.connect(self._state_changed)
-        self.recorder.level_changed.connect(self._set_level)
         self.recorder.duration_changed.connect(self._set_duration)
         self.recorder.waveform_changed.connect(self._set_waveform)
         self.recorder.error_occurred.connect(self._show_error)
@@ -538,8 +525,6 @@ class RecordingPage(QWidget):
         self.duration_label.setText("00:00")
         self.position_label.setText("00:00")
         self.total_label.setText(" / 00:00")
-        self.level.setValue(0)
-        self.level_value.setText("0%")
         self.waveform.set_waveform([], 0.0)
         self.waveform.set_interactive(False)
         self.state_label.setText("Take discarded")
@@ -561,7 +546,7 @@ class RecordingPage(QWidget):
         self.library_button.setEnabled(not active)
         self.play_preview_button.setEnabled(paused and bool(self._preview_path))
         self.record_button.setEnabled(
-            recording or paused or (state == "idle" and self._has_usable_input)
+            _record_button_enabled_for_state(state, self._has_usable_input)
         )
 
         if recording:
@@ -628,11 +613,6 @@ class RecordingPage(QWidget):
         self._pulse_phase = not self._pulse_phase
         self.record_button.setProperty("pulse", self._pulse_phase)
         self._repolish(self.record_button)
-
-    def _set_level(self, value: int):
-        level = max(0, min(100, int(value)))
-        self.level.setValue(level)
-        self.level_value.setText(f"{level}%")
 
     def _set_duration(self, seconds: float):
         duration = max(0.0, float(seconds))
