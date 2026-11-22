@@ -128,7 +128,7 @@ class ConversationView(QFrame):
             button.setToolTip(f"Use this prompt: {title_text}")
 
             card_layout = QVBoxLayout(button)
-            card_layout.setContentsMargins(16, 8, 16, 8)
+            card_layout.setContentsMargins(12, 2, 12, 2)
             card_layout.setSpacing(2)
             card_layout.addStretch(1)
             title_label = QLabel(title_text, button)
