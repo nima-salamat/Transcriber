@@ -689,7 +689,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self.log = self.chat_view
 
         self.composer = MessageComposer(
-            self.ui_icons, self, provider=self._chat_provider
+            self.ui_icons, chat_workspace, provider=self._chat_provider
         )
         self.prompt = self.composer.prompt
         self.model_picker = self.composer.model_picker

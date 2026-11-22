@@ -318,7 +318,8 @@ class AssistantVoiceMixin:
             or self._start_voice_after_connect
             or self._voice_conversation_mode
         )
-        button.setText("Stop voice" if active else "Start voice")
+        # The button is icon-only at every width; state is exposed accessibly.
+        button.setText("")
         button.setIcon(self.ui_icons.icon("stop" if active else "mic", size=17))
         button.setAccessibleName(
             "Stop voice conversation" if active else "Start voice conversation"

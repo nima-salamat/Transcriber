@@ -130,12 +130,12 @@ def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
 
     panel._voice_conversation_mode = True
     panel._sync_voice_orb()
-    assert panel.voice_chat_button.text() == "Stop voice"
+    assert panel.voice_chat_button.text() == ""
     assert panel.voice_chat_button.accessibleName() == "Stop voice conversation"
 
     panel._voice_conversation_mode = False
     panel._sync_voice_orb()
-    assert panel.voice_chat_button.text() == "Start voice"
+    assert panel.voice_chat_button.text() == ""
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
 
@@ -174,6 +174,8 @@ def test_agent_runtime_controls_the_agent_tools_toggle(qtbot, tmp_path):
     assert not panel.agent_mode_check.isEnabled()
     assert panel.agent_mode_check.isChecked()
 
+    # Avoid starting a real Ollama connection; this test only covers provider UI state.
+    panel._auto_connect_provider = lambda: None
     panel.provider_combo.setCurrentIndex(panel.provider_combo.findData("ollama"))
     assert panel.agent_mode_check.isEnabled()
 
@@ -263,7 +265,7 @@ def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path)
     assert panel.project_card.isHidden() is True
     assert panel.connect_button.text() == "Connect"
     assert panel.voice_chat_button.objectName() == "AssistantVoiceButton"
-    assert panel.voice_chat_button.text() == "Start voice"
+    assert panel.voice_chat_button.text() == ""
     assert panel.voice_chat_button.accessibleName() == "Start voice conversation"
 
 

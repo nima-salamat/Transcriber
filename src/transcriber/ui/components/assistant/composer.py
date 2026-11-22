@@ -366,7 +366,6 @@ class MessageComposer(QFrame):
         self.voice_chat_button.setObjectName("AssistantVoiceButton")
         self.voice_chat_button.setIcon(icons.icon("mic", size=17))
         self.voice_chat_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.voice_chat_button.setAccessibleName("Start voice conversation")
         self.voice_chat_button.setToolTip("Start or stop local voice conversation")
         self.voice_chat_button.setMinimumHeight(42)
         self.voice_chat_button.clicked.connect(self.voice_requested.emit)

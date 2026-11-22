@@ -190,8 +190,10 @@ class AssistantProviderMixin:
             stoppable=turn_active and not stop_requested,
         )
         self.new_chat_button.setEnabled(not self._worker_active or turn_active)
+        # The permission-aware tool toggle belongs to the local Ollama agent,
+        # not the OpenCode ACP provider which manages its own tool capabilities.
         self.agent_mode_check.setEnabled(
-            self._action_registry is not None and not self._worker_active
+            ollama and self._action_registry is not None and not self._worker_active
         )
         self.disconnect_button.setEnabled(connected)
         self.connect_button.setEnabled(not connected and not self._worker_active)
