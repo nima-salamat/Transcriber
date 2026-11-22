@@ -1082,7 +1082,7 @@ def stylesheet(theme: str) -> str:
         background: {c['surface']};
         border: 1px solid {c['border']};
         border-radius: 9px;
-        padding: 5px 14px;
+        padding: 0;
         min-width: 0;
         min-height: 0;
         text-align: left;
