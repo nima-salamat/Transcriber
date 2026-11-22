@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -71,7 +72,7 @@ class SettingsPage(QWidget):
 
         self.section_nav = QListWidget()
         self.section_nav.setObjectName("SettingsNavigation")
-        self.section_nav.setFixedWidth(190)
+        self.section_nav.setFixedWidth(170)
         self.section_nav.setSpacing(2)
         self.section_nav.setFrameShape(QFrame.NoFrame)
         self.section_nav.itemClicked.connect(self._navigate_section)
