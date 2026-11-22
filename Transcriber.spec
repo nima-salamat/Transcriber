@@ -10,7 +10,11 @@ ROOT = Path(SPECPATH).resolve()
 SOURCE = ROOT / "src"
 sys.path.insert(0, str(SOURCE))
 
+# Faster-Whisper loads its Silero VAD ONNX graph from a path relative to its
+# installed package. PyInstaller does not include third-party package data
+# automatically, so collect it alongside Transcriber's own static assets.
 datas = collect_data_files("transcriber")
+datas += collect_data_files("faster_whisper")
 hiddenimports = collect_submodules("transcriber")
 
 a = Analysis(
