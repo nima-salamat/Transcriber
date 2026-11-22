@@ -1584,4 +1584,237 @@ def stylesheet(theme: str) -> str:
         font-weight: 750;
         letter-spacing: 0.5px;
     }}
+    /* New Transcription: compact source rail and a single, editor-led workspace */
+    QFrame#TranscriptionSourceBar {{
+        background: transparent;
+        border: 0;
+        border-bottom: 1px solid {c['border']};
+        border-radius: 0;
+    }}
+    QLabel#TranscriptionSourceLabel {{
+        color: {c['muted']};
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        padding-right: 3px;
+    }}
+    QLabel#TranscriptionFileName {{
+        color: {c['text']};
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        padding: 4px 7px;
+        font-size: 12px;
+    }}
+    QPushButton#TranscriptionChooseMedia {{
+        min-width: 112px;
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 700;
+    }}
+    QPushButton#TranscriptionCloseMedia {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 0;
+    }}
+    QPushButton#TranscriptionCloseMedia:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['border']};
+    }}
+    QFrame#TranscriptionSettingsPanel {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+    }}
+    QLabel#TranscriptionSettingsTitle {{
+        color: {c['text']};
+        font-size: 12px;
+        font-weight: 750;
+    }}
+    QLabel#TranscriptionInlineLabel {{
+        color: {c['muted']};
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+    }}
+    QFrame#TranscriptionSettingsPanel QComboBox,
+    QFrame#TranscriptionSettingsPanel QSpinBox {{
+        min-height: 20px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        border-radius: 7px;
+        font-size: 11px;
+    }}
+    QFrame#TranscriptionSettingsPanel QCheckBox {{
+        font-size: 10px;
+        spacing: 6px;
+    }}
+    QLineEdit#TranscriptionSearch, QLineEdit#TranscriptionReplace,
+    QFrame#TranscriptionSettingsPanel QLineEdit {{
+        min-height: 18px;
+        padding: 6px 9px;
+        border-radius: 8px;
+        font-size: 11px;
+    }}
+    QPushButton#TranscriptionDefaultModel {{
+        min-width: 58px;
+        padding: 5px 8px;
+        border-radius: 7px;
+        font-size: 10px;
+    }}
+    QLabel#TranscriptionPrivacyMark {{
+        min-width: 16px;
+        max-width: 16px;
+        min-height: 16px;
+        max-height: 16px;
+        border-radius: 8px;
+        font-size: 10px;
+    }}
+    QLabel#TranscriptionPrivacyHint {{
+        font-size: 10px;
+        padding: 0;
+    }}
+    QFrame#TranscriptionWorkspace {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 13px;
+    }}
+    QFrame#TranscriptionPlayerBar {{
+        background: {c['surface_2']};
+        border: 0;
+        border-radius: 9px;
+    }}
+    QLabel#TranscriptionPlayerStatus {{
+        color: {c['muted']};
+        font-size: 9px;
+        font-weight: 700;
+    }}
+    QPushButton#TranscriptionPlayButton {{
+        background: {c['accent']};
+        color: white;
+        border: 0;
+        border-radius: 18px;
+        padding: 0;
+    }}
+    QPushButton#TranscriptionPlayButton:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#TranscriptionPlayButton:disabled {{
+        background: {c['surface_hover']};
+        color: {c['muted']};
+    }}
+    QLabel#TranscriptionPlaybackTime {{
+        color: {c['text']};
+        font-size: 10px;
+        font-weight: 750;
+        font-family: 'Consolas', 'Cascadia Code', monospace;
+    }}
+    QSlider#TranscriptionSeekSlider::groove:horizontal {{
+        height: 5px;
+        background: {c['border']};
+        border-radius: 3px;
+    }}
+    QSlider#TranscriptionSeekSlider::sub-page:horizontal {{
+        background: {c['accent']};
+        border-radius: 3px;
+    }}
+    QSlider#TranscriptionSeekSlider::handle:horizontal {{
+        width: 12px;
+        height: 12px;
+        margin: -4px 0;
+        border: 2px solid {c['surface_2']};
+        border-radius: 7px;
+        background: {c['accent']};
+    }}
+    QComboBox#TranscriptionSpeedCombo {{
+        min-height: 18px;
+    }}
+    QSlider#TranscriptionVolumeSlider::groove:horizontal {{
+        height: 4px;
+        background: {c['border']};
+        border-radius: 2px;
+    }}
+    QSlider#TranscriptionVolumeSlider::sub-page:horizontal {{
+        background: {c['accent']};
+        border-radius: 2px;
+    }}
+    QSlider#TranscriptionVolumeSlider::handle:horizontal {{
+        width: 10px;
+        height: 10px;
+        margin: -3px 0;
+        border: 1px solid {c['surface']};
+        border-radius: 5px;
+        background: {c['accent']};
+    }}
+    QLabel#TranscriptionSectionTitle {{
+        font-size: 15px;
+        font-weight: 750;
+    }}
+    QLabel#TranscriptionWordCount {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border-radius: 7px;
+        padding: 5px 8px;
+        font-size: 10px;
+        font-weight: 700;
+    }}
+    QLineEdit#TranscriptionSearch, QLineEdit#TranscriptionReplace {{
+        min-height: 18px;
+        padding: 6px 10px;
+        border-radius: 8px;
+    }}
+    QPushButton#TranscriptionToolButton {{
+        min-height: 18px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-size: 10px;
+        font-weight: 700;
+    }}
+    QPlainTextEdit#TranscriptionEditor {{
+        background: {c['input']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+        padding: 18px 19px;
+        selection-background-color: {c['accent']};
+        font-size: 14px;
+    }}
+    QPlainTextEdit#TranscriptionEditor:focus {{
+        border-color: {c['focus']};
+    }}
+    QFrame#TranscriptionActionBar {{
+        background: transparent;
+        border: 0;
+        border-top: 1px solid {c['border']};
+        border-radius: 0;
+    }}
+    QLabel#TranscriptionProgressLabel {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 650;
+        min-width: 0;
+    }}
+    QProgressBar#TranscriptionProgress {{
+        background: {c['surface_2']};
+        border: 0;
+        border-radius: 2px;
+        min-height: 4px;
+        max-height: 4px;
+    }}
+    QProgressBar#TranscriptionProgress::chunk {{
+        background: {c['accent']};
+        border-radius: 2px;
+    }}
+    QPushButton#TranscriptionCancel {{
+        min-height: 18px;
+        padding: 7px 13px;
+        border-radius: 8px;
+        font-size: 10px;
+    }}
+    QPushButton#TranscriptionStart {{
+        min-height: 20px;
+        padding: 8px 16px;
+        border-radius: 9px;
+        font-size: 11px;
+        font-weight: 750;
+    }}
     """

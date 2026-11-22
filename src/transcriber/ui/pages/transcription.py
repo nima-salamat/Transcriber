@@ -6,7 +6,7 @@ import threading
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPalette, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -49,7 +49,8 @@ from transcriber.transcription.segments import (
     reconcile_segments,
 )
 from transcriber.transcription.service import TranscriptionService
-from transcriber.ui.widgets import Card, page_header, primary_button
+from transcriber.ui.design.icon_registry import IconRegistry
+from transcriber.ui.widgets import page_header, primary_button
 from transcriber.ui.workers import FunctionWorker
 
 
@@ -87,90 +88,97 @@ class TranscriptionPage(QWidget):
         self._load_generation = 0
         self._history_load_pending = False
 
+        self._icons = IconRegistry()
+        icon_muted = self.palette().color(QPalette.ColorRole.Mid).name()
+
         self.setObjectName("NewTranscriptionPage")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 10, 12)
-        layout.setSpacing(12)
+        layout.setContentsMargins(2, 2, 10, 10)
+        layout.setSpacing(8)
         layout.addWidget(page_header(
             "New transcription",
-            "Bring in an audio or video file, choose how it should be recognised, then refine and export the transcript.",
+            "Import media, choose recognition options, then edit and export the result.",
         ))
 
-        # The work surface scrolls independently while the run/cancel controls
-        # stay visible at the bottom of the page.
+        # Keep source selection compact; the transcript workspace owns the
+        # majority of the available page height.
         scroll = QScrollArea(self)
         scroll.setObjectName("NewTranscriptionScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
         content = QWidget()
         content.setObjectName("NewTranscriptionContent")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 8, 2)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(0, 0, 8, 0)
+        content_layout.setSpacing(8)
 
-        source_card = Card()
-        source_outer = QVBoxLayout(source_card)
-        source_outer.setContentsMargins(18, 15, 18, 15)
-        source_outer.setSpacing(11)
-        source_heading = QHBoxLayout()
-        source_title = QLabel("Source media")
-        source_title.setObjectName("TranscriptionSectionTitle")
-        source_hint = QLabel("Audio or video with an audio track")
-        source_hint.setObjectName("TranscriptionSectionHint")
-        source_heading.addWidget(source_title)
-        source_heading.addSpacing(8)
-        source_heading.addWidget(source_hint)
-        source_heading.addStretch(1)
-        source_outer.addLayout(source_heading)
+        source_bar = QFrame()
+        source_bar.setObjectName("TranscriptionSourceBar")
+        source_layout = QHBoxLayout(source_bar)
+        source_layout.setContentsMargins(4, 2, 4, 8)
+        source_layout.setSpacing(9)
 
-        source_row = QHBoxLayout()
-        source_row.setSpacing(10)
-        self.open_button = primary_button("Choose audio / video…")
+        source_label = QLabel("SOURCE")
+        source_label.setObjectName("TranscriptionSourceLabel")
+        source_layout.addWidget(source_label)
+
+        self.open_button = primary_button("Open media")
         self.open_button.setObjectName("TranscriptionChooseMedia")
-        self.open_button.setMinimumHeight(42)
+        self.open_button.setFixedHeight(34)
+        self.open_button.setIcon(self._icons.icon("projects", "#ffffff", 16))
+        self.open_button.setIconSize(QSize(16, 16))
         self.open_button.clicked.connect(self.choose_audio)
         self.open_button.setToolTip("Import an audio file or a video that contains an audio track.")
+
         self.file_name = QLabel("No media selected")
         self.file_name.setObjectName("TranscriptionFileName")
-        self.file_name.setWordWrap(True)
-        self.file_name.setMinimumHeight(42)
+        self.file_name.setMinimumHeight(30)
         self.file_name.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.close_audio_button = QPushButton("×")
+        self.file_name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        self.close_audio_button = QPushButton()
         self.close_audio_button.setObjectName("TranscriptionCloseMedia")
-        self.close_audio_button.setFixedSize(36, 36)
+        self.close_audio_button.setFixedSize(30, 30)
+        self.close_audio_button.setIcon(self._icons.icon("discard", icon_muted, 15))
+        self.close_audio_button.setIconSize(QSize(15, 15))
         self.close_audio_button.setToolTip("Close the loaded audio file")
         self.close_audio_button.setAccessibleName("Close audio")
         self.close_audio_button.setEnabled(False)
         self.close_audio_button.clicked.connect(self.close_audio)
-        source_row.addWidget(self.open_button)
-        source_row.addWidget(self.file_name, 1)
-        source_row.addWidget(self.close_audio_button)
-        source_outer.addLayout(source_row)
-        content_layout.addWidget(source_card)
 
-        settings_card = Card()
-        settings_outer = QVBoxLayout(settings_card)
-        settings_outer.setContentsMargins(18, 15, 18, 15)
-        settings_outer.setSpacing(11)
+        source_layout.addWidget(self.open_button)
+        source_layout.addWidget(self.file_name, 1)
+        source_layout.addWidget(self.close_audio_button)
+        content_layout.addWidget(source_bar)
+
+        # One compact setup panel: primary engine/model/language/task controls
+        # share one row, while optional tuning stays on a second, low-profile row.
+        settings_panel = QFrame()
+        settings_panel.setObjectName("TranscriptionSettingsPanel")
+        settings_outer = QVBoxLayout(settings_panel)
+        settings_outer.setContentsMargins(13, 10, 13, 9)
+        settings_outer.setSpacing(7)
+
         settings_heading = QHBoxLayout()
-        settings_title = QLabel("Recognition settings")
-        settings_title.setObjectName("TranscriptionSectionTitle")
-        settings_hint = QLabel("Choose the engine and tune the output")
+        settings_heading.setSpacing(8)
+        settings_title = QLabel("Recognition")
+        settings_title.setObjectName("TranscriptionSettingsTitle")
+        settings_hint = QLabel("Engine, model and output")
         settings_hint.setObjectName("TranscriptionSectionHint")
         settings_heading.addWidget(settings_title)
-        settings_heading.addSpacing(8)
         settings_heading.addWidget(settings_hint)
         settings_heading.addStretch(1)
         settings_outer.addLayout(settings_heading)
 
         settings_grid = QGridLayout()
-        settings_grid.setHorizontalSpacing(12)
-        settings_grid.setVerticalSpacing(6)
-        settings_grid.setColumnStretch(0, 2)
-        settings_grid.setColumnStretch(1, 3)
-        settings_grid.setColumnStretch(2, 2)
+        settings_grid.setContentsMargins(0, 0, 0, 0)
+        settings_grid.setHorizontalSpacing(10)
+        settings_grid.setVerticalSpacing(4)
+        for column, stretch in enumerate((3, 4, 2, 3)):
+            settings_grid.setColumnStretch(column, stretch)
 
         def add_setting_label(text: str, row: int, column: int, span: int = 1):
             label = QLabel(text)
@@ -200,13 +208,16 @@ class TranscriptionPage(QWidget):
         self.model_combo.setMinimumContentsLength(18)
         self.model_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.refresh_models()
-        self.default_model_button = QPushButton("Set as default")
+
+        self.default_model_button = QPushButton("Default")
         self.default_model_button.setObjectName("TranscriptionDefaultModel")
+        self.default_model_button.setFixedHeight(32)
         self.default_model_button.setToolTip(
             "Make the selected installed Faster-Whisper model the default for new transcriptions."
         )
         self.default_model_button.clicked.connect(self.set_selected_model_as_default)
         self.model_combo.currentIndexChanged.connect(self._update_default_model_control)
+
         model_field = QWidget()
         model_field_layout = QHBoxLayout(model_field)
         model_field_layout.setContentsMargins(0, 0, 0, 0)
@@ -215,7 +226,7 @@ class TranscriptionPage(QWidget):
         model_field_layout.addWidget(self.default_model_button)
 
         self.language_combo = QComboBox()
-        self.language_combo.addItem("Auto detect (local engines)", "auto")
+        self.language_combo.addItem("Auto detect (local)", "auto")
         for code, name in [
             ("en", "English"), ("fa", "Persian"), ("de", "German"),
             ("fr", "French"), ("es", "Spanish"), ("ar", "Arabic"),
@@ -223,20 +234,24 @@ class TranscriptionPage(QWidget):
         ]:
             self.language_combo.addItem(name, code)
 
-        add_setting_label("Speech engine", 0, 0)
-        add_setting_label("Recognition model", 0, 1, 2)
-        add_setting_label("Language", 0, 3)
-        settings_grid.setColumnStretch(3, 2)
-        settings_grid.addWidget(self.engine_combo, 1, 0)
-        settings_grid.addWidget(model_field, 1, 1, 1, 2)
-        settings_grid.addWidget(self.language_combo, 1, 3)
-
         self.task_combo = QComboBox()
-        self.task_combo.addItem("Transcribe in source language", "transcribe")
+        self.task_combo.addItem("Transcribe", "transcribe")
         self.task_combo.addItem("Translate to English", "translate")
+
+        add_setting_label("ENGINE", 0, 0)
+        add_setting_label("MODEL", 0, 1)
+        add_setting_label("LANGUAGE", 0, 2)
+        add_setting_label("TASK", 0, 3)
+        settings_grid.addWidget(self.engine_combo, 1, 0)
+        settings_grid.addWidget(model_field, 1, 1)
+        settings_grid.addWidget(self.language_combo, 1, 2)
+        settings_grid.addWidget(self.task_combo, 1, 3)
+        settings_outer.addLayout(settings_grid)
+
         self.beam_spin = QSpinBox()
         self.beam_spin.setRange(1, 20)
         self.beam_spin.setValue(self.settings_store.settings.beam_size)
+        self.beam_spin.setFixedWidth(60)
         self.vad_check = QCheckBox("Voice activity detection")
         self.vad_check.setChecked(self.settings_store.settings.vad_filter)
         self.word_timestamps = QCheckBox("Word-level timings")
@@ -244,35 +259,30 @@ class TranscriptionPage(QWidget):
         self.word_timestamps.toggled.connect(
             lambda value: self.settings_store.update(word_timestamps=value)
         )
-        options_field = QWidget()
-        options_layout = QVBoxLayout(options_field)
-        options_layout.setContentsMargins(0, 1, 0, 0)
-        options_layout.setSpacing(7)
-        options_layout.addWidget(self.vad_check)
-        options_layout.addWidget(self.word_timestamps)
-
-        add_setting_label("Task", 2, 0)
-        add_setting_label("Beam width", 2, 1)
-        add_setting_label("Options", 2, 2, 2)
-        settings_grid.addWidget(self.task_combo, 3, 0)
-        settings_grid.addWidget(self.beam_spin, 3, 1)
-        settings_grid.addWidget(options_field, 3, 2, 1, 2)
 
         self.initial_prompt = QLineEdit()
-        self.initial_prompt.setPlaceholderText(
-            "Optional vocabulary, names or context to guide recognition…"
-        )
+        self.initial_prompt.setPlaceholderText("Optional vocabulary, names or context…")
         self.initial_prompt.setToolTip(
             "This setting is supported by Faster-Whisper, not Google Cloud Speech-to-Text V2."
         )
-        add_setting_label("Initial prompt · Faster-Whisper", 4, 0, 4)
-        settings_grid.addWidget(self.initial_prompt, 5, 0, 1, 4)
-        settings_outer.addLayout(settings_grid)
+
+        options_row = QHBoxLayout()
+        options_row.setSpacing(10)
+        beam_label = QLabel("BEAM")
+        beam_label.setObjectName("TranscriptionInlineLabel")
+        options_row.addWidget(beam_label)
+        options_row.addWidget(self.beam_spin)
+        options_row.addWidget(self.vad_check)
+        options_row.addWidget(self.word_timestamps)
+        options_row.addWidget(self.initial_prompt, 1)
+        settings_outer.addLayout(options_row)
 
         privacy_row = QHBoxLayout()
+        privacy_row.setContentsMargins(1, 0, 0, 0)
+        privacy_row.setSpacing(7)
         privacy_mark = QLabel("i")
         privacy_mark.setObjectName("TranscriptionPrivacyMark")
-        privacy_mark.setFixedSize(22, 22)
+        privacy_mark.setFixedSize(16, 16)
         privacy_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.engine_privacy_hint = QLabel()
         self.engine_privacy_hint.setObjectName("TranscriptionPrivacyHint")
@@ -280,120 +290,134 @@ class TranscriptionPage(QWidget):
         privacy_row.addWidget(privacy_mark, 0, Qt.AlignmentFlag.AlignTop)
         privacy_row.addWidget(self.engine_privacy_hint, 1)
         settings_outer.addLayout(privacy_row)
-        content_layout.addWidget(settings_card)
+        content_layout.addWidget(settings_panel)
 
-        player_card = Card()
-        player_layout = QVBoxLayout(player_card)
-        player_layout.setContentsMargins(18, 13, 18, 13)
-        player_layout.setSpacing(8)
-        player_heading = QHBoxLayout()
-        player_title = QLabel("Audio preview")
-        player_title.setObjectName("TranscriptionSectionTitle")
-        self.player_status = QLabel("No audio loaded")
-        self.player_status.setObjectName("TranscriptionPlayerStatus")
-        self.player_status.setWordWrap(True)
-        self.player_status.setMaximumWidth(320)
-        player_heading.addWidget(player_title)
-        player_heading.addStretch(1)
-        player_heading.addWidget(self.player_status)
-        player_layout.addLayout(player_heading)
+        # The player is a transport strip inside the main editing workspace,
+        # not a separate tall card competing with the transcript.
+        workspace = QFrame()
+        workspace.setObjectName("TranscriptionWorkspace")
+        workspace_layout = QVBoxLayout(workspace)
+        workspace_layout.setContentsMargins(12, 10, 12, 11)
+        workspace_layout.setSpacing(9)
+
+        player_bar = QFrame()
+        player_bar.setObjectName("TranscriptionPlayerBar")
+        playback_row = QHBoxLayout(player_bar)
+        playback_row.setContentsMargins(8, 5, 8, 5)
+        playback_row.setSpacing(9)
 
         self.player = AudioPlayer(self)
+        self.player_status = QLabel("No audio loaded")
+        self.player_status.setObjectName("TranscriptionPlayerStatus")
+        self.player_status.setMinimumWidth(84)
+        self.player_status.setMaximumWidth(112)
+        self.player_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.player.status_changed.connect(self.player_status.setText)
-        playback_row = QHBoxLayout()
-        playback_row.setSpacing(10)
-        self.play_button = QPushButton("▶")
+
+        self.play_button = QPushButton()
         self.play_button.setObjectName("TranscriptionPlayButton")
-        self.play_button.setFixedSize(42, 42)
+        self.play_button.setFixedSize(36, 36)
+        self.play_button.setIcon(self._icons.icon("play", "#ffffff", 16))
+        self.play_button.setIconSize(QSize(16, 16))
         self.play_button.setEnabled(False)
         self.play_button.setAccessibleName("Play or pause audio")
+        self.play_button.setToolTip("Play or pause audio")
         self.play_button.clicked.connect(self.player.play_pause)
         self.player.playback_changed.connect(
-            lambda playing: self.play_button.setText("Ⅱ" if playing else "▶")
+            lambda playing: self.play_button.setIcon(
+                self._icons.icon("pause" if playing else "play", "#ffffff", 16)
+            )
         )
+
         self.seek_slider = QSlider(Qt.Orientation.Horizontal)
         self.seek_slider.setObjectName("TranscriptionSeekSlider")
         self.seek_slider.setRange(0, 0)
+        self.seek_slider.setFixedHeight(22)
         self.seek_slider.sliderMoved.connect(self.player.seek)
         self.player.position_changed.connect(self._position_changed)
         self.player.duration_changed.connect(self._duration_changed)
+
         self.time_label = QLabel("00:00 / 00:00")
         self.time_label.setObjectName("TranscriptionPlaybackTime")
-        playback_row.addWidget(self.play_button)
-        playback_row.addWidget(self.seek_slider, 1)
-        playback_row.addWidget(self.time_label)
-        player_layout.addLayout(playback_row)
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.time_label.setFixedWidth(104)
 
-        playback_options = QHBoxLayout()
-        playback_options.addStretch(1)
-        speed_label = QLabel("Speed")
-        speed_label.setObjectName("TranscriptionFieldLabel")
         self.speed_combo = QComboBox()
         for speed in ("0.75×", "1.0×", "1.25×", "1.5×", "2.0×"):
             self.speed_combo.addItem(speed, float(speed[:-1]))
         self.speed_combo.setCurrentIndex(1)
+        self.speed_combo.setFixedSize(76, 30)
+        self.speed_combo.setToolTip("Playback speed")
         self.speed_combo.currentIndexChanged.connect(
             lambda: self.player.set_speed(self.speed_combo.currentData())
         )
-        self.volume_label = QLabel("Volume")
-        self.volume_label.setObjectName("TranscriptionFieldLabel")
+
+        self.volume_label = QLabel("VOL")
+        self.volume_label.setObjectName("TranscriptionInlineLabel")
+        self.volume_label.setToolTip("Playback volume")
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setObjectName("TranscriptionVolumeSlider")
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(75)
-        self.volume_slider.setMaximumWidth(110)
+        self.volume_slider.setFixedSize(78, 20)
+        self.volume_slider.setToolTip("Playback volume")
         self.volume_slider.valueChanged.connect(self.player.set_volume)
-        playback_options.addWidget(speed_label)
-        playback_options.addWidget(self.speed_combo)
-        playback_options.addSpacing(12)
-        playback_options.addWidget(self.volume_label)
-        playback_options.addWidget(self.volume_slider)
-        player_layout.addLayout(playback_options)
-        content_layout.addWidget(player_card)
 
-        editor_card = Card()
-        editor_layout = QVBoxLayout(editor_card)
-        editor_layout.setContentsMargins(18, 15, 18, 15)
-        editor_layout.setSpacing(10)
+        playback_row.addWidget(self.player_status)
+        playback_row.addWidget(self.play_button)
+        playback_row.addWidget(self.time_label)
+        playback_row.addWidget(self.seek_slider, 1)
+        playback_row.addWidget(self.speed_combo)
+        playback_row.addWidget(self.volume_label)
+        playback_row.addWidget(self.volume_slider)
+        workspace_layout.addWidget(player_bar)
+
         editor_heading = QHBoxLayout()
-        editor_title = QLabel("Transcript editor")
+        editor_heading.setSpacing(8)
+        editor_title = QLabel("Transcript")
         editor_title.setObjectName("TranscriptionSectionTitle")
-        editor_hint = QLabel("Edit the recognised text before exporting")
-        editor_hint.setObjectName("TranscriptionSectionHint")
         self.word_count = QLabel("0 words · 0 characters")
         self.word_count.setObjectName("TranscriptionWordCount")
         editor_heading.addWidget(editor_title)
-        editor_heading.addSpacing(8)
-        editor_heading.addWidget(editor_hint)
         editor_heading.addStretch(1)
         editor_heading.addWidget(self.word_count)
-        editor_layout.addLayout(editor_heading)
+        workspace_layout.addLayout(editor_heading)
 
-        search_row = QHBoxLayout()
+        # Search and replace share a single compact toolbar rather than taking
+        # two full-width rows away from the editor.
+        tools_row = QHBoxLayout()
+        tools_row.setSpacing(7)
         self.search_input = QLineEdit()
         self.search_input.setObjectName("TranscriptionSearch")
         self.search_input.setPlaceholderText("Find in transcript…")
         self.search_input.returnPressed.connect(self.find_next)
-        self.find_button = QPushButton("Find next")
-        self.find_button.setObjectName("TranscriptionToolButton")
-        self.find_button.clicked.connect(self.find_next)
-        self.copy_button = QPushButton("Copy all")
-        self.copy_button.setObjectName("TranscriptionToolButton")
-        self.copy_button.clicked.connect(self.copy_all)
-        search_row.addWidget(self.search_input, 1)
-        search_row.addWidget(self.find_button)
-        search_row.addWidget(self.copy_button)
-        editor_layout.addLayout(search_row)
 
-        replace_row = QHBoxLayout()
+        self.find_button = QPushButton("Find")
+        self.find_button.setObjectName("TranscriptionToolButton")
+        self.find_button.setFixedSize(72, 32)
+        self.find_button.setIcon(self._icons.icon("search", icon_muted, 14))
+        self.find_button.setIconSize(QSize(14, 14))
+        self.find_button.clicked.connect(self.find_next)
+
         self.replace_input = QLineEdit()
         self.replace_input.setObjectName("TranscriptionReplace")
-        self.replace_input.setPlaceholderText("Replace selected text with…")
-        self.replace_button = QPushButton("Replace selected")
+        self.replace_input.setPlaceholderText("Replace with…")
+        self.replace_button = QPushButton("Replace")
         self.replace_button.setObjectName("TranscriptionToolButton")
+        self.replace_button.setFixedSize(82, 32)
         self.replace_button.clicked.connect(self.replace_selected)
-        replace_row.addWidget(self.replace_input, 1)
-        replace_row.addWidget(self.replace_button)
-        editor_layout.addLayout(replace_row)
+
+        self.copy_button = QPushButton("Copy all")
+        self.copy_button.setObjectName("TranscriptionToolButton")
+        self.copy_button.setFixedSize(78, 32)
+        self.copy_button.clicked.connect(self.copy_all)
+
+        tools_row.addWidget(self.search_input, 3)
+        tools_row.addWidget(self.find_button)
+        tools_row.addWidget(self.replace_input, 2)
+        tools_row.addWidget(self.replace_button)
+        tools_row.addWidget(self.copy_button)
+        workspace_layout.addLayout(tools_row)
 
         self.editor = QPlainTextEdit()
         self.editor.setObjectName("TranscriptionEditor")
@@ -402,7 +426,7 @@ class TranscriptionPage(QWidget):
         )
         self.editor.setTabChangesFocus(True)
         self.editor.setUndoRedoEnabled(False)
-        self.editor.setMinimumHeight(260)
+        self.editor.setMinimumHeight(340)
         self.editor.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -413,58 +437,71 @@ class TranscriptionPage(QWidget):
         self._search_highlight_range: tuple[int, int] | None = None
         self.editor.textChanged.connect(self._schedule_autosave)
         self.editor.textChanged.connect(self._clear_search_highlight)
-        editor_layout.addWidget(self.editor, 1)
+        workspace_layout.addWidget(self.editor, 1)
 
-        footer = QHBoxLayout()
-        self.include_timestamps = QCheckBox("Include timestamps when exporting")
+        editor_footer = QHBoxLayout()
+        self.include_timestamps = QCheckBox("Include timestamps")
         self.include_timestamps.setChecked(True)
-        self.export_button = QPushButton("Export text…")
+        self.export_button = QPushButton("Export text")
         self.export_button.setObjectName("TranscriptionToolButton")
+        self.export_button.setFixedHeight(34)
         self.export_button.clicked.connect(self.export)
-        self.subtitle_export_button = primary_button("Export subtitles…")
+        self.subtitle_export_button = primary_button("Export subtitles")
         self.subtitle_export_button.setObjectName("TranscriptionExportSubtitles")
+        self.subtitle_export_button.setFixedHeight(34)
         self.subtitle_export_button.setToolTip(
             "Export timed transcript segments as SRT, WebVTT, ASS or SSA."
         )
         self.subtitle_export_button.setEnabled(False)
         self.subtitle_export_button.clicked.connect(self.export_subtitles)
-        footer.addWidget(self.include_timestamps)
-        footer.addStretch(1)
-        footer.addWidget(self.export_button)
-        footer.addWidget(self.subtitle_export_button)
-        editor_layout.addLayout(footer)
-        content_layout.addWidget(editor_card, 1)
+        editor_footer.addWidget(self.include_timestamps)
+        editor_footer.addStretch(1)
+        editor_footer.addWidget(self.export_button)
+        editor_footer.addWidget(self.subtitle_export_button)
+        workspace_layout.addLayout(editor_footer)
 
-        content_layout.addStretch(1)
+        content_layout.addWidget(workspace, 1)
         scroll.setWidget(content)
         layout.addWidget(scroll, 1)
 
+        # Progress occupies its own hairline above the action row. At rest the
+        # footer stays compact; during a job the progress track spans the page.
         action_bar = QFrame(self)
         action_bar.setObjectName("TranscriptionActionBar")
-        action_layout = QHBoxLayout(action_bar)
-        action_layout.setContentsMargins(15, 10, 15, 10)
-        action_layout.setSpacing(10)
-        self.progress_label = QLabel("Ready")
-        self.progress_label.setObjectName("TranscriptionProgressLabel")
+        action_layout = QVBoxLayout(action_bar)
+        action_layout.setContentsMargins(0, 7, 0, 0)
+        action_layout.setSpacing(5)
+
         self.progress = QProgressBar()
         self.progress.setObjectName("TranscriptionProgress")
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(4)
         self.progress.setVisible(False)
-        self.progress.setMinimumWidth(90)
+
+        action_controls = QHBoxLayout()
+        action_controls.setSpacing(9)
+        self.progress_label = QLabel("Ready")
+        self.progress_label.setObjectName("TranscriptionProgressLabel")
+
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setObjectName("TranscriptionCancel")
+        self.cancel_button.setFixedHeight(36)
         self.cancel_button.setVisible(False)
         self.cancel_button.clicked.connect(self.cancel_transcription)
-        self.start_button = primary_button("Start offline transcription")
+
+        self.start_button = primary_button("Start transcription")
         self.start_button.setObjectName("TranscriptionStart")
-        self.start_button.setMinimumHeight(42)
-        self.start_button.setMinimumWidth(190)
+        self.start_button.setFixedHeight(38)
+        self.start_button.setMinimumWidth(184)
         self.start_button.clicked.connect(self.start_transcription)
-        action_layout.addWidget(self.progress_label)
-        action_layout.addWidget(self.progress, 1)
-        action_layout.addWidget(self.cancel_button)
-        action_layout.addWidget(self.start_button)
+
+        action_controls.addWidget(self.progress_label, 1)
+        action_controls.addWidget(self.cancel_button)
+        action_controls.addWidget(self.start_button)
+        action_layout.addWidget(self.progress)
+        action_layout.addLayout(action_controls)
         layout.addWidget(action_bar)
 
         self._update_engine_controls()
@@ -539,10 +576,10 @@ class TranscriptionPage(QWidget):
             self.task_combo.setCurrentIndex(self.task_combo.findData("transcribe"))
         if hasattr(self, "start_button"):
             self.start_button.setText(
-                "Send audio to Google Cloud" if google_cloud_selected
-                else "Send audio to Google Web Speech" if google_web_selected
+                "Send to Google Cloud" if google_cloud_selected
+                else "Send to Google Web Speech" if google_web_selected
                 else "Start Vosk transcription" if vosk_selected
-                else "Start offline transcription"
+                else "Start transcription"
             )
         self.engine_privacy_hint.setText(
             "Supported online processing: audio is sent to Google Cloud Speech-to-Text V2. "
