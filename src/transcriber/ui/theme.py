@@ -2207,4 +2207,43 @@ def stylesheet(theme: str) -> str:
         border-radius: 12px;
     }}
 
+
+    QWidget#HomePage {{
+        background: transparent;
+    }}
+    QPushButton#WorkspaceShortcut {{
+        text-align: left;
+        color: {c['text']};
+        background: transparent;
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 600;
+    }}
+    QPushButton#WorkspaceShortcut:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['border_hover']};
+    }}
+
+
+    QLabel#HistoryDetailTitle {{
+        color: {c['text']};
+        font-size: 19px;
+        font-weight: 650;
+    }}
+    QLabel#HistoryPreviewHeading {{
+        color: {c['text']};
+        font-size: 11px;
+        font-weight: 700;
+    }}
+    QLabel#HistoryPreview {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 12px;
+    }}
+
     """
