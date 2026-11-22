@@ -251,7 +251,7 @@ class RecordingPage(QWidget):
         self.auto_transcribe = QCheckBox("Open transcription after saving")
         self.auto_transcribe.setObjectName("RecordingAutoTranscribe")
         self.auto_transcribe.setChecked(True)
-        self.auto_transcribe.setWordWrap(True)
+        # QCheckBox has no word-wrap API; keep its native single-line label.
         capture_options_layout.addWidget(self.auto_transcribe)
         local_note = QLabel("Saved on this device")
         local_note.setObjectName("RecordingLocalNote")
