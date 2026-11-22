@@ -1944,4 +1944,193 @@ def stylesheet(theme: str) -> str:
         letter-spacing: 1px;
     }}
 
+
+    /* Model Library cards: neutral surfaces; status appears in compact labels and progress */
+    QFrame#DownloadTaskCard, QFrame#InstalledModelCard {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QLabel#ModelTaskTitle, QLabel#ModelInstalledTitle {{
+        color: {c['text']};
+        font-size: 13px;
+        font-weight: 650;
+    }}
+    QLabel#ModelRuntimeBadge {{
+        color: {c['accent']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 6px;
+        padding: 4px 7px;
+        font-size: 9px;
+        font-weight: 700;
+    }}
+    QLabel#ModelTaskStateBadge, QLabel#ModelInstalledStateBadge {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 7px;
+        padding: 4px 8px;
+        font-size: 9px;
+        font-weight: 750;
+    }}
+    QLabel#ModelTaskStateBadge[state="success"],
+    QLabel#ModelInstalledStateBadge[state="active"] {{
+        color: {c['success']};
+        border-color: {c['success']};
+    }}
+    QLabel#ModelTaskStateBadge[state="danger"] {{
+        color: {c['danger']};
+        border-color: {c['danger']};
+    }}
+    QLabel#ModelTaskStateBadge[state="warning"],
+    QLabel#ModelInstalledStateBadge[state="repair"] {{
+        color: {c['warning']};
+        border-color: {c['warning']};
+    }}
+    QLabel#ModelTaskStateBadge[state="info"],
+    QLabel#ModelInstalledStateBadge[state="ready"] {{
+        color: {c['accent']};
+        border-color: {c['accent']};
+    }}
+    QLabel#ModelTaskMeta, QLabel#ModelRevision {{
+        color: {c['muted']};
+        font-size: 11px;
+    }}
+    QLabel#ModelRevision {{
+        font-size: 10px;
+    }}
+    QLabel#ModelTransferCaption, QLabel#ModelPathCaption {{
+        color: {c['muted']};
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+    }}
+    QLabel#ModelTransferValue {{
+        color: {c['text']};
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QProgressBar#DownloadTaskProgress {{
+        background: {c['surface_2']};
+        border: 0;
+        border-radius: 4px;
+        min-height: 7px;
+        max-height: 7px;
+    }}
+    QProgressBar#DownloadTaskProgress::chunk {{
+        background: {c['accent']};
+        border-radius: 4px;
+    }}
+    QProgressBar#DownloadTaskProgress[state="success"]::chunk {{
+        background: {c['success']};
+    }}
+    QProgressBar#DownloadTaskProgress[state="danger"]::chunk {{
+        background: {c['danger']};
+    }}
+    QProgressBar#DownloadTaskProgress[state="warning"]::chunk {{
+        background: {c['warning']};
+    }}
+    QLabel#ModelErrorNotice {{
+        color: {c['danger']};
+        background: {c['surface_2']};
+        border: 1px solid {c['danger']};
+        border-radius: 7px;
+        padding: 7px 9px;
+        font-size: 11px;
+    }}
+    QLabel#ModelPendingAction {{
+        color: {c['muted']};
+        font-size: 11px;
+    }}
+    QPushButton#ModelTaskActionButton, QPushButton#ModelInstalledActionButton {{
+        color: {c['text']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 7px;
+        padding: 4px 10px;
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    QPushButton#ModelTaskActionButton:hover,
+    QPushButton#ModelInstalledActionButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['border_hover']};
+    }}
+    QPushButton#ModelTaskActionButton[variant="primary"],
+    QPushButton#ModelInstalledActionButton[variant="primary"] {{
+        color: {c['on_primary']};
+        background: {c['primary']};
+        border-color: {c['primary']};
+    }}
+    QPushButton#ModelTaskActionButton[variant="primary"]:hover,
+    QPushButton#ModelInstalledActionButton[variant="primary"]:hover {{
+        background: {c['primary_hover']};
+        border-color: {c['primary_hover']};
+    }}
+    QPushButton#ModelTaskActionButton[variant="danger"],
+    QPushButton#ModelInstalledActionButton[variant="danger"] {{
+        color: {c['danger']};
+        background: {c['surface']};
+        border-color: {c['border']};
+    }}
+    QPushButton#ModelTaskActionButton[variant="danger"]:hover,
+    QPushButton#ModelInstalledActionButton[variant="danger"]:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['danger']};
+    }}
+    QPushButton#ModelTaskActionButton[variant="warning"] {{
+        color: {c['warning']};
+        background: {c['surface']};
+        border-color: {c['border']};
+    }}
+    QPushButton#ModelTaskActionButton[variant="warning"]:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['warning']};
+    }}
+    QFrame#ModelInstalledInfoPanel {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+    }}
+    QLabel#ModelInstalledInfoLabel {{
+        color: {c['text']};
+        border: 0;
+        background: transparent;
+        font-size: 11px;
+    }}
+    QLabel#ModelDefaultBadge {{
+        color: {c['accent']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 9px;
+        font-weight: 700;
+    }}
+    QLabel#ModelPathLabel {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 7px;
+        padding: 7px 8px;
+        font-size: 10px;
+    }}
+    QLabel#ModelInstalledCompatibility {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 10px;
+    }}
+    QLabel#ModelInstalledCompatibility[state="compatible"] {{
+        color: {c['success']};
+        border-color: {c['success']};
+    }}
+    QLabel#ModelInstalledCompatibility[state="warning"] {{
+        color: {c['warning']};
+        border-color: {c['warning']};
+    }}
+
     """
