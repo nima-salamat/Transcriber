@@ -120,19 +120,21 @@ class ConversationView(QFrame):
             button.setObjectName("AssistantPromptSuggestion")
             button.setMinimumWidth(0)
             button.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
             )
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setAccessibleName(title_text)
             button.setToolTip(f"Use this prompt: {title_text}")
 
             card_layout = QVBoxLayout(button)
-            card_layout.setContentsMargins(16, 9, 16, 9)
+            card_layout.setContentsMargins(16, 8, 16, 8)
             card_layout.setSpacing(2)
-            card_layout.addStretch(1)
             title_label = QLabel(title_text, button)
             title_label.setObjectName("AssistantPromptSuggestionTitle")
             title_label.setMinimumWidth(0)
+            title_label.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+            )
             title_label.setAlignment(
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
             )
@@ -142,6 +144,9 @@ class ConversationView(QFrame):
             detail_label = QLabel(detail_text, button)
             detail_label.setObjectName("AssistantPromptSuggestionDescription")
             detail_label.setMinimumWidth(0)
+            detail_label.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+            )
             detail_label.setWordWrap(False)
             detail_label.setAlignment(
                 Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
@@ -151,11 +156,19 @@ class ConversationView(QFrame):
             )
             card_layout.addWidget(title_label)
             card_layout.addWidget(detail_label)
-            card_layout.addStretch(1)
-            # QPushButton's own sizeHint does not include child labels reliably.
-            # Derive its minimum height from the actual label metrics and padding.
-            card_layout.activate()
-            button.setMinimumHeight(card_layout.sizeHint().height() + 2)
+            card_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            # Size the card from the actual rendered label hints plus the
+            # layout's spacing, vertical padding, and the button border.
+            margins = card_layout.contentsMargins()
+            content_height = (
+                title_label.sizeHint().height()
+                + detail_label.sizeHint().height()
+                + card_layout.spacing()
+                + margins.top()
+                + margins.bottom()
+                + 2
+            )
+            button.setMinimumHeight(content_height)
             button.clicked.connect(
                 lambda _checked=False, value=prompt_text: self.prompt_selected.emit(value)
             )

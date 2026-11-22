@@ -1084,8 +1084,7 @@ def stylesheet(theme: str) -> str:
         border-radius: 9px;
         padding: 0;
         min-width: 0;
-        min-height: 0;
-        text-align: left;
+        text-align: center;
     }}
     QPushButton#AssistantPromptSuggestion:hover {{
         background: {c['surface_hover']};
