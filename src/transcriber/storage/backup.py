@@ -73,7 +73,7 @@ def restore_backup(archive_path: Path, database_path: Path, settings_path: Path)
             raise ValueError("Backup settings file is not valid JSON") from exc
         if not isinstance(restored_settings, dict):
             raise ValueError("Backup settings must be a JSON object")
-        with sqlite3.connect(root / "transcripts.sqlite3") as connection:
+        with closing(sqlite3.connect(root / "transcripts.sqlite3")) as connection:
             result = connection.execute("PRAGMA integrity_check").fetchone()
             if not result or result[0] != "ok":
                 raise ValueError("Backup database failed its integrity check")
@@ -93,7 +93,7 @@ def restore_backup(archive_path: Path, database_path: Path, settings_path: Path)
         # swapping the file. Callers must ensure no application jobs are active.
         if had_db:
             try:
-                with sqlite3.connect(db_target, timeout=10) as connection:
+                with closing(sqlite3.connect(db_target, timeout=10)) as connection:
                     connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             except sqlite3.Error as exc:
                 raise RuntimeError("Could not checkpoint the current transcript database") from exc

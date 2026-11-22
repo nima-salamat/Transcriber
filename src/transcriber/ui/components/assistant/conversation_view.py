@@ -113,6 +113,25 @@ class ConversationView(QFrame):
         if app is not None:
             app.installEventFilter(self)
 
+    def dispose(self):
+        """Stop deferred UI work and detach the application event filter."""
+        for timer_name in (
+            "_stream_scroll_timer",
+            "_scroll_sync_timer",
+            "_scroll_apply_timer",
+            "_message_width_timer",
+        ):
+            timer = getattr(self, timer_name, None)
+            if timer is not None:
+                timer.stop()
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+
+    def closeEvent(self, event):
+        self.dispose()
+        super().closeEvent(event)
+
     def toPlainText(self) -> str:
         return "\n\n".join(str(item.get("text") or "") for item in self._messages)
 

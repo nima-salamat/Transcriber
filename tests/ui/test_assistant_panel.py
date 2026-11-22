@@ -17,11 +17,16 @@ from transcriber.ui.components.assistant.message_widget import MessageWidget
 from transcriber.ui.components.assistant_panel import AssistantPanel
 
 
+def make_assistant_panel(*args, **kwargs):
+    kwargs.setdefault("auto_connect", False)
+    return AssistantPanel(*args, **kwargs)
+
+
 def test_assistant_panel_is_a_conversation_surface(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
     assert isinstance(panel.chat_view, QTextBrowser)
@@ -68,7 +73,7 @@ def test_assistant_surface_has_no_quick_prompts_or_redundant_global_header(qtbot
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
     assert panel.root_layout.count() == 1
@@ -104,7 +109,7 @@ def test_assistant_wake_model_selector_lists_installed_vosk_models(qtbot, tmp_pa
             }
         ]
     )
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         paths,
         QThreadPool(),
         store,
@@ -122,7 +127,7 @@ def test_voice_orb_tracks_connecting_and_stopped_states(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
     assert panel.voice_chat_button.text() == ""
@@ -144,7 +149,7 @@ def test_agent_runtime_controls_the_agent_tools_toggle(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
     assert not panel.agent_mode_check.isEnabled()
@@ -184,7 +189,7 @@ def test_new_local_chat_clears_only_the_current_conversation(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
     panel._chat_provider = "ollama"
     panel._ollama_messages = [
@@ -205,7 +210,7 @@ def test_ollama_stop_is_independent_of_opencode_connection(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
     class Cancellation:
         cancelled = False
@@ -231,7 +236,7 @@ def test_settings_icon_opens_a_separate_stacked_settings_page(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
     assert panel.page_stack.currentWidget() is panel.conversation_page
@@ -258,7 +263,7 @@ def test_assistant_can_switch_between_opencode_and_local_ollama(qtbot, tmp_path)
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
     panel.refresh_ollama_models = lambda: None
 
@@ -284,7 +289,7 @@ def test_assistant_exposes_installed_faster_whisper_voice_models(qtbot, tmp_path
         ],
         installed_vosk_models=lambda *, include_sizes=False: [],
     )
-    panel = AssistantPanel(paths, QThreadPool(), model_manager=model_manager)
+    panel = make_assistant_panel(paths, QThreadPool(), model_manager=model_manager)
     qtbot.addWidget(panel)
 
     values = [panel.voice_asr_combo.itemData(i) for i in range(panel.voice_asr_combo.count())]
@@ -297,7 +302,7 @@ def test_voice_lifecycle_status_is_visible_on_the_conversation_page(qtbot, tmp_p
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
 
     assert panel.page_stack.currentWidget() is panel.conversation_page
@@ -324,7 +329,7 @@ def test_voice_chat_shows_model_response_progress(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
-    panel = AssistantPanel(paths, QThreadPool())
+    panel = make_assistant_panel(paths, QThreadPool())
     qtbot.addWidget(panel)
     panel.voice_agent = SimpleNamespace(mode="processing")
     panel._voice_conversation_mode = True
@@ -502,7 +507,7 @@ def test_consecutive_helper_events_share_one_collapsed_details_card(qtbot):
 def test_browser_skill_and_enabled_action_schemas_are_preloaded(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         SimpleNamespace(config=tmp_path, models=tmp_path),
         QThreadPool(),
     )
@@ -539,7 +544,7 @@ def test_assistant_thinking_is_inline_and_streams_without_rebuilding_the_card(
 ):
     app = QApplication.instance() or QApplication([])
     assert app is not None
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         SimpleNamespace(config=tmp_path, models=tmp_path),
         QThreadPool(),
     )
@@ -580,7 +585,7 @@ def test_assistant_thinking_is_inline_and_streams_without_rebuilding_the_card(
 def test_voice_status_uses_short_labels_in_the_composer_status(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         SimpleNamespace(config=tmp_path, models=tmp_path),
         QThreadPool(),
     )
@@ -599,7 +604,7 @@ def test_voice_status_uses_short_labels_in_the_composer_status(qtbot, tmp_path):
 def test_assistant_shutdown_cancels_active_models_voice_and_opencode(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         SimpleNamespace(config=tmp_path, models=tmp_path),
         QThreadPool(),
     )
@@ -643,7 +648,7 @@ def test_assistant_shutdown_cancels_active_models_voice_and_opencode(qtbot, tmp_
 def test_ollama_thinking_signal_is_rendered_inside_the_assistant_message(qtbot, tmp_path):
     app = QApplication.instance() or QApplication([])
     assert app is not None
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         SimpleNamespace(config=tmp_path, models=tmp_path),
         QThreadPool(),
     )
@@ -695,7 +700,7 @@ def test_agent_permissions_and_remembered_browser_approval_are_persistent(qtbot,
     paths = SimpleNamespace(config=tmp_path, models=tmp_path)
     settings_store = SettingsStore(tmp_path / "settings.json")
     settings_store.load()
-    panel = AssistantPanel(paths, QThreadPool(), settings_store)
+    panel = make_assistant_panel(paths, QThreadPool(), settings_store)
     qtbot.addWidget(panel)
     registry = ActionRegistry(
         permissions={AgentPermission.READ_ONLY, AgentPermission.EDIT_CONTENT},
@@ -728,7 +733,7 @@ def test_opencode_stop_bypasses_a_saturated_shared_worker_pool(qtbot, tmp_path):
 
     app = QApplication.instance() or QApplication([])
     assert app is not None
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         SimpleNamespace(config=tmp_path, models=tmp_path),
         QThreadPool(),
     )
@@ -768,7 +773,7 @@ def test_opencode_prompt_context_exposes_general_powershell_only_when_permission
 ):
     app = QApplication.instance() or QApplication([])
     assert app is not None
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         SimpleNamespace(config=tmp_path, models=tmp_path),
         QThreadPool(),
     )
@@ -809,7 +814,7 @@ def test_ollama_next_generation_round_shows_thinking_before_any_new_tokens(
 ):
     app = QApplication.instance() or QApplication([])
     assert app is not None
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         SimpleNamespace(config=tmp_path, models=tmp_path),
         QThreadPool(),
     )
@@ -838,7 +843,7 @@ def test_opencode_tool_completion_starts_the_next_thinking_card_immediately(
 ):
     app = QApplication.instance() or QApplication([])
     assert app is not None
-    panel = AssistantPanel(
+    panel = make_assistant_panel(
         SimpleNamespace(config=tmp_path, models=tmp_path),
         QThreadPool(),
     )

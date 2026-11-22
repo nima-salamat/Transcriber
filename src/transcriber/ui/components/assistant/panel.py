@@ -215,6 +215,7 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
     def __init__(
         self, paths, thread_pool, settings_store=None, parent=None, *,
         voice_transcriber=None, model_manager=None, voice_model_loader=None,
+        auto_connect: bool = True,
     ):
         super().__init__(parent)
         self.paths = paths
@@ -862,7 +863,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._refresh_session_list()
         self._refresh_chat()
         self._sync_voice_orb()
-        self._auto_connect_timer.start(0)
+        if auto_connect:
+            self._auto_connect_timer.start(0)
 
     def eventFilter(self, watched, event):
         if (
@@ -1188,6 +1190,10 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
             "env": self._mcp_child_environment(),
         }]
 
+    def closeEvent(self, event):
+        self.shutdown()
+        super().closeEvent(event)
+
     def shutdown(self):
         """Cancel active providers and queue owned-resource cleanup before pool drain."""
         if getattr(self, "_shutting_down", False):
@@ -1201,6 +1207,8 @@ class AssistantPanel(QWidget, AssistantSessionMixin, AssistantProviderMixin, Ass
         self._pending_opencode_recovery = ""
         self._session_persist_timer.stop()
         self._chat_refresh_timer.stop()
+        self._auto_connect_timer.stop()
+        self.conversation_view.dispose()
         self._persist_current_session()
 
         if self._model_load_cancellation is not None:
