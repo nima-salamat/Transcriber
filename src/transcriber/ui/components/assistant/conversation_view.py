@@ -118,7 +118,7 @@ class ConversationView(QFrame):
         for title_text, detail_text, prompt_text in prompt_examples:
             button = QPushButton(self.prompt_grid)
             button.setObjectName("AssistantPromptSuggestion")
-            button.setFixedHeight(54)
+            button.setFixedHeight(60)
             button.setMinimumWidth(0)
             button.setSizePolicy(
                 QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
