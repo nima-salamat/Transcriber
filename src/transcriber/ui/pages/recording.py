@@ -113,8 +113,7 @@ class RecordingPage(QWidget):
         status_row.addWidget(self.state_label)
         status_row.addStretch(1)
         self.input_badge = QLabel("WAV  ·  LOCAL")
-        self.input_badge.setObjectName("Muted")
-        self.input_badge.setStyleSheet("font-size: 10px; font-weight: 750; letter-spacing: 0.7px;")
+        self.input_badge.setObjectName("RecordingFormatBadge")
         status_row.addWidget(self.input_badge)
         console_layout.addLayout(status_row)
 
