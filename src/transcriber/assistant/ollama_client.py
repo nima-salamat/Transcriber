@@ -209,7 +209,7 @@ class OllamaClient:
             return managed
         except OllamaCancelled:
             raise
-        except (TimeoutError, socket.timeout) as exc:
+        except TimeoutError as exc:
             if cancellation and cancellation.cancelled:
                 raise OllamaCancelled("Ollama request was cancelled.") from exc
             raise OllamaError(

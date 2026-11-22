@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from transcriber.ui.design.tokens import SPACING
-
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -14,6 +12,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from transcriber.ui.design.tokens import SPACING
+
 
 
 class Card(QFrame):

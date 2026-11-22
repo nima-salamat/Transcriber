@@ -15,8 +15,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from transcriber.ui.widgets import Card, page_header, primary_button, section_header, empty_state, status_pill
+from transcriber.ui.widgets import (
+    Card,
+    empty_state,
+    page_header,
+    primary_button,
+    section_header,
+    status_pill,
+)
 from transcriber.ui.workers import FunctionWorker
+
 
 
 class HistoryPage(QWidget):

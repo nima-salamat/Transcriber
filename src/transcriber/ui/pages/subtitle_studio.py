@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from transcriber.subtitles.formats import export_subtitles, parse_subtitles
 from transcriber.subtitles.timing import apply_minimum_gap, shift_timestamps, validate_subtitles
 from transcriber.transcription.segments import TranscriptSegment
-from transcriber.ui.widgets import Card, page_header, primary_button, section_header
+from transcriber.ui.widgets import Card, page_header, primary_button
 
 
 class SubtitleStudioPage(QWidget):

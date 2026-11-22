@@ -11,13 +11,14 @@ from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
-    QWidget,QFrame
+    QWidget,
 )
 
 from transcriber.audio.devices import audio_device_id
@@ -26,6 +27,7 @@ from transcriber.audio.recorder import QtAudioRecorder
 from transcriber.ui.components.waveform import WaveformTimeline
 from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.widgets import Card, page_header, section_header
+
 
 
 def _record_button_enabled_for_state(state: str, has_usable_input: bool) -> bool:

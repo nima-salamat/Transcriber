@@ -25,8 +25,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSpinBox,
-    QToolButton,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -53,6 +53,7 @@ from transcriber.transcription.service import TranscriptionService
 from transcriber.ui.design.icon_registry import IconRegistry
 from transcriber.ui.widgets import page_header, primary_button
 from transcriber.ui.workers import FunctionWorker
+
 
 
 class TranscriptionPage(QWidget):

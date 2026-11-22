@@ -5,7 +5,6 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -14,9 +13,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from transcriber.ui.widgets import Card, metric_card, page_header, primary_button, section_header, empty_state
 from transcriber.ui.design.icon_registry import IconRegistry
+from transcriber.ui.widgets import (
+    Card,
+    empty_state,
+    metric_card,
+    page_header,
+    primary_button,
+    section_header,
+)
 from transcriber.ui.workers import FunctionWorker
+
 
 
 class HomePage(QWidget):
