@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QLabel,
     QHBoxLayout,
     QLineEdit,
     QListWidget,
@@ -12,7 +13,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QWidget,
-    QLabel
 )
 
 from transcriber.ui.widgets import Card, page_header, primary_button

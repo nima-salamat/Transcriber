@@ -15,7 +15,18 @@ from concurrent.futures import CancelledError, Future
 from pathlib import Path
 from threading import Event
 
-from PySide6.QtCore import QEvent, QObject, QPointF, QSize, Qt, QThread, QThreadPool, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QEvent,
+    QObject,
+    QPointF,
+    QSize,
+    Qt,
+    QThread,
+    QThreadPool,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import (
     QAction,
     QDesktopServices,
@@ -26,9 +37,9 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtWidgets import (
-    QApplication,
     QAbstractItemView,
     QAbstractSpinBox,
+    QApplication,
     QComboBox,
     QDockWidget,
     QFrame,
@@ -38,8 +49,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSlider,
     QSizePolicy,
+    QSlider,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -59,8 +70,8 @@ from transcriber.assistant.powershell import (
     requires_destructive_permission,
 )
 from transcriber.audio.decoder import validate_audio_file
-from transcriber.core.process import hidden_subprocess_creation_flags
 from transcriber.audio.waveform import build_waveform
+from transcriber.core.process import hidden_subprocess_creation_flags
 from transcriber.editor.commands import CommandHistory
 from transcriber.editor.document import TranscriptDocument
 from transcriber.ipc.server import LocalIPCServer
