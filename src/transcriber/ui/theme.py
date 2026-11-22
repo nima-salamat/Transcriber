@@ -1233,4 +1233,303 @@ def stylesheet(theme: str) -> str:
         border: 1px solid {c['border']};
         padding: 6px 8px;
     }}
+
+    /* New Transcription workspace */
+    QWidget#NewTranscriptionPage, QWidget#NewTranscriptionContent,
+    QWidget#SubtitleStudioPage, QWidget#SubtitleStudioContent {{
+        background: transparent;
+    }}
+    QScrollArea#NewTranscriptionScroll, QScrollArea#SubtitleStudioScroll {{
+        background: transparent;
+        border: 0;
+    }}
+    QLabel#TranscriptionSectionTitle {{
+        color: {c['text']};
+        font-size: 14px;
+        font-weight: 750;
+    }}
+    QLabel#TranscriptionSectionHint {{
+        color: {c['muted']};
+        font-size: 11px;
+    }}
+    QLabel#TranscriptionFieldLabel {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 700;
+        padding-left: 1px;
+    }}
+    QPushButton#TranscriptionChooseMedia {{
+        background: {c['accent']};
+        color: white;
+        border: 0;
+        border-radius: 10px;
+        padding: 9px 16px;
+        font-weight: 750;
+    }}
+    QPushButton#TranscriptionChooseMedia:hover {{ background: {c['accent_hover']}; }}
+    QLabel#TranscriptionFileName {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px dashed {c['border']};
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 12px;
+    }}
+    QPushButton#TranscriptionCloseMedia {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+        color: {c['muted']};
+        font-size: 19px;
+        padding: 0;
+    }}
+    QPushButton#TranscriptionCloseMedia:hover {{
+        color: {c['danger']};
+        border-color: {c['danger']};
+    }}
+    QPushButton#TranscriptionDefaultModel, QPushButton#TranscriptionToolButton {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 9px;
+        padding: 8px 11px;
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QPushButton#TranscriptionDefaultModel:hover, QPushButton#TranscriptionToolButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QLabel#TranscriptionPrivacyHint {{
+        color: {c['muted']};
+        font-size: 11px;
+        padding: 3px 0;
+    }}
+    QLabel#TranscriptionPrivacyMark {{
+        color: {c['accent']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+        font-size: 12px;
+        font-weight: 800;
+    }}
+    QLabel#TranscriptionPlayerStatus {{
+        color: {c['muted']};
+        font-size: 10px;
+    }}
+    QPushButton#TranscriptionPlayButton {{
+        background: {c['accent']};
+        color: white;
+        border: 0;
+        border-radius: 21px;
+        font-size: 16px;
+        font-weight: 750;
+        padding: 0;
+    }}
+    QPushButton#TranscriptionPlayButton:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#TranscriptionPlayButton:disabled {{
+        background: {c['surface_2']};
+        color: {c['muted']};
+    }}
+    QLabel#TranscriptionPlaybackTime {{
+        color: {c['text']};
+        font-size: 11px;
+        font-weight: 700;
+        font-family: 'Consolas', 'Cascadia Code', monospace;
+    }}
+    QLabel#TranscriptionWordCount {{
+        color: {c['muted']};
+        font-size: 10px;
+        font-weight: 650;
+    }}
+    QLineEdit#TranscriptionSearch, QLineEdit#TranscriptionReplace {{
+        min-height: 20px;
+    }}
+    QPlainTextEdit#TranscriptionEditor {{
+        background: {c['input']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+        padding: 14px;
+        selection-background-color: {c['accent']};
+        font-size: 13px;
+    }}
+    QPlainTextEdit#TranscriptionEditor:focus {{ border-color: {c['focus']}; }}
+    QPushButton#TranscriptionExportSubtitles {{
+        background: {c['accent']};
+        color: white;
+        border: 0;
+        border-radius: 9px;
+        padding: 9px 14px;
+        font-weight: 700;
+    }}
+    QPushButton#TranscriptionExportSubtitles:hover {{ background: {c['accent_hover']}; }}
+    QFrame#TranscriptionActionBar {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 13px;
+    }}
+    QLabel#TranscriptionProgressLabel {{
+        color: {c['muted']};
+        font-size: 11px;
+        font-weight: 650;
+        min-width: 80px;
+    }}
+    QProgressBar#TranscriptionProgress {{
+        background: {c['surface_2']};
+        border: 0;
+        border-radius: 5px;
+        min-height: 8px;
+        max-height: 8px;
+    }}
+    QProgressBar#TranscriptionProgress::chunk {{
+        background: {c['accent']};
+        border-radius: 4px;
+    }}
+    QPushButton#TranscriptionCancel {{
+        color: {c['danger']};
+        background: transparent;
+        border: 1px solid {c['border']};
+        border-radius: 9px;
+        font-weight: 650;
+    }}
+    QPushButton#TranscriptionStart {{
+        background: {c['accent']};
+        color: white;
+        border: 0;
+        border-radius: 10px;
+        padding: 9px 17px;
+        font-weight: 750;
+    }}
+    QPushButton#TranscriptionStart:hover {{ background: {c['accent_hover']}; }}
+    QPushButton#TranscriptionStart:disabled {{
+        background: {c['surface_2']};
+        color: {c['muted']};
+    }}
+
+    /* Subtitle Studio: metrics, timing tools and cue editing surface */
+    QFrame#SubtitleMetricCard {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QLabel#SubtitleMetricCaption {{
+        color: {c['muted']};
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.9px;
+    }}
+    QLabel#SubtitleMetricValue {{
+        color: {c['text']};
+        font-size: 21px;
+        font-weight: 750;
+    }}
+    QPushButton#SubtitleToolButton {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 9px;
+        padding: 8px 12px;
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QPushButton#SubtitleToolButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QPushButton#SubtitleDeleteButton {{
+        color: {c['danger']};
+        background: transparent;
+        border: 1px solid {c['border']};
+        border-radius: 9px;
+        padding: 8px 12px;
+        font-size: 11px;
+        font-weight: 650;
+    }}
+    QPushButton#SubtitleDeleteButton:hover {{
+        border-color: {c['danger']};
+        background: {c['surface_hover']};
+    }}
+    QPushButton#SubtitleExportButton {{
+        background: {c['accent']};
+        color: white;
+        border: 0;
+        border-radius: 9px;
+        padding: 8px 14px;
+        font-weight: 750;
+    }}
+    QPushButton#SubtitleExportButton:hover {{ background: {c['accent_hover']}; }}
+    QFrame#SubtitleTimingTool {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+    }}
+    QLabel#SubtitleTimingTitle {{
+        color: {c['text']};
+        font-size: 12px;
+        font-weight: 750;
+    }}
+    QLabel#SubtitleTimingDescription {{
+        color: {c['muted']};
+        font-size: 10px;
+    }}
+    QPushButton#SubtitleTimingApply {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 7px 11px;
+        font-size: 11px;
+        font-weight: 700;
+    }}
+    QPushButton#SubtitleTimingApply:hover {{
+        border-color: {c['accent']};
+        background: {c['surface_hover']};
+    }}
+    QTableWidget#SubtitleCueTable {{
+        gridline-color: transparent;
+        alternate-background-color: {c['surface_2']};
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+        selection-background-color: {c['surface_hover']};
+        outline: 0;
+    }}
+    QTableWidget#SubtitleCueTable::item {{
+        padding: 9px 10px;
+        border: 0;
+        border-bottom: 1px solid {c['border']};
+    }}
+    QTableWidget#SubtitleCueTable::item:selected {{
+        color: {c['text']};
+        background: {c['surface_hover']};
+    }}
+    QTableWidget#SubtitleCueTable QLineEdit {{
+        padding: 5px 7px;
+        border-radius: 6px;
+    }}
+    QLabel#SubtitleEmptyState {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px dashed {c['border']};
+        border-radius: 11px;
+        padding: 22px;
+        font-size: 12px;
+        font-weight: 550;
+    }}
+    QFrame#SubtitleReportCard {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 11px;
+    }}
+    QLabel#SubtitleReportMark {{
+        color: {c['success']};
+        background: {c['surface_2']};
+        border-radius: 13px;
+        font-size: 13px;
+        font-weight: 800;
+    }}
+    QLabel#SubtitleValidationReport {{
+        color: {c['muted']};
+        font-size: 11px;
+        padding: 1px 0;
+    }}
+    QLabel#SubtitleValidationReport[state="success"] {{ color: {c['success']}; }}
+    QLabel#SubtitleValidationReport[state="warning"] {{ color: {c['warning']}; }}
     """
