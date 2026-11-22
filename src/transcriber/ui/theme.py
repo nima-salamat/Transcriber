@@ -1534,4 +1534,54 @@ def stylesheet(theme: str) -> str:
     }}
     QLabel#SubtitleValidationReport[state="success"] {{ color: {c['success']}; }}
     QLabel#SubtitleValidationReport[state="warning"] {{ color: {c['warning']}; }}
+
+    QFrame#RecordingOptionsCard {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QLabel#RecordingDeviceTitle {{
+        color: {c['text']};
+        font-size: 12px;
+        font-weight: 700;
+    }}
+    QLabel#RecordingDeviceHint {{
+        color: {c['muted']};
+        font-size: 10px;
+        padding-left: 2px;
+    }}
+    QComboBox#RecordingMicrophoneCombo {{
+        background: {c['input']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        min-height: 18px;
+        padding: 5px 9px;
+        font-size: 11px;
+    }}
+    QComboBox#RecordingMicrophoneCombo:hover {{
+        border-color: {c['accent']};
+    }}
+    QPushButton#RecordingRefreshDevices {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 0;
+        font-size: 17px;
+    }}
+    QPushButton#RecordingRefreshDevices:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QCheckBox#RecordingAutoTranscribe {{
+        color: {c['text']};
+        font-size: 11px;
+        font-weight: 600;
+        spacing: 8px;
+    }}
+    QLabel#RecordingLocalNote {{
+        color: {c['muted']};
+        font-size: 9px;
+        font-weight: 750;
+        letter-spacing: 0.5px;
+    }}
     """

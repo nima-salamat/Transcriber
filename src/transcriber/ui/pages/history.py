@@ -30,7 +30,7 @@ class HistoryPage(QWidget):
         self._generation = 0
         self._worker: FunctionWorker | None = None
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setContentsMargins(2, 2, 10, 12)
         layout.setSpacing(13)
         layout.addWidget(page_header("History", "All transcripts are stored in your local SQLite database."))
 

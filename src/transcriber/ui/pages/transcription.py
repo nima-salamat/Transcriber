@@ -89,7 +89,7 @@ class TranscriptionPage(QWidget):
 
         self.setObjectName("NewTranscriptionPage")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 20, 26, 16)
+        layout.setContentsMargins(2, 2, 10, 12)
         layout.setSpacing(12)
         layout.addWidget(page_header(
             "New transcription",

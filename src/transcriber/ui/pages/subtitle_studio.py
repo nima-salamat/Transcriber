@@ -41,7 +41,7 @@ class SubtitleStudioPage(QWidget):
         self._busy = False
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(26, 20, 26, 16)
+        root.setContentsMargins(2, 2, 10, 12)
         root.setSpacing(12)
 
         scroll = QScrollArea(self)

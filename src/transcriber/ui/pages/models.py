@@ -302,7 +302,7 @@ class ModelLibraryPage(QWidget):
         self._downloads_refresh_again = False
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setContentsMargins(2, 2, 10, 12)
         layout.setSpacing(14)
         layout.addWidget(page_header(
             "Model library",

@@ -32,7 +32,7 @@ class HomePage(QWidget):
         self._worker: FunctionWorker | None = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 26, 30, 26)
+        layout.setContentsMargins(2, 2, 10, 12)
         layout.setSpacing(19)
         layout.addWidget(
             page_header(

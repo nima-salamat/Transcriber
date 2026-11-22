@@ -70,7 +70,7 @@ class AudioLibraryPage(QWidget):
         self.player = AudioPlayer(self)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setContentsMargins(2, 2, 10, 12)
         layout.setSpacing(14)
 
         heading = QHBoxLayout()

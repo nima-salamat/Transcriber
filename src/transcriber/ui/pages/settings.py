@@ -58,7 +58,7 @@ class SettingsPage(QWidget):
 
     def _build(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(28, 24, 28, 24)
+        outer.setContentsMargins(2, 2, 10, 12)
         outer.addWidget(page_header("Settings", "Tune recognition, privacy, and where Transcriber stores your data."))
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)

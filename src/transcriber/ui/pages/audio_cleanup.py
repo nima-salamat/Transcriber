@@ -37,7 +37,7 @@ class AudioCleanupPage(QWidget):
         self._cancel_event = None
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 20, 24, 20)
+        root.setContentsMargins(2, 2, 10, 12)
         root.setSpacing(12)
         root.addWidget(page_header(
             "Audio Cleanup",

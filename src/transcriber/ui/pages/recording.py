@@ -74,7 +74,7 @@ class RecordingPage(QWidget):
 
         self.setObjectName("RecordingPage")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setContentsMargins(2, 2, 10, 12)
         layout.setSpacing(15)
 
         heading = QHBoxLayout()
@@ -89,38 +89,6 @@ class RecordingPage(QWidget):
         self.library_button.clicked.connect(self.open_library.emit)
         heading.addWidget(self.library_button, 0, Qt.AlignTop)
         layout.addLayout(heading)
-
-        # Input selection remains visible, but is no longer the visual focus.
-        device_card = Card()
-        device_layout = QHBoxLayout(device_card)
-        device_layout.setContentsMargins(16, 12, 16, 12)
-        device_layout.setSpacing(12)
-        mic_icon = QLabel()
-        mic_icon.setPixmap(self.icons.icon("record", "#d65a68", 19).pixmap(19, 19))
-        device_layout.addWidget(mic_icon)
-        device_text = QVBoxLayout()
-        device_text.setSpacing(2)
-        device_title = QLabel("Microphone")
-        device_title.setStyleSheet("font-weight: 700;")
-        self.device_hint = QLabel("Following the Windows default microphone")
-        self.device_hint.setObjectName("Muted")
-        self.device_hint.setWordWrap(True)
-        device_text.addWidget(device_title)
-        device_text.addWidget(self.device_hint)
-        device_layout.addLayout(device_text, 1)
-        self.device_combo = QComboBox()
-        self.device_combo.setMinimumWidth(230)
-        self.device_combo.setMinimumHeight(38)
-        self.device_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.device_combo.setToolTip("Choose a microphone or follow the Windows default input device")
-        self.device_combo.currentIndexChanged.connect(self._save_device_preference)
-        device_layout.addWidget(self.device_combo, 2)
-        self.refresh_button = QPushButton("↻")
-        self.refresh_button.setToolTip("Refresh microphone devices")
-        self.refresh_button.setFixedSize(38, 38)
-        self.refresh_button.clicked.connect(self.refresh_devices)
-        device_layout.addWidget(self.refresh_button)
-        layout.addWidget(device_card)
 
         # Recorder console: time, waveform and familiar transport controls.
         console = Card()
@@ -239,18 +207,60 @@ class RecordingPage(QWidget):
         console_layout.addWidget(self.transport_hint)
         layout.addWidget(console, 1)
 
-        options_card = Card()
-        options_layout = QHBoxLayout(options_card)
-        options_layout.setContentsMargins(16, 11, 16, 11)
+        # Compact capture preferences live below the recorder controls.
+        # Device choice and post-save transcription share one small surface.
+        capture_options = Card()
+        capture_options.setObjectName("RecordingOptionsCard")
+        capture_options_layout = QVBoxLayout(capture_options)
+        capture_options_layout.setContentsMargins(14, 10, 14, 10)
+        capture_options_layout.setSpacing(7)
+
+        device_row = QHBoxLayout()
+        device_row.setSpacing(9)
+        mic_icon = QLabel()
+        mic_icon.setPixmap(self.icons.icon("record", "#d65a68", 17).pixmap(17, 17))
+        mic_icon.setFixedSize(22, 22)
+        device_row.addWidget(mic_icon, 0, Qt.AlignVCenter)
+        device_title = QLabel("Microphone")
+        device_title.setObjectName("RecordingDeviceTitle")
+        device_row.addWidget(device_title)
+        self.device_hint = QLabel("System default")
+        self.device_hint.setObjectName("RecordingDeviceHint")
+        device_row.addWidget(self.device_hint)
+        device_row.addStretch(1)
+
+        self.device_combo = QComboBox()
+        self.device_combo.setObjectName("RecordingMicrophoneCombo")
+        self.device_combo.setMinimumWidth(150)
+        self.device_combo.setMaximumWidth(420)
+        self.device_combo.setFixedHeight(32)
+        self.device_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.device_combo.setToolTip("Choose a microphone or follow the system default input device")
+        self.device_combo.currentIndexChanged.connect(self._save_device_preference)
+        device_row.addWidget(self.device_combo, 1)
+
+        self.refresh_button = QPushButton("↻")
+        self.refresh_button.setObjectName("RecordingRefreshDevices")
+        self.refresh_button.setToolTip("Refresh microphone devices")
+        self.refresh_button.setFixedSize(32, 32)
+        self.refresh_button.clicked.connect(self.refresh_devices)
+        device_row.addWidget(self.refresh_button)
+        capture_options_layout.addLayout(device_row)
+
+        preference_row = QHBoxLayout()
+        preference_row.setContentsMargins(0, 0, 0, 0)
+        preference_row.setSpacing(8)
         self.auto_transcribe = QCheckBox("Transcribe automatically after saving")
+        self.auto_transcribe.setObjectName("RecordingAutoTranscribe")
         self.auto_transcribe.setChecked(True)
-        options_layout.addWidget(self.auto_transcribe)
-        options_layout.addStretch(1)
+        preference_row.addWidget(self.auto_transcribe)
+        preference_row.addStretch(1)
         local_note = QLabel("●  SAVED ON THIS DEVICE")
-        local_note.setObjectName("Muted")
-        local_note.setStyleSheet("font-size: 10px; font-weight: 700; letter-spacing: 0.5px;")
-        options_layout.addWidget(local_note)
-        layout.addWidget(options_card)
+        local_note.setObjectName("RecordingLocalNote")
+        preference_row.addWidget(local_note)
+        capture_options_layout.addLayout(preference_row)
+
+        layout.addWidget(capture_options)
 
         self.recorder.state_changed.connect(self._state_changed)
         self.recorder.level_changed.connect(self._set_level)
@@ -293,11 +303,9 @@ class RecordingPage(QWidget):
         blocker = self.device_combo.blockSignals(True)
         try:
             self.device_combo.clear()
-            default_label = "Follow Windows default"
-            if not default_device.isNull():
-                default_label += f" · {default_device.description()}"
-            else:
-                default_label += " · No microphone detected"
+            default_label = "Follow system default"
+            if default_device.isNull():
+                default_label = "System default · no microphone"
             self.device_combo.addItem(default_label, "")
 
             available_ids = set()
@@ -319,14 +327,13 @@ class RecordingPage(QWidget):
             selected_id in available_ids if selected_id else not default_device.isNull()
         )
         if not devices and default_device.isNull():
-            hint = "No microphone detected. Connect one or check Windows sound settings."
+            hint = "No microphone detected"
         elif selected_id and selected_id not in available_ids:
-            hint = "The saved microphone is unavailable. Choose another device or follow the system default."
+            hint = "Saved device unavailable"
         elif not selected_id:
-            hint = f"Following system default · {default_device.description()}"
+            hint = "System default"
         else:
-            match = next((item for item in devices if audio_device_id(item) == selected_id), None)
-            hint = f"Selected input · {match.description()}" if match else "Saved microphone is unavailable."
+            hint = "Selected device" if selected_id in available_ids else "Saved device unavailable"
 
         self.device_hint.setText(hint)
         idle = self.recorder._state == "idle"
@@ -385,11 +392,11 @@ class RecordingPage(QWidget):
         self.duration_label.setText("00:00")
         self.position_label.setText("00:00")
         self.total_label.setText(" / 00:00")
-        self.transport_hint.setText(f"Recording from {device.description()} · Pause to review and replace a section.")
+        self.transport_hint.setText("Recording · Pause to review and replace a section.")
         try:
             self.recorder.start(target, device)
             self.timer.start()
-            self.status_message.emit(f"Recording started · {device.description()}")
+            self.status_message.emit("Recording started")
         except Exception as exc:
             self.timer.stop()
             self.state_label.setText("Could not start recording")

@@ -47,7 +47,7 @@ class TranscriptEditorPage(QWidget):
         self.before_mutation = before_mutation
         self._busy_refresh = False
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 20, 24, 20)
+        root.setContentsMargins(2, 2, 10, 12)
         root.setSpacing(12)
         root.addWidget(page_header(
             "Transcript editor",
