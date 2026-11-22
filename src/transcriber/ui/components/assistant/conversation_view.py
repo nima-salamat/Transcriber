@@ -52,7 +52,7 @@ class ConversationView(QFrame):
 
         self.empty_state = QFrame()
         self.empty_state.setObjectName("AssistantEmptyState")
-        self.empty_state.setMaximumWidth(960)
+        self.empty_state.setMaximumWidth(800)
         self.empty_state.setMinimumWidth(0)
         self.empty_state.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum
@@ -83,7 +83,7 @@ class ConversationView(QFrame):
         self.prompt_grid = QWidget(self.empty_state)
         self.prompt_grid.setObjectName("AssistantPromptGrid")
         self.prompt_grid.setMinimumWidth(0)
-        self.prompt_grid.setMaximumWidth(900)
+        self.prompt_grid.setMaximumWidth(760)
         self.prompt_grid.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
@@ -118,7 +118,7 @@ class ConversationView(QFrame):
         for title_text, detail_text, prompt_text in prompt_examples:
             button = QPushButton(self.prompt_grid)
             button.setObjectName("AssistantPromptSuggestion")
-            button.setMinimumHeight(72)
+            button.setMinimumHeight(64)
             button.setMinimumWidth(0)
             button.setSizePolicy(
                 QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
@@ -204,10 +204,9 @@ class ConversationView(QFrame):
 
     def _layout_prompt_suggestions(self, width: int):
         available_width = max(0, int(width) - 32)
-        self.empty_state.setMinimumWidth(min(928, available_width))
-        # Two columns are reserved for genuinely wide conversation workspaces.
-        # At normal desktop widths, each suggestion gets a full readable row.
-        columns = 2 if int(width) >= 1000 else 1
+        self.empty_state.setMinimumWidth(min(768, available_width))
+        # Keep suggestions in a compact two-column grid whenever the pane allows it.
+        columns = 2 if int(width) >= 640 else 1
         if columns == self._prompt_columns:
             return
         self._prompt_columns = columns

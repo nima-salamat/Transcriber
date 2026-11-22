@@ -1082,9 +1082,9 @@ def stylesheet(theme: str) -> str:
         background: {c['surface']};
         border: 1px solid {c['border']};
         border-radius: 12px;
-        padding: 12px 16px;
+        padding: 9px 12px;
         min-width: 0;
-        min-height: 80px;
+        min-height: 64px;
         text-align: left;
     }}
     QPushButton#AssistantPromptSuggestion:hover {{
@@ -1097,13 +1097,13 @@ def stylesheet(theme: str) -> str:
     QLabel#AssistantPromptSuggestionTitle {{
         color: {c['text']};
         background: transparent;
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 700;
     }}
     QLabel#AssistantPromptSuggestionDescription {{
         color: {c['muted']};
         background: transparent;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 400;
     }}
     QPushButton#AssistantPromptSuggestion[compact="true"] {{
