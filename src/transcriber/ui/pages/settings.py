@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtMultimedia import QMediaDevices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -58,10 +60,27 @@ class SettingsPage(QWidget):
 
     def _build(self):
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(2, 2, 10, 12)
-        outer.addWidget(page_header("Settings", "Tune recognition, privacy, and where Transcriber stores your data."))
+        outer.setContentsMargins(20, 18, 20, 18)
+        outer.setSpacing(14)
+        outer.addWidget(page_header(
+            "Settings",
+            "Tune recognition, privacy and local storage. Choose a category to jump to its controls.",
+        ))
+        workspace = QHBoxLayout()
+        workspace.setSpacing(14)
+
+        self.section_nav = QListWidget()
+        self.section_nav.setObjectName("SettingsNavigation")
+        self.section_nav.setFixedWidth(190)
+        self.section_nav.setSpacing(2)
+        self.section_nav.setFrameShape(QFrame.NoFrame)
+        self.section_nav.itemClicked.connect(self._navigate_section)
+        workspace.addWidget(self.section_nav)
+
         scroll = QScrollArea()
+        scroll.setObjectName("SettingsContentScroll")
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setSpacing(14)
@@ -396,7 +415,24 @@ class SettingsPage(QWidget):
         layout.addStretch(1)
         scroll.setWidget(body)
         self.scroll = scroll
-        outer.addWidget(scroll, 1)
+        categories = (
+            ("general", "General"),
+            ("devices", "Audio devices"),
+            ("recognition", "Recognition"),
+            ("cloud", "Cloud services"),
+            ("jobs", "Background jobs"),
+            ("runtime", "Model runtime"),
+            ("agent", "Assistant & Agent"),
+            ("privacy", "Privacy"),
+            ("storage", "Storage"),
+        )
+        for key, title in categories:
+            item = QListWidgetItem(title)
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            self.section_nav.addItem(item)
+        self.section_nav.setCurrentRow(0)
+        workspace.addWidget(scroll, 1)
+        outer.addLayout(workspace, 1)
         self._refresh_storage_usage()
 
     def _section(self, title: str, content: QWidget, key: str) -> QWidget:
@@ -501,10 +537,20 @@ class SettingsPage(QWidget):
             self.settings_store.settings.audio_input_device_id, device_id
         )
 
+    def _navigate_section(self, item: QListWidgetItem):
+        key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        self.focus_section(key)
+
     def focus_section(self, key: str):
-        section = self._sections.get(str(key))
+        section_key = str(key)
+        section = self._sections.get(section_key)
         if section is not None:
             self.scroll.ensureWidgetVisible(section, 12, 12)
+        for index in range(self.section_nav.count()):
+            item = self.section_nav.item(index)
+            if item.data(Qt.ItemDataRole.UserRole) == section_key:
+                self.section_nav.setCurrentItem(item)
+                break
 
     def search_entries(self) -> list[dict]:
         """Return searchable settings destinations for global search and Ctrl+K."""
