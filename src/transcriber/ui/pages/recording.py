@@ -25,7 +25,7 @@ from transcriber.audio.player import AudioPlayer
 from transcriber.audio.recorder import QtAudioRecorder
 from transcriber.ui.components.waveform import WaveformTimeline
 from transcriber.ui.design.icon_registry import IconRegistry
-from transcriber.ui.widgets import Card, page_header
+from transcriber.ui.widgets import Card, page_header, section_header
 
 
 def _record_button_enabled_for_state(state: str, has_usable_input: bool) -> bool:
@@ -80,26 +80,31 @@ class RecordingPage(QWidget):
 
         self.setObjectName("RecordingPage")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 10, 12)
-        layout.setSpacing(15)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(14)
 
         heading = QHBoxLayout()
         heading.addWidget(page_header(
             "Studio recorder",
-            "Capture, review and replace parts of a take before saving it to your local recordings.",
+            "Capture a take, review its waveform and save it to your local recordings.",
         ), 1)
-        self.library_button = QPushButton("  Recordings")
+        self.library_button = QPushButton("Recordings")
         self.library_button.setIcon(self.icons.icon("projects", size=18))
-        self.library_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
-        self.library_button.setMinimumHeight(40)
+        self.library_button.setIconSize(QSize(18, 18))
+        self.library_button.setMinimumHeight(38)
         self.library_button.clicked.connect(self.open_library.emit)
         heading.addWidget(self.library_button, 0, Qt.AlignTop)
         layout.addLayout(heading)
 
-        # Recorder console: time, waveform and familiar transport controls.
+        workspace = QHBoxLayout()
+        workspace.setSpacing(14)
+
+        # The recording surface owns the available width; settings remain visible
+        # beside it rather than pushing the transport controls below the fold.
         console = Card()
+        console.setObjectName("RecorderConsole")
         console_layout = QVBoxLayout(console)
-        console_layout.setContentsMargins(22, 20, 22, 18)
+        console_layout.setContentsMargins(22, 19, 22, 18)
         console_layout.setSpacing(14)
 
         status_row = QHBoxLayout()
@@ -134,11 +139,11 @@ class RecordingPage(QWidget):
         self.waveform = WaveformTimeline()
         self.waveform.setObjectName("RecordingWaveform")
         self.waveform.set_background_enabled(False)
-        self.waveform.setMinimumHeight(142)
+        self.waveform.setMinimumHeight(150)
         self.waveform.set_waveform([], 0.0)
         self.waveform.set_interactive(False)
         self.waveform.seek_requested.connect(self._seek_preview)
-        console_layout.addWidget(self.waveform)
+        console_layout.addWidget(self.waveform, 1)
 
         controls = QHBoxLayout()
         controls.setSpacing(10)
@@ -147,28 +152,27 @@ class RecordingPage(QWidget):
         self.play_preview_button.setIcon(
             self.icons.icon("play", self._neutral_icon_color(), 18)
         )
-        self.play_preview_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
+        self.play_preview_button.setIconSize(QSize(18, 18))
         self.play_preview_button.setToolTip("Listen to the paused recording")
         self.play_preview_button.setObjectName("RecordingPreviewButton")
-        self.play_preview_button.setFixedSize(46, 46)
+        self.play_preview_button.setFixedSize(44, 44)
         self.play_preview_button.setEnabled(False)
         self.play_preview_button.clicked.connect(self._toggle_preview)
         controls.addWidget(self.play_preview_button)
 
-        self.record_button = QPushButton("  Start recording")
+        self.record_button = QPushButton("Start recording")
         self.record_button.setObjectName("RecordPrimary")
         self.record_button.setIcon(self.icons.icon("record", "#ffffff", 20))
-        self.record_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(20, 20))
-        # Keep the control footprint stable while its label changes between states.
-        self.record_button.setFixedSize(220, 54)
+        self.record_button.setIconSize(QSize(20, 20))
+        self.record_button.setFixedSize(210, 52)
         self.record_button.clicked.connect(self._primary_action)
         controls.addWidget(self.record_button)
 
         self.stop_button = QPushButton()
         self.stop_button.setObjectName("StopRecording")
         self.stop_button.setIcon(self.icons.icon("stop", "#ffffff", 21))
-        self.stop_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(21, 21))
-        self.stop_button.setFixedSize(54, 54)
+        self.stop_button.setIconSize(QSize(21, 21))
+        self.stop_button.setFixedSize(52, 52)
         self.stop_button.setToolTip("Finish and save this recording")
         self.stop_button.setAccessibleName("Stop and save recording")
         self.stop_button.setEnabled(False)
@@ -177,8 +181,8 @@ class RecordingPage(QWidget):
 
         self.cancel_button = QPushButton()
         self.cancel_button.setIcon(self.icons.icon("discard", "#ffffff", 18))
-        self.cancel_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
-        self.cancel_button.setFixedSize(44, 44)
+        self.cancel_button.setIconSize(QSize(18, 18))
+        self.cancel_button.setFixedSize(42, 42)
         self.cancel_button.setToolTip("Discard this take")
         self.cancel_button.setAccessibleName("Discard recording")
         self.cancel_button.setObjectName("Danger")
@@ -188,67 +192,74 @@ class RecordingPage(QWidget):
         controls.addStretch(1)
         console_layout.addLayout(controls)
 
-        self.transport_hint = QLabel("Pause to review the waveform. Drag the playhead, then resume to replace the audio after that point.")
+        self.transport_hint = QLabel(
+            "Pause to review the waveform. Drag the playhead, then resume to replace the audio after that point."
+        )
         self.transport_hint.setObjectName("Muted")
         self.transport_hint.setAlignment(Qt.AlignCenter)
         self.transport_hint.setWordWrap(True)
         console_layout.addWidget(self.transport_hint)
-        layout.addWidget(console, 1)
+        workspace.addWidget(console, 3)
 
-        # Compact capture preferences live below the recorder controls.
-        # Device choice and post-save transcription share one small surface.
         capture_options = Card()
         capture_options.setObjectName("RecordingOptionsCard")
         capture_options_layout = QVBoxLayout(capture_options)
-        capture_options_layout.setContentsMargins(14, 10, 14, 10)
-        capture_options_layout.setSpacing(7)
+        capture_options_layout.setContentsMargins(15, 15, 15, 15)
+        capture_options_layout.setSpacing(12)
+        capture_options_layout.addWidget(section_header(
+            "Capture setup",
+            "Choose the microphone and what happens after saving.",
+        ))
 
-        device_row = QHBoxLayout()
-        device_row.setSpacing(9)
         mic_icon = QLabel()
-        mic_icon.setPixmap(self.icons.icon("record", "#d65a68", 17).pixmap(17, 17))
+        mic_icon.setPixmap(self.icons.icon("record", self._neutral_icon_color(), 17).pixmap(17, 17))
         mic_icon.setFixedSize(22, 22)
+        device_row = QHBoxLayout()
         device_row.addWidget(mic_icon, 0, Qt.AlignVCenter)
-        device_title = QLabel("Microphone")
+        device_title = QLabel("Input device")
         device_title.setObjectName("RecordingDeviceTitle")
         device_row.addWidget(device_title)
-        self.device_hint = QLabel("System default")
-        self.device_hint.setObjectName("RecordingDeviceHint")
-        device_row.addWidget(self.device_hint)
         device_row.addStretch(1)
-
-        self.device_combo = QComboBox()
-        self.device_combo.setObjectName("RecordingMicrophoneCombo")
-        self.device_combo.setMinimumWidth(150)
-        self.device_combo.setMaximumWidth(420)
-        self.device_combo.setFixedHeight(32)
-        self.device_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.device_combo.setToolTip("Choose a microphone or follow the system default input device")
-        self.device_combo.currentIndexChanged.connect(self._save_device_preference)
-        device_row.addWidget(self.device_combo, 1)
-
-        self.refresh_button = QPushButton("↻")
+        self.refresh_button = QPushButton("Refresh")
         self.refresh_button.setObjectName("RecordingRefreshDevices")
         self.refresh_button.setToolTip("Refresh microphone devices")
-        self.refresh_button.setFixedSize(32, 32)
+        self.refresh_button.setFixedHeight(30)
         self.refresh_button.clicked.connect(self.refresh_devices)
         device_row.addWidget(self.refresh_button)
         capture_options_layout.addLayout(device_row)
 
-        preference_row = QHBoxLayout()
-        preference_row.setContentsMargins(0, 0, 0, 0)
-        preference_row.setSpacing(8)
-        self.auto_transcribe = QCheckBox("Transcribe automatically after saving")
+        self.device_hint = QLabel("System default")
+        self.device_hint.setObjectName("RecordingDeviceHint")
+        capture_options_layout.addWidget(self.device_hint)
+        self.device_combo = QComboBox()
+        self.device_combo.setObjectName("RecordingMicrophoneCombo")
+        self.device_combo.setMinimumWidth(150)
+        self.device_combo.setFixedHeight(36)
+        self.device_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.device_combo.setToolTip("Choose a microphone or follow the system default input device")
+        self.device_combo.currentIndexChanged.connect(self._save_device_preference)
+        capture_options_layout.addWidget(self.device_combo)
+
+        divider = QFrame()
+        divider.setObjectName("Divider")
+        divider.setFrameShape(QFrame.HLine)
+        capture_options_layout.addWidget(divider)
+
+        after_save = QLabel("After recording")
+        after_save.setObjectName("RecordingDeviceTitle")
+        capture_options_layout.addWidget(after_save)
+        self.auto_transcribe = QCheckBox("Open transcription after saving")
         self.auto_transcribe.setObjectName("RecordingAutoTranscribe")
         self.auto_transcribe.setChecked(True)
-        preference_row.addWidget(self.auto_transcribe)
-        preference_row.addStretch(1)
-        local_note = QLabel("●  SAVED ON THIS DEVICE")
+        self.auto_transcribe.setWordWrap(True)
+        capture_options_layout.addWidget(self.auto_transcribe)
+        local_note = QLabel("Saved on this device")
         local_note.setObjectName("RecordingLocalNote")
-        preference_row.addWidget(local_note)
-        capture_options_layout.addLayout(preference_row)
-
-        layout.addWidget(capture_options)
+        local_note.setWordWrap(True)
+        capture_options_layout.addWidget(local_note)
+        capture_options_layout.addStretch(1)
+        workspace.addWidget(capture_options, 1)
+        layout.addLayout(workspace, 1)
 
         self.recorder.state_changed.connect(self._state_changed)
         self.recorder.duration_changed.connect(self._set_duration)
