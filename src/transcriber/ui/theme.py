@@ -2289,4 +2289,39 @@ def stylesheet(theme: str) -> str:
         border-radius: 12px;
     }}
 
+
+    QFrame#BatchStatusPanel {{
+        background: {c['surface']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QLabel#BatchSummary {{
+        color: {c['text']};
+        font-size: 13px;
+        font-weight: 600;
+    }}
+    QLabel#BatchResourceNote {{
+        color: {c['muted']};
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 11px;
+    }}
+    QProgressBar#BatchProgress {{
+        background: {c['surface_2']};
+        border: 0;
+        border-radius: 4px;
+        min-height: 8px;
+        max-height: 8px;
+    }}
+    QProgressBar#BatchProgress::chunk {{
+        background: {c['accent']};
+        border-radius: 4px;
+    }}
+    QListWidget#BatchQueue {{
+        background: transparent;
+        border: 0;
+    }}
+
     """
