@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -84,10 +85,15 @@ class ConversationView(QFrame):
         self.prompt_grid.setObjectName("AssistantPromptGrid")
         self.prompt_grid.setMinimumWidth(0)
         self.prompt_grid.setMaximumWidth(680)
+        # Let the grid grow to the height required by its button rows.
+        # A Fixed vertical policy can clip the row contents inside the scroll area.
         self.prompt_grid.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
         self.prompt_grid_layout = QGridLayout(self.prompt_grid)
+        self.prompt_grid_layout.setSizeConstraint(
+            QLayout.SizeConstraint.SetMinimumSize
+        )
         self.prompt_grid_layout.setContentsMargins(0, 0, 0, 0)
         self.prompt_grid_layout.setHorizontalSpacing(8)
         self.prompt_grid_layout.setVerticalSpacing(8)
@@ -127,7 +133,7 @@ class ConversationView(QFrame):
             button.setToolTip(f"Use this prompt: {title_text}")
 
             card_layout = QVBoxLayout(button)
-            card_layout.setContentsMargins(16, 8, 16, 8)
+            card_layout.setContentsMargins(16, 10, 16, 10)
             card_layout.setSpacing(2)
             title_label = QLabel(title_text, button)
             title_label.setObjectName("AssistantPromptSuggestionTitle")
@@ -157,8 +163,8 @@ class ConversationView(QFrame):
             card_layout.addWidget(title_label)
             card_layout.addWidget(detail_label)
             card_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-            # Size the card from the actual rendered label hints plus the
-            # layout's spacing, vertical padding, and the button border.
+            # Size the card from both labels plus the inner padding and border.
+            # The grid layout propagates this minimum height to its own container.
             margins = card_layout.contentsMargins()
             content_height = (
                 title_label.sizeHint().height()
