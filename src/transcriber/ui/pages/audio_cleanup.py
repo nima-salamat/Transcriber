@@ -232,10 +232,11 @@ class AudioCleanupPage(QWidget):
     def _set_busy(self, busy):
         self.process_button.setEnabled(not busy)
         self.cancel_button.setEnabled(busy)
-        self.output_status.setText("Processing" if busy else "Ready")
-        self.output_status.setProperty("state", "info" if busy else "neutral")
-        self.output_status.style().unpolish(self.output_status)
-        self.output_status.style().polish(self.output_status)
+        if busy:
+            self.output_status.setText("Processing")
+            self.output_status.setProperty("state", "info")
+            self.output_status.style().unpolish(self.output_status)
+            self.output_status.style().polish(self.output_status)
 
     def _on_result(self, path):
         self.result_label.setText(f"Created new audio file:\n{path}")
@@ -249,6 +250,10 @@ class AudioCleanupPage(QWidget):
     def _on_error(self, message):
         if self._cancel_event and self._cancel_event.is_set():
             self.result_label.setText("Processing cancelled. Source file was not modified.")
+            self.output_status.setText("Cancelled")
+            self.output_status.setProperty("state", "warning")
+            self.output_status.style().unpolish(self.output_status)
+            self.output_status.style().polish(self.output_status)
             self.status_message.emit("Audio cleanup cancelled")
             return
         self.result_label.setText(f"Processing failed: {message}")
