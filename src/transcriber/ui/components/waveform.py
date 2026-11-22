@@ -19,6 +19,7 @@ class WaveformTimeline(QWidget):
         # This widget is a transport control, not a passive preview. An
         # unloaded waveform remains harmless because a zero duration cannot seek.
         self._interactive = True
+        self._background_enabled = True
         self.setMinimumHeight(112)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -34,6 +35,13 @@ class WaveformTimeline(QWidget):
         self.duration = max(0.0, float(duration))
         self.position = min(self.position, self.duration) if self.duration else 0.0
         self.update()
+
+    def set_background_enabled(self, enabled: bool):
+        """Show or hide the rounded track behind the waveform bars."""
+        enabled = bool(enabled)
+        if self._background_enabled != enabled:
+            self._background_enabled = enabled
+            self.update()
 
     def set_interactive(self, enabled: bool):
         self._interactive = bool(enabled)
@@ -75,11 +83,12 @@ class WaveformTimeline(QWidget):
             painter.end()
             return
 
-        background = palette.color(palette.ColorRole.AlternateBase)
-        background.setAlpha(90)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(background)
-        painter.drawRoundedRect(rect, 9, 9)
+        if self._background_enabled:
+            background = palette.color(palette.ColorRole.AlternateBase)
+            background.setAlpha(90)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(background)
+            painter.drawRoundedRect(rect, 9, 9)
         center_y = rect.center().y()
         bar_width = 3
         if self.peaks:

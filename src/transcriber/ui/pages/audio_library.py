@@ -62,6 +62,7 @@ class AudioLibraryPage(QWidget):
         self._worker: FunctionWorker | None = None
         self._waveform_worker: FunctionWorker | None = None
         self._recordings: dict[str, dict] = {}
+        self._recording_cards: dict[str, QFrame] = {}
         self._rows: list[tuple[str, bool, str, dict | None]] = []
         self._selected_path: Path | None = None
         self._selected_recording_id = ""
@@ -142,9 +143,8 @@ class AudioLibraryPage(QWidget):
         player_layout.addLayout(player_top)
 
         self.player_title = QLabel("Select a recording")
-        self.player_title.setObjectName("PageTitle")
+        self.player_title.setObjectName("AudioPlayerTitle")
         self.player_title.setWordWrap(True)
-        self.player_title.setStyleSheet("font-size: 21px; font-weight: 720;")
         player_layout.addWidget(self.player_title)
 
         self.player_metadata = QLabel("Your selected recording will appear here.")
@@ -153,6 +153,8 @@ class AudioLibraryPage(QWidget):
         player_layout.addWidget(self.player_metadata)
 
         self.player_waveform = WaveformTimeline()
+        self.player_waveform.setObjectName("AudioLibraryWaveform")
+        self.player_waveform.set_background_enabled(False)
         self.player_waveform.setMinimumHeight(170)
         self.player_waveform.set_interactive(True)
         self.player_waveform.seek_requested.connect(
@@ -162,8 +164,7 @@ class AudioLibraryPage(QWidget):
 
         time_row = QHBoxLayout()
         self.position_label = QLabel("00:00")
-        self.position_label.setStyleSheet("font-size: 24px; font-weight: 700;")
-        self.position_label.setObjectName("RecordingTimer")
+        self.position_label.setObjectName("AudioPlayerPosition")
         time_row.addWidget(self.position_label)
         time_row.addStretch(1)
         self.duration_label = QLabel("/ 00:00")
@@ -179,6 +180,7 @@ class AudioLibraryPage(QWidget):
         )
         self.skip_back_button.setIconSize(QSize(18, 18))
         self.skip_back_button.setToolTip("Back 15 seconds")
+        self.skip_back_button.setObjectName("AudioSkipButton")
         self.skip_back_button.setFixedSize(42, 42)
         self.skip_back_button.clicked.connect(lambda: self._skip(-15))
         transport.addWidget(self.skip_back_button)
@@ -187,12 +189,6 @@ class AudioLibraryPage(QWidget):
         self.play_button.setIconSize(QSize(20, 20))
         self.play_button.setMinimumSize(56, 48)
         self.play_button.setObjectName("AudioPlayPrimary")
-        self.play_button.setStyleSheet(
-            "QPushButton#AudioPlayPrimary { background: #315fae; color: white; "
-            "border: 1px solid #315fae; border-radius: 11px; padding: 8px 18px; }"
-            "QPushButton#AudioPlayPrimary:hover { background: #244d91; border-color: #244d91; }"
-            "QPushButton#AudioPlayPrimary:disabled { background: #8794a8; border-color: #8794a8; }"
-        )
         self.play_button.setToolTip("Play recording")
         self.play_button.clicked.connect(self.player.play_pause)
         transport.addWidget(self.play_button)
@@ -202,6 +198,7 @@ class AudioLibraryPage(QWidget):
         )
         self.skip_forward_button.setIconSize(QSize(18, 18))
         self.skip_forward_button.setToolTip("Forward 15 seconds")
+        self.skip_forward_button.setObjectName("AudioSkipButton")
         self.skip_forward_button.setFixedSize(42, 42)
         self.skip_forward_button.clicked.connect(lambda: self._skip(15))
         transport.addWidget(self.skip_forward_button)
@@ -307,6 +304,7 @@ class AudioLibraryPage(QWidget):
             return
         self._rows = rows
         self._recordings.clear()
+        self._recording_cards.clear()
         while self.list_layout.count():
             item = self.list_layout.takeAt(0)
             widget = item.widget()
@@ -319,6 +317,12 @@ class AudioLibraryPage(QWidget):
             if record:
                 self._recordings[str(record["id"])] = record
             self._add_recording_card(path, exists, kind, record)
+        if not rows:
+            empty = QLabel("No recordings yet. Your saved audio takes will appear here.")
+            empty.setObjectName("RecordingListEmptyState")
+            empty.setWordWrap(True)
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.list_layout.addWidget(empty)
         self.list_layout.addStretch(1)
         if self._selected_path:
             selected = str(self._selected_path)
@@ -329,11 +333,13 @@ class AudioLibraryPage(QWidget):
                 self._set_player_enabled(False)
                 self.player_title.setText("Select a recording")
                 self.player_metadata.setText("Your selected recording will appear here.")
+        self._sync_selected_card()
 
     def _add_recording_card(self, path: Path, exists: bool, kind: str, record: dict | None):
         card = QFrame()
         card.setObjectName("RecordingListCard")
-        card.setFrameShape(QFrame.StyledPanel)
+        card.setFrameShape(QFrame.NoFrame)
+        card.setCursor(Qt.PointingHandCursor)
         row = QHBoxLayout(card)
         row.setContentsMargins(10, 9, 10, 9)
         row.setSpacing(10)
@@ -341,6 +347,7 @@ class AudioLibraryPage(QWidget):
         play = QPushButton()
         play.setIcon(self.icons.icon("play", self._neutral_icon_color(), 16))
         play.setIconSize(QSize(16, 16))
+        play.setObjectName("RecordingItemPlayButton")
         play.setFixedSize(34, 34)
         play.setEnabled(exists)
         play.setToolTip("Play this recording")
@@ -350,9 +357,10 @@ class AudioLibraryPage(QWidget):
         detail = QVBoxLayout()
         detail.setSpacing(3)
         title = QPushButton(path.stem)
+        title.setObjectName("RecordingItemTitle")
         title.setFlat(True)
         title.setCursor(Qt.PointingHandCursor)
-        title.setStyleSheet("text-align: left; border: none; padding: 0; font-weight: 700;")
+        title.setMinimumHeight(0)
         title.setEnabled(exists)
         title.clicked.connect(lambda _checked=False, p=path, r=record: self._select_recording(p, r, False))
         detail.addWidget(title)
@@ -371,16 +379,27 @@ class AudioLibraryPage(QWidget):
         info.setWordWrap(True)
         detail.addWidget(info)
         row.addLayout(detail, 1)
-        card.setStyleSheet(
-            "QFrame#RecordingListCard { border: 1px solid palette(mid); border-radius: 10px; "
-            "background: palette(base); }"
-            "QFrame#RecordingListCard:hover { background: palette(alternate-base); }"
+        card.setProperty(
+            "selected",
+            bool(self._selected_path and self._selected_path == path.resolve()),
         )
+        self._recording_cards[str(path.resolve())] = card
         card.setContextMenuPolicy(Qt.CustomContextMenu)
         card.customContextMenuRequested.connect(
             lambda position, c=card, p=path, k=kind, r=record: self._show_context_menu(c, position, p, k, r)
         )
         self.list_layout.addWidget(card)
+
+    def _sync_selected_card(self):
+        selected = str(self._selected_path) if self._selected_path else ""
+        for path, card in self._recording_cards.items():
+            active = path == selected
+            if card.property("selected") == active:
+                continue
+            card.setProperty("selected", active)
+            card.style().unpolish(card)
+            card.style().polish(card)
+            card.update()
 
     def _select_recording(self, path: Path, record: dict | None, auto_play: bool = False):
         path = Path(path).expanduser().resolve()
@@ -392,6 +411,7 @@ class AudioLibraryPage(QWidget):
             return
         self._selected_path = path
         self._selected_recording_id = str(record["id"]) if record else ""
+        self._sync_selected_card()
         self.player.set_source(str(path))
         self.player_title.setText(path.stem)
         if record:

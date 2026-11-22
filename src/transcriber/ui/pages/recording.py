@@ -72,6 +72,7 @@ class RecordingPage(QWidget):
         self._device_refresh_timer.timeout.connect(self.refresh_devices)
         self.icons = IconRegistry()
 
+        self.setObjectName("RecordingPage")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(15)
@@ -145,10 +146,7 @@ class RecordingPage(QWidget):
 
         time_row = QHBoxLayout()
         self.duration_label = QLabel("00:00")
-        self.duration_label.setObjectName("RecordingTimer")
-        self.duration_label.setStyleSheet(
-            "font-size: 42px; font-weight: 720; letter-spacing: 1px; padding: 0;"
-        )
+        self.duration_label.setObjectName("RecorderMainTimer")
         time_row.addWidget(self.duration_label)
         time_row.addStretch(1)
         self.position_label = QLabel("00:00")
@@ -162,6 +160,7 @@ class RecordingPage(QWidget):
 
         self.waveform = WaveformTimeline()
         self.waveform.setObjectName("RecordingWaveform")
+        self.waveform.set_background_enabled(False)
         self.waveform.setMinimumHeight(142)
         self.waveform.set_waveform([], 0.0)
         self.waveform.set_interactive(False)
@@ -195,6 +194,7 @@ class RecordingPage(QWidget):
         )
         self.play_preview_button.setIconSize(__import__("PySide6.QtCore", fromlist=["QSize"]).QSize(18, 18))
         self.play_preview_button.setToolTip("Listen to the paused recording")
+        self.play_preview_button.setObjectName("RecordingPreviewButton")
         self.play_preview_button.setFixedSize(46, 46)
         self.play_preview_button.setEnabled(False)
         self.play_preview_button.clicked.connect(self._toggle_preview)
@@ -601,51 +601,26 @@ class RecordingPage(QWidget):
     def _neutral_icon_color(self) -> str:
         return self.palette().color(QPalette.ColorRole.ButtonText).name()
 
+    @staticmethod
+    def _repolish(widget: QWidget):
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+        widget.update()
+
     def _style_status(self, state: str):
-        styles = {
-            "ready": "background: rgba(61, 177, 132, 0.14); color: #45b88c;",
-            "recording": "background: rgba(225, 75, 91, 0.15); color: #ed6978;",
-            "paused": "background: rgba(226, 169, 69, 0.16); color: #d5a64d;",
-            "saved": "background: rgba(75, 145, 220, 0.15); color: #6da9e9;",
-            "idle": "background: rgba(130, 140, 155, 0.15); color: #9aa5b4;",
-            "error": "background: rgba(225, 75, 91, 0.15); color: #ed6978;",
-        }
-        self.status_pill.setStyleSheet(
-            "QLabel#RecordingStatus { "
-            + styles.get(state, styles["ready"])
-            + " border-radius: 10px; padding: 6px 11px; font-size: 10px; font-weight: 800; }"
-        )
+        self.status_pill.setProperty("state", state)
+        self._repolish(self.status_pill)
 
     def _style_record_button(self, state: str):
-        if state == "recording":
-            background = "#cf4355"
-        elif state == "paused":
-            background = "#bd8a35"
-        else:
-            background = "#d94c5d"
-        self.record_button.setStyleSheet(
-            "QPushButton#RecordPrimary { "
-            f"border-radius: 13px; background: {background}; color: white; "
-            "font-size: 14px; font-weight: 750; padding: 0 18px; border: none; }"
-            "QPushButton#RecordPrimary:hover { background: #bd3e50; }"
-            "QPushButton#RecordPrimary:disabled { background: #8993a1; color: white; }"
-        )
-        self.stop_button.setStyleSheet(
-            "QPushButton#StopRecording { border-radius: 27px; background: #c94355; "
-            "border: 1px solid #c94355; }"
-            "QPushButton#StopRecording:hover { background: #ad3446; border-color: #ad3446; }"
-            "QPushButton#StopRecording:disabled { background: rgba(201,67,85,0.12); "
-            "border-color: rgba(201,67,85,0.18); }"
-        )
+        self.record_button.setProperty("state", state)
+        self.record_button.setProperty("pulse", False)
+        self._repolish(self.record_button)
+        self._repolish(self.stop_button)
 
     def _pulse_record_button(self):
         self._pulse_phase = not self._pulse_phase
-        border = "3px solid rgba(225,75,91,0.30)" if self._pulse_phase else "1px solid rgba(225,75,91,0.10)"
-        self.record_button.setStyleSheet(
-            "QPushButton#RecordPrimary { "
-            f"border-radius: 13px; background: #cf4355; color: white; border: {border}; "
-            "font-size: 14px; font-weight: 750; padding: 0 18px; }"
-        )
+        self.record_button.setProperty("pulse", self._pulse_phase)
+        self._repolish(self.record_button)
 
     def _set_level(self, value: int):
         level = max(0, min(100, int(value)))

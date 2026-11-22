@@ -98,6 +98,190 @@ def stylesheet(theme: str) -> str:
         padding: 22px;
         font-size: 12px;
     }}
+    /* Recorder and player controls use the shared semantic design tokens. */
+    QLabel#RecorderMainTimer {{
+        color: {c['text']};
+        font-size: 42px;
+        font-weight: 750;
+        letter-spacing: 1px;
+        padding: 0;
+    }}
+    QLabel#RecordingStatus {{
+        background: {c['surface_2']};
+        color: {c['muted']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+        padding: 6px 11px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.6px;
+    }}
+    QLabel#RecordingStatus[state="ready"] {{
+        color: {c['success']};
+        border-color: {c['success']};
+    }}
+    QLabel#RecordingStatus[state="recording"], QLabel#RecordingStatus[state="error"] {{
+        color: {c['danger']};
+        border-color: {c['danger']};
+    }}
+    QLabel#RecordingStatus[state="paused"] {{
+        color: {c['warning']};
+        border-color: {c['warning']};
+    }}
+    QLabel#RecordingStatus[state="saved"] {{
+        color: {c['accent']};
+        border-color: {c['accent']};
+    }}
+    QPushButton#RecordPrimary {{
+        background: {c['danger']};
+        color: white;
+        border: 1px solid {c['danger']};
+        border-radius: 15px;
+        padding: 0 20px;
+        font-size: 14px;
+        font-weight: 750;
+        min-height: 54px;
+    }}
+    QPushButton#RecordPrimary:hover {{
+        background: {c['danger']};
+        border-color: {c['danger']};
+    }}
+    QPushButton#RecordPrimary[state="paused"] {{
+        background: {c['warning']};
+        border-color: {c['warning']};
+        color: {c['window']};
+    }}
+    QPushButton#RecordPrimary:disabled {{
+        background: {c['surface_2']};
+        border-color: {c['border']};
+        color: {c['muted']};
+    }}
+    QPushButton#RecordPrimary[pulse="true"] {{
+        border: 3px solid rgba(225, 75, 91, 0.30);
+    }}
+    QPushButton#StopRecording {{
+        background: {c['danger']};
+        border: 1px solid {c['danger']};
+        border-radius: 27px;
+        min-width: 54px;
+        max-width: 54px;
+        min-height: 54px;
+        max-height: 54px;
+        padding: 0;
+    }}
+    QPushButton#StopRecording:hover {{
+        background: {c['danger']};
+        border-color: {c['danger']};
+    }}
+    QPushButton#StopRecording:disabled {{
+        background: {c['surface_2']};
+        border-color: {c['border']};
+    }}
+    QPushButton#RecordingPreviewButton, QPushButton#AudioSkipButton {{
+        background: {c['surface_2']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: 22px;
+        padding: 0;
+        min-width: 42px;
+        max-width: 46px;
+        min-height: 42px;
+        max-height: 46px;
+    }}
+    QPushButton#RecordingPreviewButton:hover, QPushButton#AudioSkipButton:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QWidget#RecordingWaveform, QWidget#AudioLibraryWaveform {{
+        background: transparent;
+        border: 0;
+    }}
+    QLabel#AudioPlayerTitle {{
+        color: {c['text']};
+        font-size: 22px;
+        font-weight: 750;
+    }}
+    QLabel#AudioPlayerPosition {{
+        color: {c['text']};
+        font-size: 25px;
+        font-weight: 750;
+    }}
+    QPushButton#AudioPlayPrimary {{
+        background: {c['accent']};
+        color: white;
+        border: 1px solid {c['accent']};
+        border-radius: 13px;
+        padding: 8px 20px;
+        min-width: 56px;
+        min-height: 48px;
+    }}
+    QPushButton#AudioPlayPrimary:hover {{
+        background: {c['accent_hover']};
+        border-color: {c['accent_hover']};
+    }}
+    QPushButton#AudioPlayPrimary:disabled {{
+        background: {c['surface_2']};
+        color: {c['muted']};
+        border-color: {c['border']};
+    }}
+    QFrame#RecordingListCard {{
+        background: {c['surface_2']};
+        border: 1px solid {c['border']};
+        border-radius: 12px;
+    }}
+    QFrame#RecordingListCard:hover {{
+        background: {c['surface_hover']};
+        border-color: {c['accent']};
+    }}
+    QFrame#RecordingListCard[selected="true"] {{
+        background: {c['surface']};
+        border-color: {c['accent']};
+    }}
+    QPushButton#RecordingItemTitle {{
+        color: {c['text']};
+        background: transparent;
+        border: 0;
+        border-radius: 5px;
+        padding: 2px 1px;
+        text-align: left;
+        font-weight: 700;
+    }}
+    QPushButton#RecordingItemTitle:hover {{
+        color: {c['accent']};
+        background: transparent;
+        border: 0;
+    }}
+    QPushButton#RecordingItemTitle:disabled {{
+        color: {c['muted']};
+        background: transparent;
+    }}
+    QPushButton#RecordingItemPlayButton {{
+        background: {c['surface']};
+        color: {c['text']};
+        border: 1px solid {c['border']};
+        border-radius: 17px;
+        padding: 0;
+        min-width: 34px;
+        max-width: 34px;
+        min-height: 34px;
+        max-height: 34px;
+    }}
+    QPushButton#RecordingItemPlayButton:hover {{
+        background: {c['accent']};
+        border-color: {c['accent']};
+        color: white;
+    }}
+    QPushButton#RecordingItemPlayButton:disabled {{
+        color: {c['muted']};
+        background: {c['surface']};
+        border-color: {c['border']};
+    }}
+    QLabel#RecordingListEmptyState {{
+        color: {c['muted']};
+        background: transparent;
+        padding: 28px 18px;
+        font-size: 12px;
+    }}
     QFrame#Card {{
         background: {c['surface']};
         border: 1px solid {c['border']};
